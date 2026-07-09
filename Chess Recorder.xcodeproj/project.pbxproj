@@ -46,20 +46,20 @@
 			);
 			sourceTree = "<group>";
 		};
-		17F0A1032FFF00000026DE7C /* Config */ = {
-			isa = PBXGroup;
-			children = (
-				17F0A1042FFF00000026DE7C /* Version.xcconfig */,
-			);
-			path = Config;
-			sourceTree = "<group>";
-		};
 		1760A27F2FFED5F20026DE7C /* Products */ = {
 			isa = PBXGroup;
 			children = (
 				1760A27E2FFED5F20026DE7C /* Chess Recorder.app */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		17F0A1032FFF00000026DE7C /* Config */ = {
+			isa = PBXGroup;
+			children = (
+				17F0A1042FFF00000026DE7C /* Version.xcconfig */,
+			);
+			path = Config;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */

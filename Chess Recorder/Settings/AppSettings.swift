@@ -52,6 +52,7 @@ struct AppSettings: Codable, Equatable {
     var engineAnalysisShowEvaluationBar: Bool
     var engineAnalysisUseAlgebraicNotation: Bool
     var engineAnalysisShowBoardArrow: Bool
+    var openingNameVisible: Bool
     var pgnSite: String
     var pgnWhite: String
     var pgnBlack: String
@@ -72,6 +73,7 @@ struct AppSettings: Codable, Equatable {
         case engineAnalysisShowEvaluationBar
         case engineAnalysisUseAlgebraicNotation
         case engineAnalysisShowBoardArrow
+        case openingNameVisible
         case pgnSite
         case pgnWhite
         case pgnBlack
@@ -93,6 +95,7 @@ struct AppSettings: Codable, Equatable {
         engineAnalysisShowEvaluationBar: Bool = false,
         engineAnalysisUseAlgebraicNotation: Bool = false,
         engineAnalysisShowBoardArrow: Bool = false,
+        openingNameVisible: Bool = true,
         pgnSite: String = "?",
         pgnWhite: String = "?",
         pgnBlack: String = "?"
@@ -112,6 +115,7 @@ struct AppSettings: Codable, Equatable {
         self.engineAnalysisShowEvaluationBar = engineAnalysisShowEvaluationBar
         self.engineAnalysisUseAlgebraicNotation = engineAnalysisUseAlgebraicNotation
         self.engineAnalysisShowBoardArrow = engineAnalysisShowBoardArrow
+        self.openingNameVisible = openingNameVisible
         self.pgnSite = pgnSite
         self.pgnWhite = pgnWhite
         self.pgnBlack = pgnBlack
@@ -138,6 +142,7 @@ struct AppSettings: Codable, Equatable {
         engineAnalysisShowEvaluationBar = try container.decodeIfPresent(Bool.self, forKey: .engineAnalysisShowEvaluationBar) ?? false
         engineAnalysisUseAlgebraicNotation = try container.decodeIfPresent(Bool.self, forKey: .engineAnalysisUseAlgebraicNotation) ?? false
         engineAnalysisShowBoardArrow = try container.decodeIfPresent(Bool.self, forKey: .engineAnalysisShowBoardArrow) ?? false
+        openingNameVisible = try container.decodeIfPresent(Bool.self, forKey: .openingNameVisible) ?? true
         pgnSite = try container.decodeIfPresent(String.self, forKey: .pgnSite) ?? "?"
         pgnWhite = try container.decodeIfPresent(String.self, forKey: .pgnWhite) ?? "?"
         pgnBlack = try container.decodeIfPresent(String.self, forKey: .pgnBlack) ?? "?"
@@ -171,6 +176,7 @@ struct AppSettings: Codable, Equatable {
         engineAnalysisShowEvaluationBar: false,
         engineAnalysisUseAlgebraicNotation: true,
         engineAnalysisShowBoardArrow: true,
+        openingNameVisible: true,
         pgnSite: "?",
         pgnWhite: "?",
         pgnBlack: "?"

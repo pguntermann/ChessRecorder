@@ -738,6 +738,12 @@ Public License instead of this License.  But first, please read
 
 ## Assets and Data
 
+### ECO Opening Database (`eco_base.json`, `eco_interpolated.json`)
+- **Location in app**: `Chess Recorder/Resources/Assets.xcassets/eco_base.dataset/`, `eco_interpolated.dataset/`
+- **Source**: https://github.com/hayatbiralem/eco.json (compiled by Ömür Yanıkoğlu)
+- **License**: MIT License
+- **Notes**: Used for FEN-based opening name lookup during game recording. `fromTo.json` is bundled for reference but is not used at runtime.
+
 ### cburnett SVG Chess Pieces
 - **Location in app**: `Chess Recorder/Resources/Assets.xcassets/*.imageset/`
 - **Source**: https://commons.wikimedia.org/wiki/Category:SVG_chess_pieces (original artwork by https://commons.wikimedia.org/wiki/User:Cburnett)

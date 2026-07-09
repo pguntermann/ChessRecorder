@@ -226,6 +226,21 @@ class ChessGame {
         kitBoard.position.fen
     }
 
+    /// FEN strings after each move on the main line, in order.
+    func fensAfterMoves() -> [String] {
+        var fens: [String] = []
+        var index = kitGame.startingIndex
+
+        while index != currentIndex {
+            let next = index.next
+            guard let position = kitGame.positions[next] else { break }
+            fens.append(position.fen)
+            index = next
+        }
+
+        return fens
+    }
+
     // MARK: - ChessKit integration
 
     private func applyParsedMove(_ parsed: Move) -> Bool {

@@ -20,6 +20,7 @@
   "engineAnalysisShowBoardArrow" : true,
   "engineAnalysisUseAlgebraicNotation" : true,
   "engineAnalysisVisible" : true,
+  "openingNameVisible" : true,
   "lightSquareColor" : {
     "alpha" : 1,
     "blue" : 0.98,

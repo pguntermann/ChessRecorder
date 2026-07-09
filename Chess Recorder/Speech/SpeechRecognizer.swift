@@ -480,8 +480,9 @@ class SpeechRecognizer {
                 "a", "b", "c", "d", "e", "f", "g", "h",
                 "1", "2", "3", "4", "5", "6", "7", "8",
                 "knight", "bishop", "rook", "queen", "king", "pawn",
+                "one", "two", "three", "four", "five", "six", "seven", "eight",
                 "takes", "take", "captures", "capture", "castle",
-                "e4", "d4", "exd5", "nf3", "nxd4", "qxb4", "O-O"
+                "e4", "d4", "exd5", "nf3", "nf6", "nxd4", "qxb4", "O-O"
             ]
         case .german:
             words = [

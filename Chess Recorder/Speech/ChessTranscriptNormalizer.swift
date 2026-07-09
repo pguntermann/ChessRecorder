@@ -117,6 +117,8 @@ enum ChessTranscriptNormalizer {
         for (wrong, right) in spokenLetters {
             result = result.replacingOccurrences(of: wrong, with: right)
         }
+
+        result = fixMisheardSplitSquares(in: result, language: language)
         
         if language == .german {
             let germanNumbers: [(String, String)] = [
@@ -126,10 +128,71 @@ enum ChessTranscriptNormalizer {
             for (spoken, digit) in germanNumbers {
                 result = result.replacingOccurrences(of: spoken, with: digit)
             }
+        } else {
+            let englishNumbers: [(String, String)] = [
+                ("one", "1"), ("two", "2"), ("three", "3"), ("four", "4"),
+                ("five", "5"), ("six", "6"), ("seven", "7"), ("eight", "8")
+            ]
+            for (spoken, digit) in englishNumbers {
+                result = result.replacingOccurrences(of: spoken, with: digit)
+            }
         }
         
         return result
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+    }
+
+    /// ASR often mishears ranks like "f6" as "f3 six" (f-three-six).
+    static func spokenRankDigit(for token: String, language: RecognitionLanguage) -> String? {
+        let normalized = normalizeSpokenRankToken(token, language: language)
+        guard normalized.count == 1, "12345678".contains(normalized) else { return nil }
+        return normalized
+    }
+
+    static func normalizeSpokenRankToken(_ token: String, language: RecognitionLanguage) -> String {
+        switch token.lowercased() {
+        case "one", "eins", "1": return "1"
+        case "two", "zwei", "2": return "2"
+        case "three", "drei", "3": return "3"
+        case "four", "vier", "4": return "4"
+        case "five", "funf", "fünf", "5": return "5"
+        case "six", "sechs", "6": return "6"
+        case "seven", "sieben", "7": return "7"
+        case "eight", "acht", "8": return "8"
+        default:
+            let digits = token.filter(\.isNumber)
+            return digits.count == 1 ? digits : token
+        }
+    }
+
+    private static func fixMisheardSplitSquares(in text: String, language: RecognitionLanguage) -> String {
+        let spokenPattern =
+            "one|two|three|four|five|six|seven|eight|" +
+            "eins|zwei|drei|vier|funf|fünf|sechs|sieben|acht"
+        guard let regex = try? NSRegularExpression(
+            pattern: "\\b([a-h])([1-8])\\s+(\(spokenPattern))\\b",
+            options: .caseInsensitive
+        ) else {
+            return text
+        }
+
+        let nsText = text as NSString
+        var result = text
+        let matches = regex.matches(in: text, range: NSRange(location: 0, length: nsText.length))
+
+        for match in matches.reversed() {
+            let wrongRank = nsText.substring(with: match.range(at: 2))
+            let spoken = nsText.substring(with: match.range(at: 3))
+            guard let intendedRank = spokenRankDigit(for: spoken, language: language),
+                  intendedRank != wrongRank else {
+                continue
+            }
+
+            let file = nsText.substring(with: match.range(at: 1)).lowercased()
+            result = (result as NSString).replacingCharacters(in: match.range, with: "\(file)\(intendedRank)")
+        }
+
+        return result
     }
 }

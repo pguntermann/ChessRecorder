@@ -162,6 +162,13 @@ struct SettingsView: View {
                             settingsStore.update { $0.touchInputEnabled = newValue }
                         }
                     ))
+
+                    Toggle("Show opening name", isOn: Binding(
+                        get: { settingsStore.settings.openingNameVisible },
+                        set: { newValue in
+                            settingsStore.update { $0.openingNameVisible = newValue }
+                        }
+                    ))
                     
                     VStack(alignment: .leading) {
                         Text("Piece size: \(Int(settingsStore.settings.pieceSizePercent * 100))%")
@@ -195,7 +202,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Board")
                 } footer: {
-                    Text("When Touch input is enabled, tap a piece and then a destination square to make moves on the board.")
+                    Text("When Touch input is enabled, tap a piece and then a destination square to make moves on the board. The opening name appears above the board when moves are played.")
                 }
                 
                 Section {

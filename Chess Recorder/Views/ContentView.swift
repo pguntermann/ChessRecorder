@@ -23,6 +23,7 @@ struct ContentView: View {
     @State private var recordingPermissionIssue: RecordingPermissionIssue?
     @State private var boardOrientation: BoardOrientation = .whiteAtBottom
     @State private var engineAnalysis = EngineAnalysisService()
+    @State private var openingService = OpeningService()
     
     init(settingsStore: SettingsStore, vocabularyStore: PersonalVocabularyStore) {
         self.settingsStore = settingsStore
@@ -83,6 +84,8 @@ struct ContentView: View {
             )
             await speechRecognizer.startup(with: settingsStore.settings.defaultRecognitionLanguage)
             await engineAnalysis.prepare()
+            await openingService.prepare()
+            openingService.refresh(game: game)
         }
         .onDisappear {
             Task { await engineAnalysis.shutdown() }
@@ -104,6 +107,7 @@ struct ContentView: View {
         }
         .onChange(of: game.moves.count) { _, _ in
             engineAnalysis.refresh(game: game)
+            openingService.refresh(game: game)
         }
         .sheet(isPresented: $showingSettings) {
             SettingsView(
@@ -154,6 +158,13 @@ struct ContentView: View {
     
     private var boardSection: some View {
         VStack(spacing: 10) {
+            OpeningNameView(
+                display: openingService.display,
+                isVisible: settingsStore.settings.openingNameVisible,
+                isLoaded: openingService.isLoaded,
+                hasMoves: !game.moves.isEmpty
+            )
+
             BoardWithEvaluationLayout(
                 game: game,
                 settings: settingsStore.settings,

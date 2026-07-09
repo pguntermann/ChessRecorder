@@ -131,6 +131,22 @@ nonisolated enum MoveInterpreter {
                 continue
             }
             
+            if index + 2 < words.count,
+               words[index].count == 1,
+               let file = words[index].first,
+               "abcdefgh".contains(file) {
+                let middleRank = ChessTranscriptNormalizer.normalizeSpokenRankToken(words[index + 1], language: language)
+                let trailingRank = ChessTranscriptNormalizer.spokenRankDigit(for: words[index + 2], language: language)
+                if middleRank.count == 1,
+                   "12345678".contains(middleRank),
+                   let trailingRank,
+                   middleRank != trailingRank {
+                    result.append(String(file) + trailingRank)
+                    index += 3
+                    continue
+                }
+            }
+
             if index + 1 < words.count,
                let square = combineSquare(file: words[index], rank: words[index + 1]) {
                 result.append(square)
@@ -139,6 +155,15 @@ nonisolated enum MoveInterpreter {
             }
             
             if let square = sanitizeSquare(words[index]) {
+                if index + 1 < words.count,
+                   let file = square.first,
+                   let trailingRank = ChessTranscriptNormalizer.spokenRankDigit(for: words[index + 1], language: language),
+                   String(square.suffix(1)) != trailingRank {
+                    result.append(String(file) + trailingRank)
+                    index += 2
+                    continue
+                }
+
                 result.append(square)
                 index += 1
                 continue
@@ -651,18 +676,11 @@ nonisolated enum MoveInterpreter {
     }
     
     private static func normalizeRank(_ token: String) -> String {
-        switch token.lowercased() {
-        case "eins", "1": return "1"
-        case "zwei", "2": return "2"
-        case "drei", "3": return "3"
-        case "vier", "4": return "4"
-        case "funf", "fünf", "5": return "5"
-        case "sechs", "6": return "6"
-        case "sieben", "7": return "7"
-        case "acht", "8": return "8"
-        default:
-            return token.filter(\.isNumber)
+        let normalized = ChessTranscriptNormalizer.normalizeSpokenRankToken(token, language: .english)
+        if normalized.count == 1, "12345678".contains(normalized) {
+            return normalized
         }
+        return token.filter(\.isNumber)
     }
     
     private static func isCaptureVerb(_ word: String) -> Bool {

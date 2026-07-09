@@ -294,7 +294,14 @@ final class PersonalVocabularyStore {
 
             let matchesExactTail = tail == learned
             let matchesCompact = !compact.isEmpty && !learnedCompact.isEmpty
-                && (compact == learnedCompact || compact.hasSuffix(learnedCompact))
+                && (compact == learnedCompact || (
+                    compact.hasSuffix(learnedCompact)
+                    && !Self.compactSuffixBlockedByTrailingRank(
+                        compact: compact,
+                        learnedCompact: learnedCompact,
+                        language: language
+                    )
+                ))
 
             guard (matchesExactTail || matchesCompact) else { continue }
             matches.append((entry.moveNotation, learnedWords.count, entry.count))
@@ -317,6 +324,32 @@ final class PersonalVocabularyStore {
     
     static func normalizePhrase(_ phrase: String, language: RecognitionLanguage) -> String {
         ChessTranscriptNormalizer.normalizeForPhraseMatching(phrase, language: language)
+    }
+
+    /// Reject compact matches like `nf3six` for learned `nf3` when trailing text is a conflicting rank.
+    private static func compactSuffixBlockedByTrailingRank(
+        compact: String,
+        learnedCompact: String,
+        language: RecognitionLanguage
+    ) -> Bool {
+        guard compact.count > learnedCompact.count else { return false }
+
+        let remainder = String(compact.dropLast(learnedCompact.count))
+        guard let trailingRank = spokenRankDigits(fromCompactRemainder: remainder, language: language),
+              let learnedRank = learnedCompact.last,
+              learnedRank.isNumber else {
+            return false
+        }
+
+        return String(learnedRank) != trailingRank
+    }
+
+    private static func spokenRankDigits(
+        fromCompactRemainder remainder: String,
+        language: RecognitionLanguage
+    ) -> String? {
+        guard !remainder.isEmpty else { return nil }
+        return ChessTranscriptNormalizer.spokenRankDigit(for: remainder, language: language)
     }
 
     func applyCorrections(to text: String, language: RecognitionLanguage) -> String {
@@ -571,6 +604,7 @@ final class PersonalVocabularyStore {
                 ("d5", "d5", 300), ("d 5", "d5", 250),
                 ("c5", "c5", 300), ("c 5", "c5", 250),
                 ("nf3", "nf3", 300), ("knight f3", "nf3", 350), ("knight f 3", "nf3", 300),
+                ("nf6", "nf6", 300), ("knight f6", "nf6", 360), ("knight f 6", "nf6", 320),
                 ("nc3", "nc3", 260), ("knight c3", "nc3", 300), ("knight c 3", "nc3", 260),
                 ("bf4", "bf4", 220), ("bishop f4", "bf4", 260),
                 ("bb5", "bb5", 220), ("bishop b5", "bb5", 260),
@@ -588,6 +622,7 @@ final class PersonalVocabularyStore {
                 ("d5", "d5", 300), ("d 5", "d5", 250), ("d funf", "d5", 300), ("d fünf", "d5", 300),
                 ("c5", "c5", 300), ("c 5", "c5", 250), ("c funf", "c5", 280), ("c fünf", "c5", 280),
                 ("sf3", "nf3", 280), ("springer f3", "nf3", 360), ("springer f 3", "nf3", 320), ("springer f drei", "nf3", 380),
+                ("sf6", "nf6", 280), ("springer f6", "nf6", 360), ("springer f 6", "nf6", 320), ("springer f sechs", "nf6", 380),
                 ("sc3", "nc3", 240), ("springer c3", "nc3", 300), ("springer c drei", "nc3", 320),
                 ("lf4", "bf4", 220), ("laufer f4", "bf4", 260), ("läufer f4", "bf4", 260), ("laufer f vier", "bf4", 280), ("läufer f vier", "bf4", 280),
                 ("lb5", "bb5", 220), ("laufer b5", "bb5", 260), ("läufer b5", "bb5", 260),

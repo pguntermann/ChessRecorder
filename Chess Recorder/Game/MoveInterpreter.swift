@@ -86,7 +86,7 @@ nonisolated enum MoveInterpreter {
         case .english:
             add(extractCastle(from: normalized, language: language))
             for move in extractPatterns(from: normalized, allowBareSquares: !hasPieceName && !hasCaptureVerb) { add(move) }
-            for move in extractDisambiguatedPieceMoves(from: tokens, piecePrefix: englishPiecePrefix) { add(move) }
+            for move in extractDisambiguatedPieceMoves(from: tokens, piecePrefix: englishPiecePrefix, language: language) { add(move) }
             for move in extractPieceSourceTarget(from: tokens, piecePrefix: englishPiecePrefix) { add(move) }
             for move in extractPieceCaptures(from: tokens, piecePrefix: englishPiecePrefix) { add(move) }
             for move in extractPawnCaptures(from: tokens) { add(move) }
@@ -99,7 +99,7 @@ nonisolated enum MoveInterpreter {
         case .german:
             add(extractCastle(from: normalized, language: language))
             for move in extractPatterns(from: normalized, allowBareSquares: !hasPieceName && !hasCaptureVerb) { add(move) }
-            for move in extractDisambiguatedPieceMoves(from: tokens, piecePrefix: germanPiecePrefix) { add(move) }
+            for move in extractDisambiguatedPieceMoves(from: tokens, piecePrefix: germanPiecePrefix, language: language) { add(move) }
             for move in extractPieceSourceTarget(from: tokens, piecePrefix: germanPiecePrefix) { add(move) }
             for move in extractPieceCaptures(from: tokens, piecePrefix: germanPiecePrefix) { add(move) }
             for move in extractPawnCaptures(from: tokens) { add(move) }
@@ -325,21 +325,32 @@ nonisolated enum MoveInterpreter {
         return moves
     }
     
-    /// Handles "Knight g1 to f3", "Springer g1 auf Springer f3", "Springer g1 f3", etc.
+    /// Handles "Knight g1 to f3", "Springer g1 auf Springer f3", "Turm f auf d1", etc.
     private static func extractDisambiguatedPieceMoves(
         from words: [String],
-        piecePrefix: (String) -> String
+        piecePrefix: (String) -> String,
+        language: RecognitionLanguage
     ) -> [String] {
         var moves: [String] = []
         guard words.count >= 3 else { return moves }
         
         for start in 0..<words.count {
-            guard isPieceName(words[start]),
-                  start + 1 < words.count,
-                  let from = sanitizeSquare(words[start + 1]) else { continue }
+            guard isPieceName(words[start]) else { continue }
             
             let piece = piecePrefix(words[start])
             guard !piece.isEmpty else { continue }
+
+            if let move = extractPieceFileOrRankMove(
+                from: words,
+                start: start,
+                piece: piece,
+                language: language
+            ) {
+                moves.append(move)
+            }
+            
+            guard start + 1 < words.count,
+                  let from = sanitizeSquare(words[start + 1]) else { continue }
             
             var cursor = start + 2
             if cursor < words.count && isMovePreposition(words[cursor]) {
@@ -352,14 +363,58 @@ nonisolated enum MoveInterpreter {
             
             moves.append(from + to)
             moves.append(piece + to)
+            moves.append(piece + disambiguationSuffix(for: from) + to)
 
             if start + 2 < words.count,
                isCaptureVerb(words[start + 2]) || (start + 3 < words.count && isCaptureVerb(words[start + 3])) {
                 moves.append(piece + from + "x" + to)
+                moves.append(piece + disambiguationSuffix(for: from) + "x" + to)
             }
         }
         
         return moves
+    }
+
+    /// "Turm f auf d1" -> Rfd1, "Rook 1 to d1" -> R1d1
+    private static func extractPieceFileOrRankMove(
+        from words: [String],
+        start: Int,
+        piece: String,
+        language: RecognitionLanguage
+    ) -> String? {
+        guard start + 2 < words.count else { return nil }
+
+        let disambiguator = words[start + 1]
+        guard let suffix = disambiguationSuffix(forToken: disambiguator, language: language) else {
+            return nil
+        }
+
+        var cursor = start + 2
+        if cursor < words.count && isMovePreposition(words[cursor]) {
+            cursor += 1
+        }
+        if cursor < words.count && isPieceName(words[cursor]) {
+            cursor += 1
+        }
+        guard cursor < words.count, let to = sanitizeSquare(words[cursor]) else { return nil }
+
+        return piece + suffix + to
+    }
+
+    private static func disambiguationSuffix(for square: String) -> String {
+        guard square.count == 2 else { return square }
+        return String(square.prefix(1))
+    }
+
+    private static func disambiguationSuffix(forToken token: String, language: RecognitionLanguage) -> String? {
+        if token.count == 1, let file = token.first, "abcdefgh".contains(file) {
+            return String(file)
+        }
+        let rank = ChessTranscriptNormalizer.normalizeSpokenRankToken(token, language: language)
+        if rank.count == 1, "12345678".contains(rank) {
+            return rank
+        }
+        return nil
     }
     
     private static func isMovePreposition(_ word: String) -> Bool {
@@ -444,11 +499,11 @@ nonisolated enum MoveInterpreter {
         let captureVerbs = "(?:schlagt|schlaegt|schagt|nimmt|takes|take|captures|capture)"
         
         let piecePatterns: [(String, String)] = [
-            ("(?:springer|knight|night)", "n"),
-            ("(?:laufer|laeufer|lauferin|bishop)", "b"),
-            ("(?:turm|rook)", "r"),
-            ("(?:dame|queen)", "q"),
-            ("(?:konig|king)", "k")
+            ("(?:springer|knight|night)", "N"),
+            ("(?:laufer|laeufer|lauferin|bishop)", "B"),
+            ("(?:turm|rook)", "R"),
+            ("(?:dame|queen)", "Q"),
+            ("(?:konig|king)", "K")
         ]
         
         for (piecePattern, prefix) in piecePatterns {
@@ -479,7 +534,13 @@ nonisolated enum MoveInterpreter {
             let aufMoveRegex = try! Regex("\(piecePattern)([a-h][1-8])auf(?:\(piecePattern))?([a-h][1-8])")
             if let match = compact.matches(of: aufMoveRegex).last {
                 let output = String(compact[match.range])
-                if let move = pieceAufMoveNotation(compact: output, prefix: prefix, markers: markerNames(for: piecePattern)) {
+                moves.append(contentsOf: pieceAufMoveNotations(compact: output, prefix: prefix, markers: markerNames(for: piecePattern)))
+            }
+
+            let fileAufMoveRegex = try! Regex("\(piecePattern)([a-h])(?:auf|nach|to)([a-h][1-8])")
+            if let match = compact.matches(of: fileAufMoveRegex).last {
+                let output = String(compact[match.range])
+                if let move = pieceFileAufMoveNotation(compact: output, prefix: prefix, markers: markerNames(for: piecePattern)) {
                     moves.append(move)
                 }
             }
@@ -539,10 +600,10 @@ nonisolated enum MoveInterpreter {
         return from + to
     }
     
-    private static func pieceAufMoveNotation(compact: String, prefix: String, markers: [String]) -> String? {
-        guard let marker = markers.first(where: { compact.hasPrefix($0) }) else { return nil }
+    private static func pieceAufMoveNotations(compact: String, prefix: String, markers: [String]) -> [String] {
+        guard let marker = markers.first(where: { compact.hasPrefix($0) }) else { return [] }
         let remainder = String(compact.dropFirst(marker.count))
-        guard let aufRange = remainder.range(of: "auf") else { return nil }
+        guard let aufRange = remainder.range(of: "auf") else { return [] }
         
         let fromPart = String(remainder[..<aufRange.lowerBound])
         var afterAuf = String(remainder[aufRange.upperBound...])
@@ -553,20 +614,37 @@ nonisolated enum MoveInterpreter {
         
         guard fromPart.count == 2,
               afterAuf.count == 2,
-              let fromFile = fromPart.first,
-              let fromRank = fromPart.last,
-              let toFile = afterAuf.first,
-              let toRank = afterAuf.last,
-              "abcdefgh".contains(fromFile),
-              "12345678".contains(fromRank),
-              "abcdefgh".contains(toFile),
-              "12345678".contains(toRank) else {
+              sanitizeSquare(fromPart) != nil,
+              sanitizeSquare(afterAuf) != nil else {
+            return []
+        }
+
+        let from = fromPart
+        let to = afterAuf
+        return [
+            from + to,
+            prefix + to,
+            prefix + disambiguationSuffix(for: from) + to
+        ]
+    }
+
+    private static func pieceFileAufMoveNotation(compact: String, prefix: String, markers: [String]) -> String? {
+        guard let marker = markers.first(where: { compact.hasPrefix($0) }) else { return nil }
+        let remainder = String(compact.dropFirst(marker.count))
+        let prepositions = ["auf", "nach", "to"]
+        guard let prep = prepositions.first(where: { remainder.contains($0) }),
+              let prepRange = remainder.range(of: prep) else { return nil }
+
+        let filePart = String(remainder[..<prepRange.lowerBound])
+        let toPart = String(remainder[prepRange.upperBound...])
+        guard filePart.count == 1,
+              let file = filePart.first,
+              "abcdefgh".contains(file),
+              sanitizeSquare(toPart) != nil else {
             return nil
         }
-        
-        let from = String(fromFile) + String(fromRank)
-        let to = String(toFile) + String(toRank)
-        return prefix + to
+
+        return prefix + filePart + toPart
     }
     
     private static func extractCompactPawnCapture(from compact: String) -> String? {
@@ -735,22 +813,22 @@ nonisolated enum MoveInterpreter {
     
     private static func englishPiecePrefix(for word: String) -> String {
         switch word.lowercased() {
-        case "knight", "night": return "n"
-        case "bishop": return "b"
-        case "rook": return "r"
-        case "queen": return "q"
-        case "king": return "k"
+        case "knight", "night": return "N"
+        case "bishop": return "B"
+        case "rook": return "R"
+        case "queen": return "Q"
+        case "king": return "K"
         default: return ""
         }
     }
     
     private static func germanPiecePrefix(for word: String) -> String {
         switch word.lowercased() {
-        case "springer": return "n"
-        case "laufer", "laeufer", "lauferin": return "b"
-        case "turm": return "r"
-        case "dame": return "q"
-        case "konig": return "k"
+        case "springer": return "N"
+        case "laufer", "laeufer", "lauferin": return "B"
+        case "turm": return "R"
+        case "dame": return "Q"
+        case "konig": return "K"
         default: return ""
         }
     }
@@ -758,8 +836,8 @@ nonisolated enum MoveInterpreter {
     private static func normalizeEnglishToken(_ word: String) -> String? {
         var move = word.lowercased().filter { $0.isLetter || $0.isNumber || $0 == "x" || $0 == "=" }
         let replacements = [
-            "knight": "n", "night": "n", "bishop": "b", "rook": "r",
-            "queen": "q", "king": "k", "takes": "x", "captures": "x"
+            "knight": "N", "night": "N", "bishop": "B", "rook": "R",
+            "queen": "Q", "king": "K", "takes": "x", "captures": "x"
         ]
         for (spoken, notation) in replacements {
             move = move.replacingOccurrences(of: spoken, with: notation)
@@ -778,10 +856,10 @@ nonisolated enum MoveInterpreter {
             return move
         }
         
-        if move.hasPrefix("s") && move.count >= 2 { move = "n" + String(move.dropFirst()) }
-        else if move.hasPrefix("l") && move.count >= 2 { move = "b" + String(move.dropFirst()) }
-        else if move.hasPrefix("t") && move.count >= 2 { move = "r" + String(move.dropFirst()) }
-        else if move.hasPrefix("d") && move.count >= 2 { move = "q" + String(move.dropFirst()) }
+        if move.hasPrefix("s") && move.count >= 2 { move = "N" + String(move.dropFirst()) }
+        else if move.hasPrefix("l") && move.count >= 2 { move = "B" + String(move.dropFirst()) }
+        else if move.hasPrefix("t") && move.count >= 2 { move = "R" + String(move.dropFirst()) }
+        else if move.hasPrefix("d") && move.count >= 2 { move = "Q" + String(move.dropFirst()) }
         
         return isValidMoveNotation(move) ? move : nil
     }

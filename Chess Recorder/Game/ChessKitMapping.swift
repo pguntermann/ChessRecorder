@@ -113,11 +113,23 @@ enum ChessKitMapping {
     }
 
     /// True for pawn file captures such as `bxc6` or `exd5`.
+    /// Pawns only capture on diagonally adjacent files, so `bxh6` is not a pawn capture.
     static func isPawnFileCaptureSAN(_ notation: String) -> Bool {
-        notation.range(
-            of: #"^[a-h]x[a-h][1-8]"#,
-            options: .regularExpression
-        ) != nil
+        let chars = Array(notation.lowercased())
+        guard chars.count >= 4,
+              chars[1] == "x",
+              ("a"..."h").contains(chars[0]),
+              ("a"..."h").contains(chars[2]),
+              ("1"..."8").contains(chars[3]) else {
+            return false
+        }
+
+        guard let fromFile = chars[0].asciiValue,
+              let toFile = chars[2].asciiValue else {
+            return false
+        }
+
+        return abs(Int(fromFile) - Int(toFile)) == 1
     }
 
     static func parseCoordinateMove(_ notation: String) -> (from: ChessPosition, to: ChessPosition, promotion: PieceType?)? {

@@ -11,12 +11,13 @@ import Speech
 
 enum ChessLanguageModel {
     
-    private static let baseModelVersion = "1.1"
+    private static let baseModelVersion = "1.3"
     private static let modelIdentifier = "ChessRecorder.chess-moves"
     
     private static var preparedConfigurations: [RecognitionLanguage: SFSpeechLanguageModel.Configuration] = [:]
     private static var preparationTasks: [RecognitionLanguage: Task<SFSpeechLanguageModel.Configuration?, Never>] = [:]
     private static var lastPreparedRevision: [RecognitionLanguage: Int] = [:]
+    private static var lastPreparedBaseVersion: [RecognitionLanguage: String] = [:]
     
     static func prepare(
         for language: RecognitionLanguage,
@@ -24,7 +25,8 @@ enum ChessLanguageModel {
     ) async -> SFSpeechLanguageModel.Configuration? {
         let revision = vocabulary.revision(for: language)
         if let existing = preparedConfigurations[language],
-           lastPreparedRevision[language] == revision {
+           lastPreparedRevision[language] == revision,
+           lastPreparedBaseVersion[language] == baseModelVersion {
             return existing
         }
         
@@ -48,6 +50,7 @@ enum ChessLanguageModel {
     static func invalidate(for language: RecognitionLanguage) {
         preparedConfigurations.removeValue(forKey: language)
         lastPreparedRevision.removeValue(forKey: language)
+        lastPreparedBaseVersion.removeValue(forKey: language)
         preparationTasks[language]?.cancel()
         preparationTasks.removeValue(forKey: language)
         
@@ -93,6 +96,7 @@ enum ChessLanguageModel {
             
             preparedConfigurations[language] = config
             lastPreparedRevision[language] = revision
+            lastPreparedBaseVersion[language] = baseModelVersion
             print("ChessLanguageModel: ready for \(language.rawValue) (revision \(revision), \(personalPhrases.count) personal phrases)")
             return config
         } catch {
@@ -150,7 +154,8 @@ enum ChessLanguageModel {
             }
 
             for phrase in ["zurück", "rückgängig", "kurz rochiert", "lang rochiert",
-                           "kleine rochade", "große rochade", "grosse rochade", "lange rochade"] {
+                           "kleine rochade", "große rochade", "grosse rochade", "lange rochade",
+                           "springer g1 auf f3", "turm f auf d1", "turm f1 auf d1"] {
                 SFCustomLanguageModelData.PhraseCount(phrase: phrase, count: 100)
             }
             
@@ -175,6 +180,10 @@ enum ChessLanguageModel {
                 SFCustomLanguageModelData.TemplatePhraseCountGenerator.Template(
                     "<piece> <square>",
                     count: 6000
+                )
+                SFCustomLanguageModelData.TemplatePhraseCountGenerator.Template(
+                    "<piece> <file> auf <square>",
+                    count: 3000
                 )
                 SFCustomLanguageModelData.TemplatePhraseCountGenerator.Template(
                     "<file> <spokenRank>",
@@ -220,6 +229,10 @@ enum ChessLanguageModel {
             for word in spokenRanks {
                 SFCustomLanguageModelData.PhraseCount(phrase: word, count: 150)
             }
+
+            for phrase in ["knight g1 to f3", "rook f to d1", "rook g1 to f3"] {
+                SFCustomLanguageModelData.PhraseCount(phrase: phrase, count: 100)
+            }
             
             SFCustomLanguageModelData.PhraseCountsFromTemplates(
                 classes: [
@@ -242,6 +255,10 @@ enum ChessLanguageModel {
                 SFCustomLanguageModelData.TemplatePhraseCountGenerator.Template(
                     "<piece> <square>",
                     count: 6000
+                )
+                SFCustomLanguageModelData.TemplatePhraseCountGenerator.Template(
+                    "<piece> <file> to <square>",
+                    count: 2500
                 )
                 SFCustomLanguageModelData.TemplatePhraseCountGenerator.Template(
                     "<file> <spokenRank>",

@@ -690,12 +690,18 @@ final class PersonalVocabularyStore {
             for word in spokenFiles {
                 phrases.append((word, 180))
             }
+            for phrase in ["rook f to d1", "rook g1 to f3", "knight g1 to f3"] {
+                phrases.append((phrase, 160))
+            }
         case .german:
             let spokenRanks = [
                 "eins", "zwei", "drei", "vier", "funf", "fünf", "sechs", "sieben", "acht"
             ]
             for word in spokenRanks {
                 phrases.append((word, 140))
+            }
+            for phrase in ["turm f auf d1", "springer g1 auf f3", "turm f1 auf d1"] {
+                phrases.append((phrase, 160))
             }
         }
 

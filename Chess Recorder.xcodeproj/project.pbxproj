@@ -23,6 +23,29 @@
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
+/* Begin PBXShellScriptBuildPhase section */
+		17F0A1012FFF00000026DE7C /* Set Date Build Number */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Set Date Build Number";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "\"${SRCROOT}/Scripts/set-build-number.sh\"\n";
+			enableUserScriptSandboxing = 0;
+		};
+/* End PBXShellScriptBuildPhase section */
+
 /* Begin PBXFrameworksBuildPhase section */
 		1760A27B2FFED5F20026DE7C /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
@@ -62,6 +85,7 @@
 				1760A27A2FFED5F20026DE7C /* Sources */,
 				1760A27B2FFED5F20026DE7C /* Frameworks */,
 				1760A27C2FFED5F20026DE7C /* Resources */,
+				17F0A1012FFF00000026DE7C /* Set Date Build Number */,
 			);
 			buildRules = (
 			);
@@ -266,7 +290,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 20260709_1600;
 				DEVELOPMENT_TEAM = 7ZWX577M73;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
@@ -302,7 +326,7 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
+				CURRENT_PROJECT_VERSION = 20260709_1600;
 				DEVELOPMENT_TEAM = 7ZWX577M73;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;

@@ -22,26 +22,48 @@ nonisolated enum MoveInterpreter {
         if let specificCastle = extractSpecificCastling(from: normalized, language: language) {
             return [specificCastle]
         }
-        
-        if let personalVocabulary {
-            let learned = personalVocabulary.candidateMoves(for: normalized, language: language)
-            if !learned.isEmpty {
-                return learned
+
+        var results: [String] = []
+        var seen = Set<String>()
+
+        func append(_ moves: [String]) {
+            for move in moves {
+                let key = move.lowercased()
+                guard seen.insert(key).inserted else { continue }
+                results.append(move)
             }
         }
-        
+
+        if let personalVocabulary {
+            append(personalVocabulary.candidateMoves(for: normalized, language: language))
+        }
+
+        var interpreted: [String] = []
         // Always interpret the trailing phrase — ASR accumulates old failed attempts.
         let windowSizes = [10, 8, 6, 4, 3, 2, 1].filter { $0 <= allTokens.count }
         for size in windowSizes {
             let tokens = Array(allTokens.suffix(size))
             let phrase = tokens.joined(separator: " ")
-            let results = candidatesFromTokens(tokens, normalized: phrase, language: language)
-            if !results.isEmpty {
-                return results
+            let tokenResults = candidatesFromTokens(tokens, normalized: phrase, language: language)
+            if !tokenResults.isEmpty {
+                interpreted = tokenResults
+                break
             }
         }
-        
-        return []
+
+        // Prefer parsed moves over learned shortcuts when both are available.
+        return deduplicatedMoves([interpreted, results].flatMap { $0 })
+    }
+
+    private static func deduplicatedMoves(_ moves: [String]) -> [String] {
+        var results: [String] = []
+        var seen = Set<String>()
+        for move in moves {
+            let key = move.lowercased()
+            guard seen.insert(key).inserted else { continue }
+            results.append(move)
+        }
+        return results
     }
     
     private static func candidatesFromTokens(
@@ -160,6 +182,15 @@ nonisolated enum MoveInterpreter {
                    let trailingRank = ChessTranscriptNormalizer.spokenRankDigit(for: words[index + 1], language: language),
                    String(square.suffix(1)) != trailingRank {
                     result.append(String(file) + trailingRank)
+                    index += 2
+                    continue
+                }
+
+                if String(square.suffix(1)) == "3",
+                   index + 1 < words.count,
+                   words[index + 1] == "6",
+                   let file = square.first {
+                    result.append(String(file) + "6")
                     index += 2
                     continue
                 }

@@ -99,7 +99,9 @@ enum ChessKitMapping {
             cleaned = "O-O"
         }
 
-        if let first = cleaned.first,
+        // Pawn captures use a lowercase file letter (bxc6). Do not treat leading "b" as bishop.
+        if !isPawnFileCaptureSAN(cleaned),
+           let first = cleaned.first,
            "nbrqk".contains(first.lowercased()),
            cleaned.count > 1,
            let second = cleaned.dropFirst().first,
@@ -108,6 +110,14 @@ enum ChessKitMapping {
         }
 
         return cleaned
+    }
+
+    /// True for pawn file captures such as `bxc6` or `exd5`.
+    static func isPawnFileCaptureSAN(_ notation: String) -> Bool {
+        notation.range(
+            of: #"^[a-h]x[a-h][1-8]"#,
+            options: .regularExpression
+        ) != nil
     }
 
     static func parseCoordinateMove(_ notation: String) -> (from: ChessPosition, to: ChessPosition, promotion: PieceType?)? {

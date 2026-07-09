@@ -10,6 +10,7 @@ import Foundation
 enum LearnedPhraseSource: String, Codable {
     case user
     case builtIn
+    case recognitionOnly
 }
 
 struct LearnedCorrection: Codable, Identifiable, Equatable {
@@ -141,10 +142,9 @@ final class PersonalVocabularyStore {
 
     @discardableResult
     func seedCommonPhrasesIfNeeded(for language: RecognitionLanguage) -> Int {
-        let phrases = Self.commonTrainingPhrases(for: language)
         var changes = 0
 
-        for item in phrases {
+        for item in Self.commonTrainingPhrases(for: language) {
             let changed = upsert(
                 phrase: item.phrase,
                 moveNotation: item.moveNotation,
@@ -152,9 +152,18 @@ final class PersonalVocabularyStore {
                 minimumCount: item.count,
                 source: .builtIn
             )
-            if changed {
-                changes += 1
-            }
+            if changed { changes += 1 }
+        }
+
+        for item in Self.commonRecognitionPhrases(for: language) {
+            let changed = upsert(
+                phrase: item.phrase,
+                moveNotation: item.phrase,
+                language: language,
+                minimumCount: item.count,
+                source: .recognitionOnly
+            )
+            if changed { changes += 1 }
         }
 
         if changes > 0 {
@@ -272,6 +281,10 @@ final class PersonalVocabularyStore {
         })
 
         for entry in recognitionEntries(for: language) {
+            if entry.source == .recognitionOnly {
+                continue
+            }
+
             let learnedPhrase = Self.normalizePhrase(entry.phrase, language: language)
             let learnedWords = learnedPhrase
                 .split(separator: " ")
@@ -606,10 +619,15 @@ final class PersonalVocabularyStore {
                 ("nf3", "nf3", 300), ("knight f3", "nf3", 350), ("knight f 3", "nf3", 300),
                 ("nf6", "nf6", 300), ("knight f6", "nf6", 360), ("knight f 6", "nf6", 320),
                 ("nc3", "nc3", 260), ("knight c3", "nc3", 300), ("knight c 3", "nc3", 260),
+                ("nc6", "nc6", 300), ("knight c6", "nc6", 380), ("knight c 6", "nc6", 340),
                 ("bf4", "bf4", 220), ("bishop f4", "bf4", 260),
                 ("bb5", "bb5", 220), ("bishop b5", "bb5", 260),
                 ("g3", "g3", 220), ("g 3", "g3", 200),
                 ("b3", "b3", 200), ("b 3", "b3", 180),
+                ("f6", "f6", 280), ("f 6", "f6", 260), ("g6", "g6", 240), ("g 6", "g6", 220),
+                ("c6", "c6", 280), ("c 6", "c6", 260),
+                ("g1", "g1", 220), ("g 1", "g1", 200), ("c3", "c3", 240), ("c 3", "c3", 220),
+                ("h5", "h5", 200), ("h 5", "h5", 180), ("a3", "a3", 180), ("a 3", "a3", 160),
                 ("castle", "o-o", 240), ("castle kingside", "o-o", 260),
                 ("castle queenside", "o-o-o", 220)
             ]
@@ -624,16 +642,64 @@ final class PersonalVocabularyStore {
                 ("sf3", "nf3", 280), ("springer f3", "nf3", 360), ("springer f 3", "nf3", 320), ("springer f drei", "nf3", 380),
                 ("sf6", "nf6", 280), ("springer f6", "nf6", 360), ("springer f 6", "nf6", 320), ("springer f sechs", "nf6", 380),
                 ("sc3", "nc3", 240), ("springer c3", "nc3", 300), ("springer c drei", "nc3", 320),
+                ("sc6", "nc6", 280), ("springer c6", "nc6", 380), ("springer c 6", "nc6", 340),
+                ("springer c sechs", "nc6", 400),
                 ("lf4", "bf4", 220), ("laufer f4", "bf4", 260), ("läufer f4", "bf4", 260), ("laufer f vier", "bf4", 280), ("läufer f vier", "bf4", 280),
                 ("lb5", "bb5", 220), ("laufer b5", "bb5", 260), ("läufer b5", "bb5", 260),
                 ("g3", "g3", 220), ("g 3", "g3", 200), ("g drei", "g3", 230),
                 ("b3", "b3", 200), ("b 3", "b3", 180), ("b drei", "b3", 210),
+                ("f6", "f6", 280), ("f 6", "f6", 260), ("f sechs", "f6", 300),
+                ("c6", "c6", 280), ("c 6", "c6", 260), ("c sechs", "c6", 300),
+                ("g6", "g6", 240), ("g 6", "g6", 220), ("g sechs", "g6", 260),
+                ("g1", "g1", 220), ("g 1", "g1", 200), ("g eins", "g1", 240),
+                ("c3", "c3", 240), ("c 3", "c3", 220), ("c drei", "c3", 250),
+                ("h5", "h5", 200), ("h 5", "h5", 180), ("h funf", "h5", 210), ("h fünf", "h5", 210),
+                ("a3", "a3", 180), ("a 3", "a3", 160), ("a drei", "a3", 190),
                 ("kurz rochiert", "o-o", 240), ("kleine rochade", "o-o", 240), ("kurz rochade", "o-o", 240),
                 ("kurze rochade", "o-o", 240), ("rochade", "o-o", 180),
                 ("lang rochiert", "o-o-o", 240), ("lange rochade", "o-o-o", 260),
                 ("grosse rochade", "o-o-o", 240), ("große rochade", "o-o-o", 240)
             ]
         }
+    }
+
+    /// Phrases that boost on-device recognition only — excluded from move mapping.
+    private static func commonRecognitionPhrases(for language: RecognitionLanguage) -> [(phrase: String, count: Int)] {
+        let files = Array("abcdefgh").map(String.init)
+        let digits = (1...8).map(String.init)
+
+        var phrases: [(String, Int)] = []
+        for file in files {
+            phrases.append((file, 160))
+        }
+        for digit in digits {
+            phrases.append((digit, 160))
+        }
+
+        switch language {
+        case .english:
+            let spokenRanks = [
+                "one", "two", "three", "four", "five", "six", "seven", "eight"
+            ]
+            let spokenFiles = [
+                "see", "sea", "bee", "dee", "gee", "aitch"
+            ]
+            for word in spokenRanks {
+                phrases.append((word, 140))
+            }
+            for word in spokenFiles {
+                phrases.append((word, 180))
+            }
+        case .german:
+            let spokenRanks = [
+                "eins", "zwei", "drei", "vier", "funf", "fünf", "sechs", "sieben", "acht"
+            ]
+            for word in spokenRanks {
+                phrases.append((word, 140))
+            }
+        }
+
+        return phrases
     }
     
     private func bumpRevision(for language: RecognitionLanguage) {

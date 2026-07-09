@@ -481,8 +481,9 @@ class SpeechRecognizer {
                 "1", "2", "3", "4", "5", "6", "7", "8",
                 "knight", "bishop", "rook", "queen", "king", "pawn",
                 "one", "two", "three", "four", "five", "six", "seven", "eight",
+                "see", "sea", "bee", "dee", "gee", "aitch",
                 "takes", "take", "captures", "capture", "castle",
-                "e4", "d4", "exd5", "nf3", "nf6", "nxd4", "qxb4", "O-O"
+                "e4", "d4", "exd5", "nf3", "nf6", "nc3", "nc6", "nxd4", "qxb4", "O-O"
             ]
         case .german:
             words = [
@@ -492,7 +493,7 @@ class SpeechRecognizer {
                 "springer", "laufer", "turm", "dame", "konig", "bauer",
                 "schlagt", "schlägt", "nimmt", "rochiert", "rochade", "kleine rochade", "große rochade",
                 "zuruck", "zurück", "rückgängig",
-                "e4", "d4", "exd4", "exd5", "nf3", "nxd4", "sf3", "sxd4", "dxb4", "O-O", "O-O-O"
+                "e4", "d4", "exd4", "exd5", "nf3", "nf6", "nc3", "nc6", "nxd4", "sf3", "sxd4", "dxb4", "O-O", "O-O-O"
             ]
         }
         

@@ -171,7 +171,7 @@ enum ChessTranscriptNormalizer {
             "one|two|three|four|five|six|seven|eight|" +
             "eins|zwei|drei|vier|funf|fünf|sechs|sieben|acht"
         guard let regex = try? NSRegularExpression(
-            pattern: "\\b([a-h])([1-8])\\s+(\(spokenPattern))\\b",
+            pattern: "\\b([a-h])([1-8])\\s+(\(spokenPattern)|6|7|8)\\b",
             options: .caseInsensitive
         ) else {
             return text
@@ -184,7 +184,10 @@ enum ChessTranscriptNormalizer {
         for match in matches.reversed() {
             let wrongRank = nsText.substring(with: match.range(at: 2))
             let spoken = nsText.substring(with: match.range(at: 3))
-            guard let intendedRank = spokenRankDigit(for: spoken, language: language),
+            guard let intendedRank = spokenRankDigit(for: spoken, language: language)
+                    ?? (spoken.allSatisfy(\.isNumber) ? spoken : nil),
+                  intendedRank.count == 1,
+                  "12345678".contains(intendedRank),
                   intendedRank != wrongRank else {
                 continue
             }

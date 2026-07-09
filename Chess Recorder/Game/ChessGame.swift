@@ -145,10 +145,12 @@ class ChessGame {
         let normalized = ChessKitMapping.normalizeSAN(notation)
         let position = kitBoard.position
 
-        guard let parsed = Move(san: normalized, position: position)
-            ?? Move(san: normalized.uppercased(), position: position) else {
-            return false
-        }
+        let parsed = Move(san: normalized, position: position)
+            ?? (ChessKitMapping.isPawnFileCaptureSAN(normalized)
+                ? nil
+                : Move(san: normalized.uppercased(), position: position))
+
+        guard let parsed else { return false }
 
         return applyParsedMove(parsed)
     }

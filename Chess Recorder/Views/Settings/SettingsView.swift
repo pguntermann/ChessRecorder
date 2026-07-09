@@ -1,0 +1,376 @@
+//
+//  SettingsView.swift
+//  Chess Recorder
+//
+
+import SwiftUI
+
+struct SettingsView: View {
+    @Environment(\.dismiss) private var dismiss
+    @Bindable var settingsStore: SettingsStore
+    @Bindable var vocabularyStore: PersonalVocabularyStore
+    var onLanguageChanged: (RecognitionLanguage) -> Void
+    var onVocabularyChanged: (RecognitionLanguage) -> Void
+    
+    @State private var lightColor: Color
+    @State private var darkColor: Color
+    @State private var coordinateColor: Color
+    @State private var selectedLanguage: RecognitionLanguage
+    @State private var showingAddPhrase = false
+    @State private var showingAddCorrection = false
+    
+    init(
+        settingsStore: SettingsStore,
+        vocabularyStore: PersonalVocabularyStore,
+        onLanguageChanged: @escaping (RecognitionLanguage) -> Void,
+        onVocabularyChanged: @escaping (RecognitionLanguage) -> Void
+    ) {
+        self.settingsStore = settingsStore
+        self.vocabularyStore = vocabularyStore
+        self.onLanguageChanged = onLanguageChanged
+        self.onVocabularyChanged = onVocabularyChanged
+        let settings = settingsStore.settings
+        _lightColor = State(initialValue: settings.lightSquareColor.color)
+        _darkColor = State(initialValue: settings.darkSquareColor.color)
+        _coordinateColor = State(initialValue: settings.coordinateColor.color)
+        _selectedLanguage = State(initialValue: settings.defaultRecognitionLanguage)
+    }
+    
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Picker("Language", selection: $selectedLanguage) {
+                        ForEach(RecognitionLanguage.allCases, id: \.self) { language in
+                            Text("\(language.flag) \(language.displayName)").tag(language)
+                        }
+                    }
+                    .onChange(of: selectedLanguage) { _, language in
+                        settingsStore.update { $0.defaultLanguage = language.rawValue }
+                        onLanguageChanged(language)
+                    }
+                    
+                    VStack(alignment: .leading) {
+                        Text(dictationPauseLabel)
+                        Slider(value: Binding(
+                            get: { settingsStore.settings.dictationPauseSeconds },
+                            set: { newValue in
+                                settingsStore.update { $0.dictationPauseSeconds = newValue }
+                            }
+                        ), in: 0.3...2.0, step: 0.05)
+                    }
+                } header: {
+                    Text("Speech")
+                } footer: {
+                    Text("How long to wait after you stop speaking before a move is interpreted. A countdown appears in the live transcript while recording.")
+                }
+                
+                Section {
+                    Toggle("Show engine analysis", isOn: Binding(
+                        get: { settingsStore.settings.engineAnalysisVisible },
+                        set: { newValue in
+                            settingsStore.update { $0.engineAnalysisVisible = newValue }
+                        }
+                    ))
+
+                    Toggle("Main line in algebraic notation", isOn: Binding(
+                        get: { settingsStore.settings.engineAnalysisUseAlgebraicNotation },
+                        set: { newValue in
+                            settingsStore.update { $0.engineAnalysisUseAlgebraicNotation = newValue }
+                        }
+                    ))
+
+                    Toggle("Show best-move arrow on board", isOn: Binding(
+                        get: { settingsStore.settings.engineAnalysisShowBoardArrow },
+                        set: { newValue in
+                            settingsStore.update { $0.engineAnalysisShowBoardArrow = newValue }
+                        }
+                    ))
+
+                    Toggle("Show evaluation bar", isOn: Binding(
+                        get: { settingsStore.settings.engineAnalysisShowEvaluationBar },
+                        set: { newValue in
+                            settingsStore.update { $0.engineAnalysisShowEvaluationBar = newValue }
+                        }
+                    ))
+
+                    VStack(alignment: .leading) {
+                        Text(engineDepthLabel)
+                        Slider(value: Binding(
+                            get: { settingsStore.settings.engineAnalysisDepth },
+                            set: { newValue in
+                                settingsStore.update { $0.engineAnalysisDepth = newValue.rounded() }
+                            }
+                        ), in: 1...AppSettings.uncappedEngineAnalysisDepth, step: 1)
+                    }
+                } header: {
+                    Text("Engine")
+                }
+                
+                Section {
+                    LabeledContent("Site") {
+                        TextField("?", text: Binding(
+                            get: { settingsStore.settings.pgnSite },
+                            set: { newValue in
+                                settingsStore.update { $0.pgnSite = newValue }
+                            }
+                        ))
+                        .multilineTextAlignment(.trailing)
+                        .textInputAutocapitalization(.words)
+                        .autocorrectionDisabled()
+                    }
+                    
+                    LabeledContent("White") {
+                        TextField("?", text: Binding(
+                            get: { settingsStore.settings.pgnWhite },
+                            set: { newValue in
+                                settingsStore.update { $0.pgnWhite = newValue }
+                            }
+                        ))
+                        .multilineTextAlignment(.trailing)
+                        .textInputAutocapitalization(.words)
+                        .autocorrectionDisabled()
+                    }
+                    
+                    LabeledContent("Black") {
+                        TextField("?", text: Binding(
+                            get: { settingsStore.settings.pgnBlack },
+                            set: { newValue in
+                                settingsStore.update { $0.pgnBlack = newValue }
+                            }
+                        ))
+                        .multilineTextAlignment(.trailing)
+                        .textInputAutocapitalization(.words)
+                        .autocorrectionDisabled()
+                    }
+                    
+                    Button {
+                        swapPGNPlayers()
+                    } label: {
+                        Label("Switch White & Black", systemImage: "arrow.left.arrow.right")
+                    }
+                } header: {
+                    Text("PGN")
+                } footer: {
+                    Text("Player names are used for [White] and [Black] tags in exported PGN. Use Switch to swap sides between games.")
+                }
+                
+                Section {
+                    Toggle("Touch input", isOn: Binding(
+                        get: { settingsStore.settings.touchInputEnabled },
+                        set: { newValue in
+                            settingsStore.update { $0.touchInputEnabled = newValue }
+                        }
+                    ))
+                    
+                    VStack(alignment: .leading) {
+                        Text("Piece size: \(Int(settingsStore.settings.pieceSizePercent * 100))%")
+                        Slider(value: Binding(
+                            get: { settingsStore.settings.pieceSizePercent },
+                            set: { newValue in
+                                settingsStore.update { $0.pieceSizePercent = newValue }
+                            }
+                        ), in: 0.5...1.0, step: 0.05)
+                    }
+                    
+                    VStack(alignment: .leading) {
+                        Text(moveAnimationLabel)
+                        Slider(value: Binding(
+                            get: { settingsStore.settings.moveAnimationDuration },
+                            set: { newValue in
+                                settingsStore.update { $0.moveAnimationDuration = newValue }
+                            }
+                        ), in: 0...1.0, step: 0.05)
+                    }
+                    
+                    ColorPicker("Light squares", selection: $lightColor, supportsOpacity: false)
+                        .onChange(of: lightColor) { _, color in
+                            settingsStore.update { $0.lightSquareColor = CodableColor(color) }
+                        }
+                    
+                    ColorPicker("Dark squares", selection: $darkColor, supportsOpacity: false)
+                        .onChange(of: darkColor) { _, color in
+                            settingsStore.update { $0.darkSquareColor = CodableColor(color) }
+                        }
+                } header: {
+                    Text("Board")
+                } footer: {
+                    Text("When Touch input is enabled, tap a piece and then a destination square to make moves on the board.")
+                }
+                
+                Section {
+                    Button {
+                        showingAddPhrase = true
+                    } label: {
+                        Label("Add phrase", systemImage: "plus")
+                    }
+
+                    if learnedEntries.isEmpty {
+                        Text("No custom phrases yet. Use “Add phrase” or teach a phrase after a failed move.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(learnedEntries) { entry in
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(entry.phrase)
+                                    .font(.subheadline)
+                                Text("→ \(entry.moveNotation)")
+                                    .font(.system(.caption, design: .monospaced))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .onDelete(perform: deleteLearnedPhrases)
+                    }
+                    
+                    if !learnedEntries.isEmpty {
+                        Button("Clear \(selectedLanguage.displayName) phrases", role: .destructive) {
+                            vocabularyStore.reset(language: selectedLanguage)
+                            onVocabularyChanged(selectedLanguage)
+                        }
+                    }
+                } header: {
+                    Text("Learned phrases")
+                } footer: {
+                    Text("This section is for your own custom phrases, which boost on-device speech recognition and map your wording to SAN.")
+                }
+
+                Section {
+                    Button {
+                        showingAddCorrection = true
+                    } label: {
+                        Label("Add correction", systemImage: "wand.and.stars")
+                    }
+
+                    if correctionEntries.isEmpty {
+                        Text("No custom corrections yet. Add one for repeated recognition mistakes like “9” -> “knight”.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(correctionEntries) { entry in
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(entry.heard)
+                                    .font(.subheadline)
+                                Text("→ \(entry.replacement)")
+                                    .font(.system(.caption, design: .monospaced))
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .onDelete(perform: deleteCorrections)
+                    }
+                } header: {
+                    Text("Speech Corrections")
+                } footer: {
+                    Text("Corrections are applied before move parsing and phrase matching. Use them for recurring ASR mistakes such as digits, homophones, or misheard piece names.")
+                }
+                
+                Section("Coordinates") {
+                    ColorPicker("Color", selection: $coordinateColor, supportsOpacity: false)
+                        .onChange(of: coordinateColor) { _, color in
+                            settingsStore.update { $0.coordinateColor = CodableColor(color) }
+                        }
+                    
+                    HStack {
+                        Text("Font size")
+                        Spacer()
+                        Text("\(Int(settingsStore.settings.coordinateFontSize)) pt")
+                            .foregroundStyle(.secondary)
+                    }
+                    Slider(value: Binding(
+                        get: { settingsStore.settings.coordinateFontSize },
+                        set: { newValue in
+                            settingsStore.update { $0.coordinateFontSize = newValue }
+                        }
+                    ), in: 6...18, step: 1)
+                }
+                
+                Section {
+                    Button("Reset to defaults", role: .destructive) {
+                        settingsStore.resetToDefaults()
+                        applyLocalStateFromStore()
+                        onLanguageChanged(settingsStore.settings.defaultRecognitionLanguage)
+                    }
+                }
+            }
+            .navigationTitle("Settings")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+        .sheet(isPresented: $showingAddPhrase) {
+            TeachPhraseView(
+                language: selectedLanguage,
+                initialPhrase: "",
+                attemptedMoves: []
+            ) { phrase, move in
+                vocabularyStore.learn(phrase: phrase, moveNotation: move, language: selectedLanguage)
+                onVocabularyChanged(selectedLanguage)
+            }
+        }
+        .sheet(isPresented: $showingAddCorrection) {
+            TeachCorrectionView(language: selectedLanguage) { heard, replacement in
+                vocabularyStore.learnCorrection(heard: heard, replacement: replacement, language: selectedLanguage)
+                onVocabularyChanged(selectedLanguage)
+            }
+        }
+    }
+    
+    private var learnedEntries: [LearnedPhrase] {
+        vocabularyStore.entries(for: selectedLanguage)
+    }
+
+    private var correctionEntries: [LearnedCorrection] {
+        vocabularyStore.correctionEntries(for: selectedLanguage)
+    }
+    
+    private var moveAnimationLabel: String {
+        let duration = settingsStore.settings.moveAnimationDuration
+        if duration <= 0 {
+            return "Move animation: Instant"
+        }
+        return String(format: "Move animation: %.2f s", duration)
+    }
+    
+    private var dictationPauseLabel: String {
+        String(format: "Dictation pause: %.2f s", settingsStore.settings.dictationPauseSeconds)
+    }
+
+    private var engineDepthLabel: String {
+        if settingsStore.settings.isEngineAnalysisUncapped {
+            return "Analysis Max Depth: Uncapped"
+        }
+        return "Analysis Max Depth: \(Int(settingsStore.settings.engineAnalysisDepth))"
+    }
+    
+    private func swapPGNPlayers() {
+        settingsStore.update {
+            let white = $0.pgnWhite
+            $0.pgnWhite = $0.pgnBlack
+            $0.pgnBlack = white
+        }
+    }
+    
+    private func deleteLearnedPhrases(at indexSet: IndexSet) {
+        for index in indexSet {
+            vocabularyStore.remove(id: learnedEntries[index].id)
+        }
+        onVocabularyChanged(selectedLanguage)
+    }
+
+    private func deleteCorrections(at indexSet: IndexSet) {
+        for index in indexSet {
+            vocabularyStore.remove(id: correctionEntries[index].id)
+        }
+        onVocabularyChanged(selectedLanguage)
+    }
+
+    private func applyLocalStateFromStore() {
+        let settings = settingsStore.settings
+        lightColor = settings.lightSquareColor.color
+        darkColor = settings.darkSquareColor.color
+        coordinateColor = settings.coordinateColor.color
+        selectedLanguage = settings.defaultRecognitionLanguage
+    }
+}

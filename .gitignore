@@ -1,0 +1,32 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Xcode user-specific data
+*.xcuserstate
+**/xcuserdata/
+
+# Xcode build products
+build/
+DerivedData/
+*.ipa
+*.dSYM.zip
+*.dSYM
+
+# Swift Package Manager (local checkouts/build cache)
+.build/
+.swiftpm/configuration/
+.swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
+
+# Stockfish NNUE weights (downloaded by Scripts/fetch-stockfish-nnue.sh)
+StockfishNNUE/
+
+# Alternate piece sets (not bundled in the app; kept locally only)
+chesspieces/
+
+# Editor / tooling
+*.swp
+*~
+.idea/
+.vscode/

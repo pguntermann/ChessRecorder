@@ -1,0 +1,35 @@
+{
+  "coordinateColor" : {
+    "alpha" : 1,
+    "blue" : 0.35,
+    "green" : 0.22,
+    "red" : 0.12
+  },
+  "coordinateFontName" : "",
+  "coordinateFontSize" : 14,
+  "darkSquareColor" : {
+    "alpha" : 1,
+    "blue" : 0.71,
+    "green" : 0.52,
+    "red" : 0.36
+  },
+  "defaultLanguage" : "de-DE",
+  "dictationPauseSeconds" : 0.9,
+  "engineAnalysisDepth" : 10,
+  "engineAnalysisShowEvaluationBar" : false,
+  "engineAnalysisShowBoardArrow" : true,
+  "engineAnalysisUseAlgebraicNotation" : true,
+  "engineAnalysisVisible" : true,
+  "lightSquareColor" : {
+    "alpha" : 1,
+    "blue" : 0.98,
+    "green" : 0.93,
+    "red" : 0.86
+  },
+  "moveAnimationDuration" : 0.35,
+  "pgnBlack" : "?",
+  "pgnSite" : "?",
+  "pgnWhite" : "?",
+  "pieceSizePercent" : 0.9,
+  "touchInputEnabled" : true
+}

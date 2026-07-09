@@ -6,6 +6,11 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		17DC3EF82FFF8E9800054BF0 /* LucidEngine in Frameworks */ = {isa = PBXBuildFile; productRef = 17B0A0022FFED600026DE7C /* LucidEngine */; };
+		17E0A0102FFF9100026DE7C /* ChessKit in Frameworks */ = {isa = PBXBuildFile; productRef = 17E0A0112FFF9100026DE7C /* ChessKit */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		1760A27E2FFED5F20026DE7C /* Chess Recorder.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Chess Recorder.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -23,6 +28,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				17DC3EF82FFF8E9800054BF0 /* LucidEngine in Frameworks */,
+				17E0A0102FFF9100026DE7C /* ChessKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -65,6 +72,8 @@
 			);
 			name = "Chess Recorder";
 			packageProductDependencies = (
+				17B0A0022FFED600026DE7C /* LucidEngine */,
+				17E0A0112FFF9100026DE7C /* ChessKit */,
 			);
 			productName = "Chess Recorder";
 			productReference = 1760A27E2FFED5F20026DE7C /* Chess Recorder.app */;
@@ -94,6 +103,10 @@
 			);
 			mainGroup = 1760A2752FFED5F20026DE7C;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				17B0A0012FFED600026DE7C /* XCRemoteSwiftPackageReference "lucid-engine" */,
+				17E0A0122FFF9100026DE7C /* XCRemoteSwiftPackageReference "chesskit-swift" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 1760A27F2FFED5F20026DE7C /* Products */;
 			projectDirPath = "";
@@ -163,6 +176,7 @@
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = x86_64;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_DYNAMIC_NO_PIC = NO;
 				GCC_NO_COMMON_BLOCKS = YES;
@@ -226,6 +240,7 @@
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				"EXCLUDED_ARCHS[sdk=iphonesimulator*]" = x86_64;
 				GCC_C_LANGUAGE_STANDARD = gnu17;
 				GCC_NO_COMMON_BLOCKS = YES;
 				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
@@ -249,10 +264,14 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 7ZWX577M73;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Required to dictate moves with voice";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Required to dictate moves with voice";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -265,6 +284,7 @@
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.pguntermann.Chess-Recorder";
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
@@ -280,10 +300,14 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 7ZWX577M73;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Required to dictate moves with voice";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Required to dictate moves with voice";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -296,6 +320,7 @@
 				MARKETING_VERSION = 1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = "com.pguntermann.Chess-Recorder";
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
@@ -328,6 +353,38 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		17B0A0012FFED600026DE7C /* XCRemoteSwiftPackageReference "lucid-engine" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/CarlosDanielDev/lucid-engine";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.0.0;
+			};
+		};
+		17E0A0122FFF9100026DE7C /* XCRemoteSwiftPackageReference "chesskit-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/chesskit-app/chesskit-swift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.9.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		17B0A0022FFED600026DE7C /* LucidEngine */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 17B0A0012FFED600026DE7C /* XCRemoteSwiftPackageReference "lucid-engine" */;
+			productName = LucidEngine;
+		};
+		17E0A0112FFF9100026DE7C /* ChessKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 17E0A0122FFF9100026DE7C /* XCRemoteSwiftPackageReference "chesskit-swift" */;
+			productName = ChessKit;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 1760A2762FFED5F20026DE7C /* Project object */;
 }

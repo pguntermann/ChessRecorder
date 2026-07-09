@@ -1,0 +1,630 @@
+//
+//  PersonalVocabularyStore.swift
+//  Chess Recorder
+//
+//  User-taught speech phrases for custom language model boosting and move mapping.
+//
+
+import Foundation
+
+enum LearnedPhraseSource: String, Codable {
+    case user
+    case builtIn
+}
+
+struct LearnedCorrection: Codable, Identifiable, Equatable {
+    let id: UUID
+    var heard: String
+    var replacement: String
+    var languageCode: String
+    var updatedAt: Date
+
+    var language: RecognitionLanguage? {
+        RecognitionLanguage(rawValue: languageCode)
+    }
+}
+
+struct LearnedPhrase: Codable, Identifiable, Equatable {
+    let id: UUID
+    var phrase: String
+    var moveNotation: String
+    var languageCode: String
+    var count: Int
+    var updatedAt: Date
+    var source: LearnedPhraseSource
+    
+    var language: RecognitionLanguage? {
+        RecognitionLanguage(rawValue: languageCode)
+    }
+
+    init(
+        id: UUID,
+        phrase: String,
+        moveNotation: String,
+        languageCode: String,
+        count: Int,
+        updatedAt: Date,
+        source: LearnedPhraseSource = .user
+    ) {
+        self.id = id
+        self.phrase = phrase
+        self.moveNotation = moveNotation
+        self.languageCode = languageCode
+        self.count = count
+        self.updatedAt = updatedAt
+        self.source = source
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case phrase
+        case moveNotation
+        case languageCode
+        case count
+        case updatedAt
+        case source
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        phrase = try container.decode(String.self, forKey: .phrase)
+        moveNotation = try container.decode(String.self, forKey: .moveNotation)
+        languageCode = try container.decode(String.self, forKey: .languageCode)
+        count = try container.decode(Int.self, forKey: .count)
+        updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+        source = try container.decodeIfPresent(LearnedPhraseSource.self, forKey: .source) ?? .user
+    }
+}
+
+private struct PersonalVocabularyFile: Codable {
+    var phrases: [LearnedPhrase]
+    var corrections: [LearnedCorrection]
+    var revisions: [String: Int]
+
+    enum CodingKeys: String, CodingKey {
+        case phrases
+        case corrections
+        case revisions
+    }
+
+    init(phrases: [LearnedPhrase], corrections: [LearnedCorrection], revisions: [String: Int]) {
+        self.phrases = phrases
+        self.corrections = corrections
+        self.revisions = revisions
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        phrases = try container.decodeIfPresent([LearnedPhrase].self, forKey: .phrases) ?? []
+        corrections = try container.decodeIfPresent([LearnedCorrection].self, forKey: .corrections) ?? []
+        revisions = try container.decodeIfPresent([String: Int].self, forKey: .revisions) ?? [:]
+    }
+}
+
+@Observable
+final class PersonalVocabularyStore {
+    private(set) var phrases: [LearnedPhrase] = []
+    private(set) var corrections: [LearnedCorrection] = []
+    private var revisions: [String: Int] = [:]
+    
+    private let storageURL: URL
+    
+    init() {
+        let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        storageURL = directory.appending(path: "personal-vocabulary.json")
+        load()
+    }
+    
+    func entries(for language: RecognitionLanguage) -> [LearnedPhrase] {
+        phrases
+            .filter { $0.languageCode == language.rawValue && $0.source == .user }
+            .sorted { $0.updatedAt > $1.updatedAt }
+    }
+
+    func correctionEntries(for language: RecognitionLanguage) -> [LearnedCorrection] {
+        corrections
+            .filter { $0.languageCode == language.rawValue }
+            .sorted { $0.updatedAt > $1.updatedAt }
+    }
+
+    private func recognitionEntries(for language: RecognitionLanguage) -> [LearnedPhrase] {
+        phrases
+            .filter { $0.languageCode == language.rawValue }
+            .sorted { $0.updatedAt > $1.updatedAt }
+    }
+    
+    func revision(for language: RecognitionLanguage) -> Int {
+        revisions[language.rawValue] ?? 0
+    }
+
+    @discardableResult
+    func seedCommonPhrasesIfNeeded(for language: RecognitionLanguage) -> Int {
+        let phrases = Self.commonTrainingPhrases(for: language)
+        var changes = 0
+
+        for item in phrases {
+            let changed = upsert(
+                phrase: item.phrase,
+                moveNotation: item.moveNotation,
+                language: language,
+                minimumCount: item.count,
+                source: .builtIn
+            )
+            if changed {
+                changes += 1
+            }
+        }
+
+        if changes > 0 {
+            bumpRevision(for: language)
+            save()
+        }
+
+        return changes
+    }
+    
+    @discardableResult
+    func learn(phrase: String, moveNotation: String, language: RecognitionLanguage) -> LearnedPhrase {
+        let entry = upsertEntry(
+            phrase: phrase,
+            moveNotation: moveNotation,
+            language: language,
+            minimumCount: 100,
+            increment: 50
+        )
+        bumpRevision(for: language)
+        save()
+        return entry
+    }
+
+    @discardableResult
+    func learnCorrection(heard: String, replacement: String, language: RecognitionLanguage) -> LearnedCorrection {
+        let normalizedHeard = Self.normalizePhrase(heard, language: language)
+        let trimmedHeard = heard.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedReplacement = replacement.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if let index = corrections.firstIndex(where: {
+            $0.languageCode == language.rawValue &&
+            Self.normalizePhrase($0.heard, language: language) == normalizedHeard
+        }) {
+            corrections[index].heard = trimmedHeard
+            corrections[index].replacement = trimmedReplacement
+            corrections[index].updatedAt = Date()
+            bumpRevision(for: language)
+            save()
+            return corrections[index]
+        }
+
+        let entry = LearnedCorrection(
+            id: UUID(),
+            heard: trimmedHeard,
+            replacement: trimmedReplacement,
+            languageCode: language.rawValue,
+            updatedAt: Date()
+        )
+        corrections.append(entry)
+        bumpRevision(for: language)
+        save()
+        return entry
+    }
+    
+    func remove(id: UUID) {
+        if let index = phrases.firstIndex(where: { $0.id == id }),
+           let language = phrases[index].language {
+            phrases.remove(at: index)
+            bumpRevision(for: language)
+            save()
+            return
+        }
+
+        guard let index = corrections.firstIndex(where: { $0.id == id }),
+              let language = corrections[index].language else {
+            return
+        }
+        corrections.remove(at: index)
+        bumpRevision(for: language)
+        save()
+    }
+    
+    func reset(language: RecognitionLanguage) {
+        phrases.removeAll { $0.languageCode == language.rawValue && $0.source == .user }
+        corrections.removeAll { $0.languageCode == language.rawValue }
+        bumpRevision(for: language)
+        save()
+    }
+    
+    func resetAll() {
+        phrases.removeAll()
+        corrections.removeAll()
+        for language in RecognitionLanguage.allCases {
+            bumpRevision(for: language)
+        }
+        save()
+    }
+    
+    func speechPhraseCounts(for language: RecognitionLanguage) -> [(phrase: String, count: Int)] {
+        recognitionEntries(for: language).map { ($0.phrase, $0.count) }
+    }
+    
+    func contextualStrings(for language: RecognitionLanguage) -> [String] {
+        recognitionEntries(for: language).map(\.phrase) + correctionEntries(for: language).map(\.heard)
+    }
+    
+    /// Move candidates from learned phrase → move mappings (trailing phrase match).
+    func candidateMoves(for text: String, language: RecognitionLanguage) -> [String] {
+        let normalized = Self.normalizePhrase(text, language: language)
+        let compact = Self.compactLearningKey(normalized, language: language)
+        let words = normalized.split(separator: " ").map(String.init)
+        guard !words.isEmpty else { return [] }
+        
+        var results: [String] = []
+        var seen = Set<String>()
+        
+        let textContainsCaptureIntent = words.contains(where: { token in
+            let lowered = token.lowercased()
+            return [
+                "takes", "take", "captures", "capture",
+                "schlagt", "schlaegt", "schagt", "schaegt", "nimmt"
+            ].contains(lowered)
+        })
+
+        for entry in recognitionEntries(for: language) {
+            let learnedPhrase = Self.normalizePhrase(entry.phrase, language: language)
+            let learnedWords = learnedPhrase
+                .split(separator: " ")
+                .map(String.init)
+            guard !learnedWords.isEmpty else { continue }
+
+            // Avoid letting short or non-capture tail phrases like "d5" or
+            // "d 5" override richer capture utterances such as "e4 takes d5".
+            // In those cases the move parser should handle the full phrase
+            // instead of the learned-phrase shortcut.
+            if textContainsCaptureIntent, !Self.phraseLooksCaptureSpecific(learnedWords, language: language) {
+                continue
+            }
+            
+            let learned = learnedWords.joined(separator: " ")
+            let learnedCompact = Self.compactLearningKey(learnedPhrase, language: language)
+            let tail = words.count >= learnedWords.count
+                ? words.suffix(learnedWords.count).joined(separator: " ")
+                : ""
+
+            let matchesExactTail = tail == learned
+            let matchesCompact = !compact.isEmpty && !learnedCompact.isEmpty
+                && (compact == learnedCompact || compact.hasSuffix(learnedCompact))
+
+            guard (matchesExactTail || matchesCompact), seen.insert(entry.moveNotation).inserted else { continue }
+            results.append(entry.moveNotation)
+        }
+        
+        return results.sorted { lhs, rhs in
+            let lhsCount = recognitionEntries(for: language).first { $0.moveNotation == lhs }?.count ?? 0
+            let rhsCount = recognitionEntries(for: language).first { $0.moveNotation == rhs }?.count ?? 0
+            return lhsCount > rhsCount
+        }
+    }
+    
+    static func normalizePhrase(_ phrase: String, language: RecognitionLanguage) -> String {
+        ChessTranscriptNormalizer.normalizeForPhraseMatching(phrase, language: language)
+    }
+
+    func applyCorrections(to text: String, language: RecognitionLanguage) -> String {
+        var normalized = Self.normalizePhrase(text, language: language)
+        let entries = correctionEntries(for: language).sorted {
+            Self.normalizePhrase($0.heard, language: language).count > Self.normalizePhrase($1.heard, language: language).count
+        }
+
+        for entry in entries {
+            let heard = Self.normalizePhrase(entry.heard, language: language)
+            let replacement = Self.normalizePhrase(entry.replacement, language: language)
+            guard !heard.isEmpty, !replacement.isEmpty else { continue }
+
+            let escaped = NSRegularExpression.escapedPattern(for: heard)
+                .replacingOccurrences(of: "\\ ", with: "\\s+")
+            let boundaryPattern = "\\b\(escaped)\\b"
+            normalized = normalized.replacingOccurrences(
+                of: boundaryPattern,
+                with: replacement,
+                options: .regularExpression
+            )
+
+            // Also allow corrections to salvage compact alphanumeric blobs like
+            // "931f3" where a user-taught correction such as "9 -> knight" should
+            // expand inside the token stream instead of only matching whole words.
+            normalized = normalized.replacingOccurrences(
+                of: heard,
+                with: " \(replacement) ",
+                options: []
+            )
+        }
+
+        return normalized
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+    }
+
+    private static func compactLearningKey(_ phrase: String, language: RecognitionLanguage) -> String {
+        let normalized = normalizePhrase(phrase, language: language)
+        let tokens = normalized
+            .split(separator: " ")
+            .map(String.init)
+
+        var result = ""
+        for token in tokens {
+            if let mapped = mappedTokenForLearning(token, language: language) {
+                result += mapped
+            }
+        }
+
+        return result
+    }
+
+    private static func mappedTokenForLearning(_ token: String, language: RecognitionLanguage) -> String? {
+        let cleaned = token.lowercased().filter { $0.isLetter || $0.isNumber }
+        guard !cleaned.isEmpty else { return nil }
+
+        if let square = normalizedSquareToken(cleaned, language: language) {
+            return square
+        }
+
+        if separatorTokens(for: language).contains(cleaned) {
+            return nil
+        }
+
+        if let piece = pieceToken(cleaned, language: language) {
+            return piece
+        }
+
+        return cleaned
+    }
+
+    private static func normalizedSquareToken(_ token: String, language: RecognitionLanguage) -> String? {
+        let token = token.lowercased()
+        if token.count == 2,
+           let file = token.first,
+           let rank = token.last,
+           "abcdefgh".contains(file),
+           "12345678".contains(rank) {
+            return token
+        }
+
+        if token.count == 3,
+           let file = token.first,
+           "abcdefgh".contains(file) {
+            let suffix = String(token.dropFirst())
+            if let rank = rankWordMap(for: language)[suffix] {
+                return String(file) + rank
+            }
+        }
+
+        return nil
+    }
+
+    private static func pieceToken(_ token: String, language: RecognitionLanguage) -> String? {
+        switch language {
+        case .english:
+            switch token {
+            case "knight", "night", "n", "9": return "n"
+            case "bishop", "b": return "b"
+            case "rook", "r": return "r"
+            case "queen", "q": return "q"
+            case "king", "k": return "k"
+            default: return nil
+            }
+        case .german:
+            switch token {
+            case "springer", "s": return "n"
+            case "laufer", "lauferin", "l": return "b"
+            case "turm", "t": return "r"
+            case "dame", "d": return "q"
+            case "konig", "k": return "k"
+            default: return nil
+            }
+        }
+    }
+
+    private static func separatorTokens(for language: RecognitionLanguage) -> Set<String> {
+        switch language {
+        case .english:
+            return ["to", "too", "two", "2", "from", "on", "at"]
+        case .german:
+            return ["nach", "zu", "von", "auf", "2"]
+        }
+    }
+
+    private static func rankWordMap(for language: RecognitionLanguage) -> [String: String] {
+        switch language {
+        case .english:
+            return [
+                "one": "1", "two": "2", "three": "3", "four": "4",
+                "five": "5", "six": "6", "seven": "7", "eight": "8"
+            ]
+        case .german:
+            return [
+                "eins": "1", "zwei": "2", "drei": "3", "vier": "4",
+                "funf": "5", "fünf": "5", "sechs": "6", "sieben": "7", "acht": "8"
+            ]
+        }
+    }
+
+    private static func phraseLooksCaptureSpecific(_ words: [String], language: RecognitionLanguage) -> Bool {
+        let captureWords: Set<String> = [
+            "takes", "take", "captures", "capture",
+            "schlagt", "schlaegt", "schagt", "schaegt", "nimmt",
+            "x"
+        ]
+
+        if words.contains(where: { captureWords.contains($0.lowercased()) }) {
+            return true
+        }
+
+        let joined = words.joined(separator: " ").lowercased()
+        if joined.contains("x") {
+            return true
+        }
+
+        // Coordinate source-target forms like g1f3 / d4e5 should also be
+        // considered specific enough to keep.
+        if words.count == 1, looksLikeCoordinateMove(words[0]) {
+            return true
+        }
+
+        return false
+    }
+
+    private static func looksLikeCoordinateMove(_ token: String) -> Bool {
+        let cleaned = token.lowercased().filter { $0.isLetter || $0.isNumber || $0 == "x" }
+        let compact = cleaned.replacingOccurrences(of: "x", with: "")
+        guard compact.count == 4 || compact.count == 5 else { return false }
+
+        let source = String(compact.prefix(2))
+        let target = String(compact.dropFirst(2).prefix(2))
+        return normalizedSquareToken(source, language: .english) != nil &&
+            normalizedSquareToken(target, language: .english) != nil
+    }
+
+    private func upsert(
+        phrase: String,
+        moveNotation: String,
+        language: RecognitionLanguage,
+        minimumCount: Int,
+        source: LearnedPhraseSource
+    ) -> Bool {
+        let before = phrases.first(where: {
+            $0.languageCode == language.rawValue &&
+            $0.source == source &&
+            Self.normalizePhrase($0.phrase, language: language) == Self.normalizePhrase(phrase, language: language)
+        })
+
+        let entry = upsertEntry(
+            phrase: phrase,
+            moveNotation: moveNotation,
+            language: language,
+            minimumCount: minimumCount,
+            increment: 0,
+            source: source
+        )
+
+        guard let before else { return true }
+        return before.moveNotation != entry.moveNotation || before.count != entry.count || before.phrase != entry.phrase
+    }
+
+    private func upsertEntry(
+        phrase: String,
+        moveNotation: String,
+        language: RecognitionLanguage,
+        minimumCount: Int,
+        increment: Int,
+        source: LearnedPhraseSource = .user
+    ) -> LearnedPhrase {
+        let trimmedPhrase = phrase.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedMove = moveNotation
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+        let normalizedPhrase = Self.normalizePhrase(trimmedPhrase, language: language)
+
+        if let index = phrases.firstIndex(where: {
+            $0.languageCode == language.rawValue &&
+            $0.source == source &&
+            Self.normalizePhrase($0.phrase, language: language) == normalizedPhrase
+        }) {
+            phrases[index].count = min(max(phrases[index].count + increment, minimumCount), 1_000)
+            phrases[index].moveNotation = normalizedMove
+            phrases[index].phrase = trimmedPhrase
+            phrases[index].updatedAt = Date()
+            phrases[index].source = source
+            return phrases[index]
+        }
+
+        let entry = LearnedPhrase(
+            id: UUID(),
+            phrase: trimmedPhrase,
+            moveNotation: normalizedMove,
+            languageCode: language.rawValue,
+            count: min(max(minimumCount, 1), 1_000),
+            updatedAt: Date(),
+            source: source
+        )
+        phrases.append(entry)
+        return entry
+    }
+
+    private static func commonTrainingPhrases(for language: RecognitionLanguage) -> [(phrase: String, moveNotation: String, count: Int)] {
+        switch language {
+        case .english:
+            return [
+                ("d4", "d4", 350), ("d 4", "d4", 300),
+                ("e4", "e4", 350), ("e 4", "e4", 300),
+                ("c4", "c4", 300), ("c 4", "c4", 250),
+                ("e5", "e5", 350), ("e 5", "e5", 300),
+                ("d5", "d5", 300), ("d 5", "d5", 250),
+                ("c5", "c5", 300), ("c 5", "c5", 250),
+                ("nf3", "nf3", 300), ("knight f3", "nf3", 350), ("knight f 3", "nf3", 300),
+                ("nc3", "nc3", 260), ("knight c3", "nc3", 300), ("knight c 3", "nc3", 260),
+                ("bf4", "bf4", 220), ("bishop f4", "bf4", 260),
+                ("bb5", "bb5", 220), ("bishop b5", "bb5", 260),
+                ("g3", "g3", 220), ("g 3", "g3", 200),
+                ("b3", "b3", 200), ("b 3", "b3", 180),
+                ("castle", "o-o", 240), ("castle kingside", "o-o", 260),
+                ("castle queenside", "o-o-o", 220)
+            ]
+        case .german:
+            return [
+                ("d4", "d4", 350), ("d 4", "d4", 300), ("d vier", "d4", 360), ("die vier", "d4", 340),
+                ("e4", "e4", 350), ("e 4", "e4", 300), ("e vier", "e4", 360),
+                ("c4", "c4", 300), ("c 4", "c4", 250), ("c vier", "c4", 300),
+                ("e5", "e5", 350), ("e 5", "e5", 300), ("e funf", "e5", 360), ("e fünf", "e5", 360),
+                ("d5", "d5", 300), ("d 5", "d5", 250), ("d funf", "d5", 300), ("d fünf", "d5", 300),
+                ("c5", "c5", 300), ("c 5", "c5", 250), ("c funf", "c5", 280), ("c fünf", "c5", 280),
+                ("sf3", "nf3", 280), ("springer f3", "nf3", 360), ("springer f 3", "nf3", 320), ("springer f drei", "nf3", 380),
+                ("sc3", "nc3", 240), ("springer c3", "nc3", 300), ("springer c drei", "nc3", 320),
+                ("lf4", "bf4", 220), ("laufer f4", "bf4", 260), ("läufer f4", "bf4", 260), ("laufer f vier", "bf4", 280), ("läufer f vier", "bf4", 280),
+                ("lb5", "bb5", 220), ("laufer b5", "bb5", 260), ("läufer b5", "bb5", 260),
+                ("g3", "g3", 220), ("g 3", "g3", 200), ("g drei", "g3", 230),
+                ("b3", "b3", 200), ("b 3", "b3", 180), ("b drei", "b3", 210),
+                ("kurz rochiert", "o-o", 240), ("kleine rochade", "o-o", 240), ("rochade", "o-o", 220),
+                ("lang rochiert", "o-o-o", 220), ("grosse rochade", "o-o-o", 220), ("große rochade", "o-o-o", 220)
+            ]
+        }
+    }
+    
+    private func bumpRevision(for language: RecognitionLanguage) {
+        revisions[language.rawValue] = revision(for: language) + 1
+    }
+    
+    private func load() {
+        guard FileManager.default.fileExists(atPath: storageURL.path),
+              let data = try? Data(contentsOf: storageURL) else {
+            return
+        }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        guard let file = try? decoder.decode(PersonalVocabularyFile.self, from: data) else {
+            return
+        }
+        phrases = file.phrases
+        corrections = file.corrections
+        revisions = file.revisions
+    }
+    
+    private func save() {
+        let file = PersonalVocabularyFile(phrases: phrases, corrections: corrections, revisions: revisions)
+        do {
+            let data = try JSONEncoder.vocabularyEncoder.encode(file)
+            try data.write(to: storageURL, options: .atomic)
+        } catch {
+            print("PersonalVocabularyStore: failed to save — \(error.localizedDescription)")
+        }
+    }
+}
+
+private extension JSONEncoder {
+    static var vocabularyEncoder: JSONEncoder {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        return encoder
+    }
+}

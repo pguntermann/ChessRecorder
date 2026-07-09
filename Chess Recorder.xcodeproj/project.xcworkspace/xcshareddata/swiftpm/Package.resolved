@@ -1,0 +1,24 @@
+{
+  "originHash" : "fea490ae32f77a40455b93ba368d4507613638116064f2d118dd16d614c71ff6",
+  "pins" : [
+    {
+      "identity" : "chesskit-swift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/chesskit-app/chesskit-swift",
+      "state" : {
+        "revision" : "44ef7a1aa9da25bf0a9606a8960591a4dde3fad2",
+        "version" : "0.17.0"
+      }
+    },
+    {
+      "identity" : "lucid-engine",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/CarlosDanielDev/lucid-engine",
+      "state" : {
+        "revision" : "4ff7efe1e50decd8d7f1683cc1add58ec6db109e",
+        "version" : "1.0.0"
+      }
+    }
+  ],
+  "version" : 3
+}

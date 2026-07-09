@@ -33,12 +33,18 @@ struct RecognitionFailureContext: Equatable {
     let attemptedMoves: [String]
 }
 
+enum RecordingPermissionIssue: Equatable {
+    case microphoneDenied
+    case speechDenied
+}
+
 @Observable
 class SpeechRecognizer {
     var transcript = ""
     private var rawTranscript = ""
     var isRecording = false
     var isAuthorized = false
+    var isMicrophoneAuthorized = false
     var isLanguageModelReady = false
     var isInitializing = true
     var isRebuildingLanguageModel = false
@@ -69,7 +75,7 @@ class SpeechRecognizer {
     var onUndoDetected: (() -> Void)?
     
     var isReadyForUse: Bool {
-        !isInitializing && isAuthorized && !isRebuildingLanguageModel
+        !isInitializing && !isRebuildingLanguageModel
     }
     
     private var hasCompletedStartup = false
@@ -169,13 +175,56 @@ class SpeechRecognizer {
     }
     
     @MainActor
+    func refreshAuthorizationStatus() {
+        isMicrophoneAuthorized = AVAudioApplication.shared.recordPermission == .granted
+        isAuthorized = SFSpeechRecognizer.authorizationStatus() == .authorized
+    }
+
+    @MainActor
+    func ensureRecordingPermissions() async -> RecordingPermissionIssue? {
+        if SFSpeechRecognizer.authorizationStatus() == .notDetermined {
+            await requestSpeechAuthorization()
+        }
+        if AVAudioApplication.shared.recordPermission == .undetermined {
+            await requestMicrophoneAuthorization()
+        }
+
+        refreshAuthorizationStatus()
+
+        if !isMicrophoneAuthorized {
+            return .microphoneDenied
+        }
+        if !isAuthorized {
+            return .speechDenied
+        }
+        return nil
+    }
+
+    @MainActor
     func requestAuthorization() async {
+        await requestSpeechAuthorization()
+        await requestMicrophoneAuthorization()
+        refreshAuthorizationStatus()
+    }
+
+    @MainActor
+    private func requestSpeechAuthorization() async {
         let status = await withCheckedContinuation { continuation in
             SFSpeechRecognizer.requestAuthorization { status in
                 continuation.resume(returning: status)
             }
         }
         isAuthorized = status == .authorized
+    }
+
+    @MainActor
+    private func requestMicrophoneAuthorization() async {
+        let granted = await withCheckedContinuation { continuation in
+            AVAudioApplication.requestRecordPermission { granted in
+                continuation.resume(returning: granted)
+            }
+        }
+        isMicrophoneAuthorized = granted
     }
     
     func startRecording() throws {

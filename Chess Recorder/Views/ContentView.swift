@@ -6,8 +6,11 @@
 //
 
 import SwiftUI
+import UIKit
 
 struct ContentView: View {
+    @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.openURL) private var openURL
     @Bindable var settingsStore: SettingsStore
     @Bindable var vocabularyStore: PersonalVocabularyStore
     @State private var game = ChessGame()
@@ -16,6 +19,8 @@ struct ContentView: View {
     @State private var showingSettings = false
     @State private var showingHelp = false
     @State private var showingTeachPhrase = false
+    @State private var showingRecordingPermissionAlert = false
+    @State private var recordingPermissionIssue: RecordingPermissionIssue?
     @State private var boardOrientation: BoardOrientation = .whiteAtBottom
     @State private var engineAnalysis = EngineAnalysisService()
     
@@ -125,6 +130,25 @@ struct ContentView: View {
                     _ = processMoveFromSpeech(move)
                 }
             }
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase == .active {
+                speechRecognizer.refreshAuthorizationStatus()
+            }
+        }
+        .alert(
+            recordingPermissionAlertTitle(for: recordingPermissionIssue),
+            isPresented: $showingRecordingPermissionAlert,
+            presenting: recordingPermissionIssue
+        ) { _ in
+            Button("Open Settings") {
+                if let url = URL(string: UIApplication.openSettingsURLString) {
+                    openURL(url)
+                }
+            }
+            Button("OK", role: .cancel) {}
+        } message: { issue in
+            Text(recordingPermissionMessage(for: issue))
         }
     }
     
@@ -302,12 +326,41 @@ struct ContentView: View {
     private func toggleRecording() {
         if speechRecognizer.isRecording {
             speechRecognizer.stopRecording()
-        } else {
+            return
+        }
+
+        Task { @MainActor in
+            if let issue = await speechRecognizer.ensureRecordingPermissions() {
+                recordingPermissionIssue = issue
+                showingRecordingPermissionAlert = true
+                return
+            }
+
             do {
                 try speechRecognizer.startRecording()
             } catch {
                 print("Failed to start recording: \(error)")
             }
+        }
+    }
+
+    private func recordingPermissionAlertTitle(for issue: RecordingPermissionIssue?) -> String {
+        switch issue {
+        case .microphoneDenied:
+            return "Microphone Access Required"
+        case .speechDenied:
+            return "Speech Recognition Required"
+        case .none:
+            return "Permission Required"
+        }
+    }
+
+    private func recordingPermissionMessage(for issue: RecordingPermissionIssue) -> String {
+        switch issue {
+        case .microphoneDenied:
+            return "Chess Recorder needs microphone access to hear your moves. Open Settings, tap Chess Recorder, and turn on Microphone."
+        case .speechDenied:
+            return "Chess Recorder needs speech recognition to understand your moves. Open Settings, tap Chess Recorder, and turn on Speech Recognition."
         }
     }
     

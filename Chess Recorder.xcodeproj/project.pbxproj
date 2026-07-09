@@ -13,6 +13,7 @@
 
 /* Begin PBXFileReference section */
 		1760A27E2FFED5F20026DE7C /* Chess Recorder.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Chess Recorder.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		17F0A1042FFF00000026DE7C /* Version.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Version.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -41,8 +42,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "\"${SRCROOT}/Scripts/set-build-number.sh\"\n";
-			enableUserScriptSandboxing = 0;
+			shellScript = "BUILD_NUMBER=\"$(date '+%Y%m%d_%H%M')\"\nINFOPLIST=\"${BUILT_PRODUCTS_DIR}/${INFOPLIST_PATH}\"\nif [[ -f \"${INFOPLIST}\" ]]; then\n  /usr/libexec/PlistBuddy -c \"Set :CFBundleVersion ${BUILD_NUMBER}\" \"${INFOPLIST}\" 2>/dev/null || /usr/libexec/PlistBuddy -c \"Add :CFBundleVersion string ${BUILD_NUMBER}\" \"${INFOPLIST}\"\n  echo \"Set CFBundleVersion to ${BUILD_NUMBER}\"\nfi\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 
@@ -62,9 +62,18 @@
 		1760A2752FFED5F20026DE7C = {
 			isa = PBXGroup;
 			children = (
+				17F0A1032FFF00000026DE7C /* Config */,
 				1760A2802FFED5F20026DE7C /* Chess Recorder */,
 				1760A27F2FFED5F20026DE7C /* Products */,
 			);
+			sourceTree = "<group>";
+		};
+		17F0A1032FFF00000026DE7C /* Config */ = {
+			isa = PBXGroup;
+			children = (
+				17F0A1042FFF00000026DE7C /* Version.xcconfig */,
+			);
+			path = Config;
 			sourceTree = "<group>";
 		};
 		1760A27F2FFED5F20026DE7C /* Products */ = {
@@ -285,14 +294,16 @@
 		};
 		1760A28A2FFED5F20026DE7C /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 17F0A1042FFF00000026DE7C /* Version.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 20260709_1600;
+				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 7ZWX577M73;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Required to dictate moves with voice";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Required to dictate moves with voice";
@@ -321,14 +332,16 @@
 		};
 		1760A28B2FFED5F20026DE7C /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = 17F0A1042FFF00000026DE7C /* Version.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 20260709_1600;
+				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 7ZWX577M73;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Required to dictate moves with voice";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Required to dictate moves with voice";

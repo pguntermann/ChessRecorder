@@ -49,31 +49,65 @@ enum ChessTranscriptNormalizer {
             (#"\bbeeshop\b"#, "bishop"),
             (#"\bbishup\b"#, "bishop"),
             (#"\bbishopp\b"#, "bishop"),
+            (#"\bbishop\s+shop\b"#, "bishop"),
+            (#"\b(bishop|knight|night|rook|queen|king)\s+shop\b"#, "$1"),
+            (#"\bshop\s+(?=takes|take|to|captures|capture)\b"#, ""),
             (#"\bbrooke\b"#, "rook"),
+            (#"\brock\b"#, "rook"),
+            (#"\blook\s+(takes|take|captures|capture|to)\b"#, "rook $1"),
+            (#"\blook\s+([a-h][1-8])\b"#, "rook $1"),
+            (#"\blook\s+([a-h])\s+(to|takes|take|captures|capture)\b"#, "rook $1 $2"),
+            (#"\blook\s+([a-h])\s+(one|two|three|four|five|six|seven|eight|[1-8])\b"#, "rook $1 $2"),
+            (#"\b([a-h][18])\s+(rock|look)\b"#, "$1 rook"),
+            (#"\b(rock|look)\s+([a-h][18])\b"#, "rook $2"),
             (#"\bknit\b"#, "knight"),
             (#"\bnite\b"#, "knight")
         ])
         
         result = applyRegexReplacements(result, patterns: [
-            (#"\b(see|sea|cee)\s+(?=\#(englishRankToken))\b"#, "c "),
+            (#"\b(see|sea|cee|she)\s+(?=\#(englishRankToken))\b"#, "c "),
+            (#"\b(hey|ay)\s+(?=\#(englishRankToken))\b"#, "a "),
             (#"\b(bee|be)\s+(?=\#(englishRankToken))\b"#, "b "),
             (#"\bdee\s+(?=\#(englishRankToken))\b"#, "d "),
             (#"\bgee\s+(?=\#(englishRankToken))\b"#, "g "),
-            (#"\b(aitch|each)\s+(?=\#(englishRankToken))\b"#, "h ")
+            (#"\b(aitch|each)\s+(?=\#(englishRankToken))\b"#, "h "),
+            (#"\b(eff|ef)\s+(?=\#(englishRankToken))\b"#, "f ")
         ])
-        
-        let spokenLetters: [(String, String)] = [
-            ("see ", "c "), (" bee ", " b "), (" dee ", " d "),
-            (" ee ", " e "), (" gee ", " g "), (" aitch ", " h ")
-        ]
-        for (wrong, right) in spokenLetters {
-            result = result.replacingOccurrences(of: wrong, with: right)
-        }
-
-        result = fixEnglishSquareGarbage(in: result)
         result = fixEnglishPawnCaptureMishearings(in: result)
+        result = fixEnglishAFileMishearings(in: result)
         
         return result
+    }
+
+    /// a-file is often misheard — especially "a3" → "hey siri" (Siri wake phrase).
+    private static func fixEnglishAFileMishearings(in text: String) -> String {
+        applyRegexReplacements(text, patterns: [
+            (#"\b(hey|ay)\s+siri\b"#, "a3"),
+            (#"\b(hey|ay)\s+sir\b"#, "a3"),
+            (#"\b(hey|ay)\s+seri\b"#, "a3"),
+            (#"\b(hey|ay)\s+sery\b"#, "a3"),
+            (#"\b(hey|ay)\s+cery\b"#, "a3"),
+            (#"\b(hey|ay)\s+three\b"#, "a3"),
+            (#"\b(hey|ay)\s+tree\b"#, "a3"),
+            (#"\b(hey|ay)\s+free\b"#, "a3"),
+            (#"\ba\s+siri\b"#, "a3"),
+            (#"\ba\s+sir\b"#, "a3"),
+            (#"\b8\s+3\b"#, "a3"),
+            (#"\b83\b"#, "a3"),
+            (#"^\s*hey\s*$"#, "a"),
+            (#"^\s*ay\s*$"#, "a")
+        ])
+    }
+
+    /// ASR sometimes merges "knight e5 to d7" into digit blobs like "9527".
+    private static func fixEnglishCompactMoveBlobs(in text: String) -> String {
+        applyRegexReplacements(text, patterns: [
+            (#"\b9([a-h])([1-8])([a-h])([1-8])\b"#, "knight $1$2 to $3$4"),
+            (#"\b9([a-h])([1-8])2([1-8])\b"#, "knight $1$2 to $3"),
+            (#"\b9([1-8])2([1-8])\b"#, "knight $1 to $2"),
+            (#"\b9([a-h])([1-8])\s+to\s+([1-8])\b"#, "knight $1$2 to $3"),
+            (#"\b9([1-8])\s+to\s+([1-8])\b"#, "knight $1 to $2")
+        ])
     }
     
     private static func normalizeGerman(_ text: String) -> String {
@@ -126,22 +160,95 @@ enum ChessTranscriptNormalizer {
     private static let germanRankPattern =
         "[1-8]|eins|zwei|drei|vier|funf|fünf|sechs|sieben|acht"
 
+    private static let englishSpokenFileLetters: [String: Character] = [
+        "see": "c", "sea": "c", "cee": "c", "she": "c",
+        "bee": "b", "be": "b",
+        "dee": "d",
+        "ee": "e",
+        "gee": "g",
+        "aitch": "h", "each": "h",
+        "eff": "f", "ef": "f",
+        "hey": "a", "ay": "a"
+    ]
+
+    private static let germanSpokenFileLetters: [String: Character] = [
+        "zee": "c", "cee": "c", "see": "c", "sea": "c",
+        "be": "b", "bee": "b",
+        "de": "d", "dee": "d",
+        "ge": "g", "gee": "g",
+        "ha": "h", "hache": "h", "ache": "h", "haar": "h",
+        "ef": "f", "eff": "f",
+        "ah": "a"
+    ]
+
+    /// Maps a spoken file homophone ("hey", "dee", …) or file letter to a–h.
+    static func spokenFileLetter(for token: String, language: RecognitionLanguage) -> Character? {
+        let word = token.lowercased()
+        if word.count == 1, let char = word.first, "abcdefgh".contains(char) {
+            return char
+        }
+        switch language {
+        case .english:
+            return englishSpokenFileLetters[word]
+        case .german:
+            return germanSpokenFileLetters[word]
+        }
+    }
+
+    /// Normalizes a two-character square token, including digit-file mishearings (8→a).
+    static func normalizeSquareToken(_ token: String) -> String? {
+        let cleaned = token
+            .lowercased()
+            .filter { $0.isLetter || $0.isNumber }
+        guard cleaned.count == 2,
+              let rank = cleaned.last,
+              "12345678".contains(rank) else {
+            return nil
+        }
+
+        var file = cleaned.first!
+        if file.isNumber {
+            guard file == "8" else { return nil }
+            file = "a"
+        }
+        guard "abcdefgh".contains(file) else { return nil }
+        return String(file) + String(rank)
+    }
+
+    private static func englishSpokenFilePatternGroups() -> [(String, String)] {
+        var groups: [Character: [String]] = [:]
+        for (spoken, file) in englishSpokenFileLetters {
+            groups[file, default: []].append(spoken)
+        }
+        groups["a", default: []].append("a")
+        return groups.map { file, words in
+            (words.joined(separator: "|"), String(file))
+        }
+    }
+
+    private static func germanSpokenFilePatternGroups() -> [(String, String)] {
+        var groups: [Character: [String]] = [:]
+        for (spoken, file) in germanSpokenFileLetters {
+            groups[file, default: []].append(spoken)
+        }
+        groups["a", default: []].append("a")
+        return groups.map { file, words in
+            (words.joined(separator: "|"), String(file))
+        }
+    }
+
     private static func fixEnglishPawnCaptureMishearings(in text: String) -> String {
         applyRegexReplacements(text, patterns: englishPawnCaptureMishearingPatterns())
     }
 
     /// Maps misheard file letters before a capture verb — target square is handled separately.
     static func englishPawnCaptureMishearingPatterns() -> [(String, String)] {
-        [
-            (#"\b(she|see|sea|cee)\s+(takes|take|captures|capture)\b"#, "c $2"),
-            (#"\b(bee|be)\s+(takes|take|captures|capture)\b"#, "b $2"),
-            (#"\bdee\s+(takes|take|captures|capture)\b"#, "d $2"),
-            (#"\bee\s+(takes|take|captures|capture)\b"#, "e $2"),
-            (#"\bgee\s+(takes|take|captures|capture)\b"#, "g $2"),
-            (#"\b(aitch|each)\s+(takes|take|captures|capture)\b"#, "h $2"),
-            (#"\b(eff|ef)\s+(takes|take|captures|capture)\b"#, "f $2"),
-            (#"\bay\s+(takes|take|captures|capture)\b"#, "a $2")
-        ]
+        englishSpokenFileLetters.map { spoken, file in
+            (
+                "\\b\(NSRegularExpression.escapedPattern(for: spoken))\\s+(takes|take|captures|capture)\\b",
+                "\(file) $2"
+            )
+        }
     }
 
     static func englishPawnCaptureBoostPhrases(
@@ -149,16 +256,8 @@ enum ChessTranscriptNormalizer {
         misheardCount: Int = 420
     ) -> [(phrase: String, count: Int)] {
         let captureVerbs = ["takes", "take", "captures", "capture"]
-        let misheardFiles: [(String, [String])] = [
-            ("c", ["she", "see", "sea", "cee"]),
-            ("b", ["bee", "be"]),
-            ("d", ["dee"]),
-            ("e", ["ee"]),
-            ("g", ["gee"]),
-            ("h", ["aitch", "each"]),
-            ("f", ["eff", "ef"]),
-            ("a", ["ay"])
-        ]
+        let misheardFiles = Dictionary(grouping: englishSpokenFileLetters, by: \.value)
+            .mapValues { pairs in pairs.map(\.key) }
 
         var phrases: [(String, Int)] = []
         for file in "abcdefgh" {
@@ -174,6 +273,14 @@ enum ChessTranscriptNormalizer {
             }
         }
         return phrases
+    }
+
+    /// Digit 8 is never a valid file — ASR often uses it for the a-file ("a3" → "83").
+    private static func fixInvalidDigitFileSquares(in text: String) -> String {
+        applyRegexReplacements(text, patterns: [
+            (#"\b8([1-8])\b"#, "a$1"),
+            (#"\b8\s+([1-8])\b"#, "a$1")
+        ])
     }
 
     private static func fixEnglishSquareGarbage(in text: String) -> String {
@@ -195,23 +302,9 @@ enum ChessTranscriptNormalizer {
 
     private static func fixSpokenFileRankPhrases(in text: String, language: RecognitionLanguage) -> String {
         let rankToken = language == .english ? englishRankToken : germanRankPattern
-        let mappings: [(String, String)] = language == .english ? [
-            ("see|sea|cee", "c"),
-            ("bee|be", "b"),
-            ("dee", "d"),
-            ("gee", "g"),
-            ("aitch|each", "h"),
-            ("eff|ef", "f"),
-            ("ay|a", "a")
-        ] : [
-            ("zee|cee|see|sea", "c"),
-            ("be|bee", "b"),
-            ("de|dee", "d"),
-            ("ge|gee", "g"),
-            ("ha|hache", "h"),
-            ("ef|eff", "f"),
-            ("ah|a", "a")
-        ]
+        let mappings = language == .english
+            ? englishSpokenFilePatternGroups()
+            : germanSpokenFilePatternGroups()
 
         var result = text
         for (filePattern, file) in mappings {
@@ -250,6 +343,120 @@ enum ChessTranscriptNormalizer {
         ])
     }
 
+    /// Maps spoken file homophones directly before a destination square ("she d4" → "c d4").
+    private static func resolveSpokenFileBeforeDestinationSquare(in text: String, language: RecognitionLanguage) -> String {
+        let mappings: [String: Character]
+        switch language {
+        case .english:
+            mappings = englishSpokenFileLetters
+        case .german:
+            mappings = germanSpokenFileLetters
+        }
+
+        var result = text
+        for (spoken, file) in mappings {
+            let escaped = NSRegularExpression.escapedPattern(for: spoken)
+            result = applyRegexReplacements(result, patterns: [
+                (#"\b\#(escaped)\s+(?=[a-h][1-8]\b)"#, "\(file) "),
+                (#"\b\#(escaped)\s+(?=[a-h]\s+(?:[1-8]|one|two|three|four|five|six|seven|eight|eins|zwei|drei|vier|funf|fünf|sechs|sieben|acht)\b)"#, "\(file) ")
+            ])
+        }
+        return result
+    }
+
+    /// ASR often drops the capture verb entirely ("c d 4" / "she d4" → "c d4").
+    private static func inferDroppedPawnCapture(in text: String, language: RecognitionLanguage) -> String {
+        let lowered = text.lowercased()
+        let captureVerbs = language == .english
+            ? ["takes", "take", "captures", "capture"]
+            : ["schlagt", "schlaegt", "schagt", "nimmt"]
+        if captureVerbs.contains(where: { lowered.contains($0) }) {
+            return text
+        }
+
+        let pieceNames = language == .english
+            ? ["knight", "night", "bishop", "rook", "rock", "look", "queen", "king", "pawn"]
+            : ["springer", "laufer", "laeufer", "lauferin", "turm", "dame", "konig", "bauer"]
+        if pieceNames.contains(where: { lowered.contains($0) }) {
+            return text
+        }
+
+        switch language {
+        case .english:
+            return applyRegexReplacements(text, patterns: [
+                (#"\b([a-h](?:[1-8])?)\s+([a-h])\s+([1-8])\b"#, "$1 takes $2$3"),
+                (#"\b([a-h](?:[1-8])?)\s+([a-h][1-8])\b"#, "$1 takes $2")
+            ])
+        case .german:
+            return applyRegexReplacements(text, patterns: [
+                (#"\b([a-h](?:[1-8])?)\s+([a-h])\s+([1-8])\b"#, "$1 schlagt $2$3"),
+                (#"\b([a-h](?:[1-8])?)\s+([a-h][1-8])\b"#, "$1 schlagt $2")
+            ])
+        }
+    }
+
+    /// ASR often substitutes a capture verb with an article ("c a d4" for "c takes d4").
+    /// Must run before `stripSpokenArticles`, which would otherwise leave "c d4".
+    private static func inferArticleAsCaptureVerb(in text: String, language: RecognitionLanguage) -> String {
+        switch language {
+        case .english:
+            return applyRegexReplacements(text, patterns: [
+                (#"\b([a-h])\s+(?:a|the|an)\s+([a-h][1-8])\b"#, "$1 takes $2")
+            ])
+        case .german:
+            return applyRegexReplacements(text, patterns: [
+                (#"\b([a-h])\s+(?:die|der|das|ein|eine)\s+([a-h][1-8])\b"#, "$1 schlagt $2")
+            ])
+        }
+    }
+
+    /// Removes articles ASR often inserts before squares ("bishop takes the e7").
+    static func stripSpokenArticles(from text: String, language: RecognitionLanguage) -> String {
+        switch language {
+        case .english:
+            return applyRegexReplacements(text, patterns: [
+                (#"\b(the|an)\s+"#, ""),
+                (#"\s+\b(the|an)\b"#, ""),
+                (#"\ba\s+(?=[a-h][1-8]\b)"#, ""),
+                (#"\ba\s+(?=(?:see|sea|cee|bee|be|dee|gee|aitch|each|eff|ef|ay)\s+(?:one|two|three|four|five|six|seven|eight|[1-8]))"#, "")
+            ])
+        case .german:
+            return applyRegexReplacements(text, patterns: [
+                (#"\b(der|das|ein|eine)\s+(?=[a-h][1-8]\b)"#, ""),
+                (#"\b(der|das|ein|eine)\s+(?=[a-h]\s+(?:[1-8]|eins|zwei|drei|vier|funf|fünf|sechs|sieben|acht))"#, ""),
+                (#"\bdie\s+(?=[a-h][1-8]\b)"#, ""),
+                (#"\bdie\s+(?=[a-h]\s+(?:[1-8]|eins|zwei|drei|vier|funf|fünf|sechs|sieben|acht))"#, "")
+            ])
+        }
+    }
+
+    /// Removes trailing spoken check/checkmate annotations users often add after a move.
+    static func stripSpokenCheckAnnotations(from text: String, language: RecognitionLanguage) -> String {
+        let patterns: [(String, String)]
+        switch language {
+        case .english:
+            patterns = [
+                (#"\s+checkmate\b"#, ""),
+                (#"\s+check\s+mate\b"#, ""),
+                (#"\s+check\b"#, ""),
+                (#"\s+mate\b"#, "")
+            ]
+        case .german:
+            patterns = [
+                (#"\s+schachmatt\b"#, ""),
+                (#"\s+schach\s+matt\b"#, ""),
+                (#"\s+schach\b"#, ""),
+                (#"\s+matt\b"#, "")
+            ]
+        }
+
+        var result = applyRegexReplacements(text, patterns: patterns)
+        while result.last == "+" || result.last == "#" {
+            result.removeLast()
+        }
+        return result
+    }
+
     private static func applyRegexReplacements(
         _ text: String,
         patterns: [(String, String)]
@@ -273,6 +480,8 @@ enum ChessTranscriptNormalizer {
         
         let spokenLetters: [(String, String)] = [
             ("see ", "c "), (" see ", " c "), ("sea ", "c "), (" sea ", " c "),
+            ("she ", "c "), (" she ", " c "),
+            ("hey ", "a "), (" hey ", " a "), ("ay ", "a "), (" ay ", " a "),
             ("bee ", "b "), (" bee ", " b "),
             ("dee ", "d "), (" dee ", " d "),
             ("ee ", "e "), (" ee ", " e "),
@@ -283,12 +492,17 @@ enum ChessTranscriptNormalizer {
             result = result.replacingOccurrences(of: wrong, with: right)
         }
 
+        result = resolveSpokenFileBeforeDestinationSquare(in: result, language: language)
         result = fixSpokenFileRankPhrases(in: result, language: language)
+        result = inferArticleAsCaptureVerb(in: result, language: language)
+        result = stripSpokenArticles(from: result, language: language)
         if language == .english {
             result = fixEnglishSquareGarbage(in: result)
+            result = fixEnglishAFileMishearings(in: result)
             result = fixEnglishPawnCaptureMishearings(in: result)
         }
         result = fixMisheardSplitSquares(in: result, language: language)
+        result = stripSpokenCheckAnnotations(from: result, language: language)
         
         if language == .german {
             let germanNumbers: [(String, String)] = [
@@ -306,7 +520,11 @@ enum ChessTranscriptNormalizer {
             for (spoken, digit) in englishNumbers {
                 result = result.replacingOccurrences(of: spoken, with: digit)
             }
+            result = fixEnglishCompactMoveBlobs(in: result)
+            result = fixInvalidDigitFileSquares(in: result)
         }
+
+        result = inferDroppedPawnCapture(in: result, language: language)
         
         return result
             .trimmingCharacters(in: .whitespacesAndNewlines)

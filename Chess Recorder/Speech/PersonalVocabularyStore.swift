@@ -463,7 +463,7 @@ final class PersonalVocabularyStore {
             switch token {
             case "knight", "night", "n", "9": return "n"
             case "bishop", "b": return "b"
-            case "rook", "r": return "r"
+            case "rook", "r", "rock", "look": return "r"
             case "queen", "q": return "q"
             case "king", "k": return "k"
             default: return nil
@@ -627,7 +627,10 @@ final class PersonalVocabularyStore {
                 ("f6", "f6", 280), ("f 6", "f6", 260), ("g6", "g6", 240), ("g 6", "g6", 220),
                 ("c6", "c6", 280), ("c 6", "c6", 260),
                 ("g1", "g1", 220), ("g 1", "g1", 200), ("c3", "c3", 240), ("c 3", "c3", 220),
-                ("h5", "h5", 200), ("h 5", "h5", 180), ("a3", "a3", 180), ("a 3", "a3", 160),
+                ("h5", "h5", 200), ("h 5", "h5", 180),
+                ("a3", "a3", 420), ("a 3", "a3", 400), ("hey three", "a3", 450),
+                ("hey 3", "a3", 440), ("ay three", "a3", 430), ("hey siri", "a3", 500),
+                ("ay siri", "a3", 480), ("hey sir", "a3", 460),
                 ("castle", "o-o", 240), ("castle kingside", "o-o", 260),
                 ("castle queenside", "o-o-o", 220)
             ]
@@ -657,7 +660,8 @@ final class PersonalVocabularyStore {
                 ("see we", "c3", 300), ("sea we", "c3", 300),
                 ("c drei", "c3", 250),
                 ("h5", "h5", 200), ("h 5", "h5", 180), ("h funf", "h5", 210), ("h fünf", "h5", 210),
-                ("a3", "a3", 180), ("a 3", "a3", 160), ("a drei", "a3", 190),
+                ("a3", "a3", 420), ("a 3", "a3", 400), ("a drei", "a3", 410),
+                ("hey three", "a3", 450), ("hey siri", "a3", 500), ("hey sir", "a3", 460),
                 ("kurz rochiert", "o-o", 240), ("kleine rochade", "o-o", 240), ("kurz rochade", "o-o", 240),
                 ("kurze rochade", "o-o", 240), ("rochade", "o-o", 180),
                 ("lang rochiert", "o-o-o", 240), ("lange rochade", "o-o-o", 260),
@@ -694,6 +698,9 @@ final class PersonalVocabularyStore {
             for word in spokenFiles {
                 phrases.append((word, 220))
             }
+            for word in ["hey", "ay"] {
+                phrases.append((word, 240))
+            }
             for piece in pieces {
                 phrases.append((piece, 480))
             }
@@ -705,11 +712,18 @@ final class PersonalVocabularyStore {
             }
             for phrase in [
                 "c3", "c 3", "see three", "sea three", "see 3", "sea 3",
+                "a3", "a 3", "hey three", "hey 3", "ay three", "ay 3",
+                "a6", "a 6", "hey six", "ay six", "hey 6",
+                "bishop b5 check", "knight f3 check", "rook d1 check",
+                "bishop takes d7", "bishop shop takes d7", "bishop takes 7",
                 "bishop e4 to e5", "bishop f1 to c4", "bishop takes e5",
                 "bishop to e5", "bishop e5", "knight to f3", "knight f3",
                 "knight g1 to f3", "knight f3 to e5", "knight takes d4",
+                "knight e5 to d7", "night e5 to d7", "knight e5 to 7",
                 "rook f to d1", "rook g1 to f3", "rook e1 to e8", "rook to d1",
-                "queen d1 to h5", "queen to h5", "king e1 to e2", "pawn to e4"
+                "queen d1 to h5", "queen to h5", "king e1 to e2", "pawn to e4",
+                "g8 rook", "e8 queen", "f8 knight", "e8 bishop",
+                "rook g8", "queen e8", "f takes e8 rook"
             ] {
                 phrases.append((phrase, 300))
             }
@@ -741,7 +755,11 @@ final class PersonalVocabularyStore {
                 "turm f auf d1", "springer g1 auf f3", "turm f1 auf d1",
                 "läufer h auf g5", "springer h auf f3", "h auf f3", "h schlagt g5",
                 "läufer auf e5", "läufer e5", "springer auf f3", "springer f3",
-                "turm auf d1", "dame auf h5"
+                "turm auf d1", "dame auf h5",
+                "läufer b5 schach", "springer f3 schach", "turm d1 schach",
+                "läufer auf e5 schach",
+                "g8 turm", "e8 dame", "f8 springer", "e8 läufer", "f1 läufer",
+                "turm g8", "dame e8", "f schlägt e8 turm"
             ] {
                 phrases.append((phrase, 300))
             }

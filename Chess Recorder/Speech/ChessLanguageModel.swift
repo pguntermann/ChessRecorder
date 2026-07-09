@@ -11,7 +11,7 @@ import Speech
 
 enum ChessLanguageModel {
     
-    private static let baseModelVersion = "1.9"
+    private static let baseModelVersion = "3.1"
     private static let modelIdentifier = "ChessRecorder.chess-moves"
     
     private static var preparedConfigurations: [RecognitionLanguage: SFSpeechLanguageModel.Configuration] = [:]
@@ -195,7 +195,11 @@ enum ChessLanguageModel {
             for phrase in ["h 5", "h 6", "h 7", "h 8", "h 3", "h 4", "h auf f3", "h auf g5",
                            "läufer h auf g5", "springer h auf f3", "turm h auf h1",
                            "läufer auf e5", "läufer e5", "springer auf f3", "springer f3",
-                           "turm auf d1", "dame auf h5"] {
+                           "turm auf d1", "dame auf h5",
+                           "läufer b5 schach", "springer f3 schach", "turm d1 schach",
+                           "läufer auf e5 schach", "springer schlägt d4 schach",
+                           "g8 turm", "e8 dame", "f8 springer", "e8 läufer",
+                           "f schlägt e8 turm", "g8 umwandlung turm"] {
                 SFCustomLanguageModelData.PhraseCount(phrase: phrase, count: 320)
             }
 
@@ -269,7 +273,7 @@ enum ChessLanguageModel {
                 SFCustomLanguageModelData.PhraseCount(phrase: phrase, count: count)
             }
 
-            for square in ["e4", "d4", "e5", "d5", "c4", "f3", "f6", "c3", "c6", "g1"] {
+            for square in ["e4", "d4", "e5", "d5", "c4", "f3", "f6", "c3", "c6", "g1", "a3"] {
                 SFCustomLanguageModelData.PhraseCount(phrase: square, count: 300)
             }
 
@@ -277,11 +281,15 @@ enum ChessLanguageModel {
                 SFCustomLanguageModelData.PhraseCount(phrase: phrase, count: 500)
             }
 
+            for phrase in ["a3", "a 3", "hey three", "hey 3", "ay three", "ay 3"] {
+                SFCustomLanguageModelData.PhraseCount(phrase: phrase, count: 520)
+            }
+
             for (phrase, count) in ChessTranscriptNormalizer.englishPawnCaptureBoostPhrases() {
                 SFCustomLanguageModelData.PhraseCount(phrase: phrase, count: count)
             }
 
-            for word in ["see", "sea", "cee", "bee", "dee", "gee", "aitch"] {
+            for word in ["see", "sea", "cee", "bee", "dee", "gee", "aitch", "hey", "ay"] {
                 SFCustomLanguageModelData.PhraseCount(phrase: word, count: 200)
             }
 
@@ -298,9 +306,26 @@ enum ChessLanguageModel {
             }
 
             for phrase in [
+                "bishop b5 check", "knight f3 check", "rook d1 check", "queen h5 check",
+                "bishop to e5 check", "knight takes d4 check",
+                "bishop takes d7", "bishop shop takes d7", "bishop takes 7",
+                "c takes d4", "e takes d5", "c a d4", "e a d5",
+                "she takes d4", "she d4", "c d4", "see d4",
+                "g8 rook", "e8 queen", "f8 knight", "e8 bishop",
+                "f takes e8 rook", "g8 promote rook",
+                "knight e5 to d7", "night e5 to d7", "knight e5 to 7",
+                "knight g1 to f3", "knight f3 to e5"
+            ] {
+                SFCustomLanguageModelData.PhraseCount(phrase: phrase, count: 280)
+            }
+
+            for phrase in [
                 "bishop e4 to e5", "bishop f1 to c4", "bishop takes e5", "bishop b5",
                 "bishop to e5", "bishop e5", "knight to f3", "knight f3",
                 "knight g1 to f3", "knight f3 to e5", "knight takes d4",
+                "knight e5 to d7", "night e5 to d7", "knight e5 to 7",
+                "a6", "a 6", "hey six", "ay six",
+                "a3", "a 3", "hey three", "hey 3",
                 "rook e1 to e8", "rook f to d1", "rook g1 to f3", "rook to d1",
                 "queen d1 to h5", "queen to h5", "king e1 to e2", "pawn e4", "pawn to e4"
             ] {

@@ -504,7 +504,8 @@ class SpeechRecognizer {
                 "1", "2", "3", "4", "5", "6", "7", "8",
                 "knight", "bishop", "rook", "queen", "king", "pawn",
                 "one", "two", "three", "four", "five", "six", "seven", "eight",
-                "see", "sea", "bee", "dee", "gee", "aitch",
+                "see", "sea", "she", "cee", "bee", "dee", "gee", "aitch",
+                "hey", "ay", "a3",
                 "takes", "take", "captures", "capture", "castle",
                 "e4", "d4", "exd5", "nf3", "nf6", "nc3", "nc6", "nxd4", "qxb4", "O-O"
             ]

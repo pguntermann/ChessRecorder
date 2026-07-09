@@ -89,19 +89,21 @@ enum LegalMoveResolver {
             })
 
         case .coordinate(let from, let to, let promotion):
+            let effectivePromotion = promotion ?? defaultPromotion(for: to)
             return unique(legalMoves.filter { move in
                 ChessKitMapping.appPosition(from: move.start) == from
                     && ChessKitMapping.appPosition(from: move.end) == to
-                    && promotionKind(for: move) == promotion
+                    && promotionKind(for: move) == effectivePromotion
             })
 
         case .pawn(let to, let captureFile, let promotion):
+            let effectivePromotion = promotion ?? defaultPromotion(for: to)
             return matchPieceLike(
                 kind: .pawn,
                 to: to,
                 disambiguation: captureFile.map { .byFile($0) },
                 capture: captureFile != nil,
-                promotion: promotion,
+                promotion: effectivePromotion,
                 among: legalMoves,
                 allowConfusedFiles: allowConfusedFiles
             )
@@ -210,6 +212,16 @@ enum LegalMoveResolver {
 
     private static func promotionKind(for move: Move) -> Piece.Kind? {
         move.promotedPiece?.kind
+    }
+
+    private static func defaultPromotion(for square: Square) -> Piece.Kind? {
+        guard square.rank.value == 1 || square.rank.value == 8 else { return nil }
+        return .queen
+    }
+
+    private static func defaultPromotion(for position: ChessPosition) -> Piece.Kind? {
+        guard position.rank == 0 || position.rank == 7 else { return nil }
+        return .queen
     }
 
     private static func coordinateNotation(for move: Move) -> String {

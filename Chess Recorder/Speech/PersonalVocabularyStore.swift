@@ -261,7 +261,8 @@ final class PersonalVocabularyStore {
         
         var results: [String] = []
         var seen = Set<String>()
-        
+        var matches: [(notation: String, phraseWordCount: Int, count: Int)] = []
+
         let textContainsCaptureIntent = words.contains(where: { token in
             let lowered = token.lowercased()
             return [
@@ -295,13 +296,21 @@ final class PersonalVocabularyStore {
             let matchesCompact = !compact.isEmpty && !learnedCompact.isEmpty
                 && (compact == learnedCompact || compact.hasSuffix(learnedCompact))
 
-            guard (matchesExactTail || matchesCompact), seen.insert(entry.moveNotation).inserted else { continue }
-            results.append(entry.moveNotation)
+            guard (matchesExactTail || matchesCompact) else { continue }
+            matches.append((entry.moveNotation, learnedWords.count, entry.count))
+        }
+
+        guard !matches.isEmpty else { return [] }
+
+        let longestPhraseWordCount = matches.map(\.phraseWordCount).max() ?? 0
+        for match in matches where match.phraseWordCount == longestPhraseWordCount {
+            guard seen.insert(match.notation).inserted else { continue }
+            results.append(match.notation)
         }
         
         return results.sorted { lhs, rhs in
-            let lhsCount = recognitionEntries(for: language).first { $0.moveNotation == lhs }?.count ?? 0
-            let rhsCount = recognitionEntries(for: language).first { $0.moveNotation == rhs }?.count ?? 0
+            let lhsCount = matches.first { $0.notation == lhs }?.count ?? 0
+            let rhsCount = matches.first { $0.notation == rhs }?.count ?? 0
             return lhsCount > rhsCount
         }
     }
@@ -584,8 +593,10 @@ final class PersonalVocabularyStore {
                 ("lb5", "bb5", 220), ("laufer b5", "bb5", 260), ("läufer b5", "bb5", 260),
                 ("g3", "g3", 220), ("g 3", "g3", 200), ("g drei", "g3", 230),
                 ("b3", "b3", 200), ("b 3", "b3", 180), ("b drei", "b3", 210),
-                ("kurz rochiert", "o-o", 240), ("kleine rochade", "o-o", 240), ("rochade", "o-o", 220),
-                ("lang rochiert", "o-o-o", 220), ("grosse rochade", "o-o-o", 220), ("große rochade", "o-o-o", 220)
+                ("kurz rochiert", "o-o", 240), ("kleine rochade", "o-o", 240), ("kurz rochade", "o-o", 240),
+                ("kurze rochade", "o-o", 240), ("rochade", "o-o", 180),
+                ("lang rochiert", "o-o-o", 240), ("lange rochade", "o-o-o", 260),
+                ("grosse rochade", "o-o-o", 240), ("große rochade", "o-o-o", 240)
             ]
         }
     }

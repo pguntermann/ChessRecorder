@@ -17,6 +17,11 @@ nonisolated enum MoveInterpreter {
     ) -> [String] {
         let normalized = normalizeTranscript(text, language: language, personalVocabulary: personalVocabulary)
         let allTokens = coalesceTokens(tokenize(normalized), language: language)
+
+        // Specific castling phrases must win over generic personal phrases like "rochade" -> O-O.
+        if let specificCastle = extractSpecificCastling(from: normalized, language: language) {
+            return [specificCastle]
+        }
         
         if let personalVocabulary {
             let learned = personalVocabulary.candidateMoves(for: normalized, language: language)
@@ -175,8 +180,27 @@ nonisolated enum MoveInterpreter {
     }
     
     private static func extractCastle(from text: String, language: RecognitionLanguage) -> String? {
+        if let specific = extractSpecificCastling(from: text, language: language) {
+            return specific
+        }
+
         let normalized = text.lowercased()
-        
+        switch language {
+        case .english:
+            if normalized.contains("castle") {
+                return "O-O"
+            }
+        case .german:
+            if normalized.contains("rochiert") || normalized.contains("rochade") {
+                return "O-O"
+            }
+        }
+        return nil
+    }
+
+    private static func extractSpecificCastling(from text: String, language: RecognitionLanguage) -> String? {
+        let normalized = text.lowercased()
+
         switch language {
         case .english:
             if matchesAny(normalized, phrases: [
@@ -187,7 +211,7 @@ nonisolated enum MoveInterpreter {
             }
             if matchesAny(normalized, phrases: [
                 "castle kingside", "castles kingside", "castle short", "castles short",
-                "kingside castle", "short castle", "castle"
+                "kingside castle", "short castle"
             ]) {
                 return "O-O"
             }
@@ -195,17 +219,14 @@ nonisolated enum MoveInterpreter {
             if matchesAny(normalized, phrases: [
                 "lang rochiert", "gross rochiert", "groß rochiert",
                 "lange rochade", "große rochade", "grosse rochade", "gross rochade",
-                "groß rochade", "gross rochade", "lange rochade"
+                "groß rochade"
             ]) {
                 return "O-O-O"
             }
             if matchesAny(normalized, phrases: [
                 "kurz rochiert", "kleine rochade", "klein rochade", "kurze rochade",
-                "kurz rochade", "kurze rochade"
+                "kurz rochade"
             ]) {
-                return "O-O"
-            }
-            if normalized.contains("rochiert") || normalized.contains("rochade") {
                 return "O-O"
             }
         }

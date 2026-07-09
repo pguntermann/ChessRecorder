@@ -62,30 +62,54 @@ struct EvaluationBarView: View {
         !topSegmentIsDark
     }
 
+    private var isEnabled: Bool {
+        isEngineReady && isEngineActive
+    }
+
+    private var displayTopFraction: Double {
+        isEnabled ? topFraction : 0.5
+    }
+
+    private var displayBottomFraction: Double {
+        isEnabled ? bottomFraction : 0.5
+    }
+
     var body: some View {
         GeometryReader { geometry in
             let totalHeight = geometry.size.height
-            let topHeight = max(totalHeight * topFraction, 0)
-            let bottomHeight = max(totalHeight * bottomFraction, 0)
+            let topHeight = max(totalHeight * displayTopFraction, 0)
+            let bottomHeight = max(totalHeight * displayBottomFraction, 0)
 
             ZStack {
                 VStack(spacing: 0) {
-                    topColor
+                    segmentColor(isTop: true)
                         .frame(height: topHeight)
-                    bottomColor
+                    segmentColor(isTop: false)
                         .frame(height: bottomHeight)
                 }
 
-                tickOverlay(totalHeight: totalHeight)
+                if isEnabled {
+                    tickOverlay(totalHeight: totalHeight)
+                }
 
                 RoundedRectangle(cornerRadius: 10)
-                    .stroke(Color.secondary.opacity(0.45), lineWidth: 1)
+                    .stroke(
+                        Color.secondary.opacity(isEnabled ? 0.45 : 0.25),
+                        lineWidth: 1
+                    )
             }
             .clipShape(RoundedRectangle(cornerRadius: 10))
+            .opacity(isEnabled ? 1 : 0.55)
         }
-        .frame(width: 38)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel)
+    }
+
+    private func segmentColor(isTop: Bool) -> Color {
+        guard isEnabled else {
+            return Color.secondary.opacity(isTop ? 0.28 : 0.14)
+        }
+        return isTop ? topColor : bottomColor
     }
 
     private func tickOverlay(totalHeight: CGFloat) -> some View {

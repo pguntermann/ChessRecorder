@@ -22,6 +22,9 @@ DerivedData/
 # Stockfish NNUE weights (downloaded by Scripts/fetch-stockfish-nnue.sh)
 StockfishNNUE/
 
+# Generated before each build (Scripts/generate-build-number.sh)
+BuildNumber.xcconfig
+
 # Alternate piece sets (not bundled in the app; kept locally only)
 chesspieces/
 

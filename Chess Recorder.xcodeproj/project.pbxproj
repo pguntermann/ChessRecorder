@@ -24,28 +24,6 @@
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
-/* Begin PBXShellScriptBuildPhase section */
-		17F0A1012FFF00000026DE7C /* Set Date Build Number */ = {
-			isa = PBXShellScriptBuildPhase;
-			alwaysOutOfDate = 1;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-			);
-			name = "Set Date Build Number";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "BUILD_NUMBER=\"$(date '+%Y%m%d_%H%M')\"\nINFOPLIST=\"${BUILT_PRODUCTS_DIR}/${INFOPLIST_PATH}\"\nif [[ -f \"${INFOPLIST}\" ]]; then\n  /usr/libexec/PlistBuddy -c \"Set :CFBundleVersion ${BUILD_NUMBER}\" \"${INFOPLIST}\" 2>/dev/null || /usr/libexec/PlistBuddy -c \"Add :CFBundleVersion string ${BUILD_NUMBER}\" \"${INFOPLIST}\"\n  echo \"Set CFBundleVersion to ${BUILD_NUMBER}\"\nfi\n";
-		};
-/* End PBXShellScriptBuildPhase section */
-
 /* Begin PBXFrameworksBuildPhase section */
 		1760A27B2FFED5F20026DE7C /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
@@ -94,7 +72,6 @@
 				1760A27A2FFED5F20026DE7C /* Sources */,
 				1760A27B2FFED5F20026DE7C /* Frameworks */,
 				1760A27C2FFED5F20026DE7C /* Resources */,
-				17F0A1012FFF00000026DE7C /* Set Date Build Number */,
 			);
 			buildRules = (
 			);
@@ -300,10 +277,8 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 7ZWX577M73;
 				ENABLE_PREVIEWS = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Required to dictate moves with voice";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Required to dictate moves with voice";
@@ -338,10 +313,8 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = 7ZWX577M73;
 				ENABLE_PREVIEWS = YES;
-				ENABLE_USER_SCRIPT_SANDBOXING = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Required to dictate moves with voice";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Required to dictate moves with voice";

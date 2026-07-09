@@ -154,29 +154,17 @@ struct ContentView: View {
     
     private var boardSection: some View {
         VStack(spacing: 10) {
-            HStack(spacing: 10) {
-                ChessBoardView(
-                    game: game,
-                    settings: settingsStore.settings,
-                    orientation: boardOrientation,
-                    touchInputEnabled: settingsStore.settings.touchInputEnabled,
-                    analysisArrow: settingsStore.settings.engineAnalysisShowBoardArrow
-                        ? engineAnalysis.display.nextMoveArrow
-                        : nil,
-                    chessEngine: chessEngine
-                )
+            BoardWithEvaluationLayout(
+                game: game,
+                settings: settingsStore.settings,
+                orientation: boardOrientation,
+                chessEngine: chessEngine,
+                engineAnalysis: engineAnalysis,
+                showEvaluationBar: settingsStore.settings.engineAnalysisShowEvaluationBar,
+                showBoardArrow: settingsStore.settings.engineAnalysisShowBoardArrow,
+                engineAnalysisVisible: settingsStore.settings.engineAnalysisVisible
+            )
 
-                if settingsStore.settings.engineAnalysisShowEvaluationBar {
-                    EvaluationBarView(
-                        whiteFraction: engineAnalysis.display.evaluationBarWhiteFraction,
-                        orientation: boardOrientation,
-                        evaluationText: engineAnalysis.display.evaluationText,
-                        isEngineActive: settingsStore.settings.engineAnalysisVisible && engineAnalysis.isActive,
-                        isEngineReady: engineAnalysis.isEngineReady
-                    )
-                }
-            }
-            
             HStack(spacing: 8) {
                 Circle()
                     .fill(game.currentTurn == .white ? Color.white : Color.black)
@@ -418,6 +406,90 @@ private struct InitializationOverlay: View {
         .ignoresSafeArea()
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Initializing speech recognition")
+    }
+}
+
+private struct BoardWithEvaluationLayout: View {
+    let game: ChessGame
+    let settings: AppSettings
+    let orientation: BoardOrientation
+    let chessEngine: ChessEngine
+    let engineAnalysis: EngineAnalysisService
+    let showEvaluationBar: Bool
+    let showBoardArrow: Bool
+    let engineAnalysisVisible: Bool
+
+    var body: some View {
+        BoardEvalRowLayout(showEvaluationBar: showEvaluationBar) {
+            ChessBoardView(
+                game: game,
+                settings: settings,
+                orientation: orientation,
+                touchInputEnabled: settings.touchInputEnabled,
+                analysisArrow: showBoardArrow ? engineAnalysis.display.nextMoveArrow : nil,
+                chessEngine: chessEngine
+            )
+
+            if showEvaluationBar {
+                EvaluationBarView(
+                    whiteFraction: engineAnalysis.display.evaluationBarWhiteFraction,
+                    orientation: orientation,
+                    evaluationText: engineAnalysis.display.evaluationText,
+                    isEngineActive: engineAnalysisVisible && engineAnalysis.isActive,
+                    isEngineReady: engineAnalysis.isEngineReady
+                )
+            }
+        }
+    }
+}
+
+private struct BoardEvalRowLayout: Layout {
+    let showEvaluationBar: Bool
+
+    private let evalBarWidth: CGFloat = 38
+    private let spacing: CGFloat = 10
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        guard let width = proposal.width else { return .zero }
+        let boardSide = boardSideLength(
+            availableWidth: width,
+            availableHeight: proposal.height ?? .infinity
+        )
+        return CGSize(width: width, height: max(boardSide, 0))
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let boardSide = boardSideLength(
+            availableWidth: bounds.width,
+            availableHeight: bounds.height
+        )
+        guard boardSide > 0, !subviews.isEmpty else { return }
+
+        let boardSize = ProposedViewSize(width: boardSide, height: boardSide)
+        subviews[0].place(
+            at: CGPoint(x: bounds.minX + boardSide / 2, y: bounds.minY + boardSide / 2),
+            anchor: .center,
+            proposal: boardSize
+        )
+
+        guard showEvaluationBar, subviews.count > 1 else { return }
+
+        let barSize = ProposedViewSize(width: evalBarWidth, height: boardSide)
+        subviews[1].place(
+            at: CGPoint(
+                x: bounds.minX + boardSide + spacing + evalBarWidth / 2,
+                y: bounds.minY + boardSide / 2
+            ),
+            anchor: .center,
+            proposal: barSize
+        )
+    }
+
+    private func boardSideLength(availableWidth: CGFloat, availableHeight: CGFloat) -> CGFloat {
+        let horizontalOverhead = showEvaluationBar ? evalBarWidth + spacing : 0
+        return floor(
+            min(max(0, availableWidth - horizontalOverhead), availableHeight) / 8
+        ) * 8
     }
 }
 

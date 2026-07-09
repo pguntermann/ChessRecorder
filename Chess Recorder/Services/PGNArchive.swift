@@ -78,6 +78,7 @@ enum PGNFormatter {
 @Observable
 final class PGNArchive {
     private(set) var completedGames: [RecordedGame] = []
+    private(set) var currentGameResult: PGNResult = .ongoing
     
     func finalizeCurrentGame(_ game: ChessGame, result: PGNResult) {
         guard !game.moves.isEmpty else { return }
@@ -87,6 +88,11 @@ final class PGNArchive {
             result: result,
             date: Date()
         ))
+        currentGameResult = .ongoing
+    }
+
+    func syncCurrentGameResult(with game: ChessGame) {
+        currentGameResult = game.gameResult
     }
     
     func displayText(currentGame: ChessGame, metadata: PGNMetadata) -> String {
@@ -104,7 +110,7 @@ final class PGNArchive {
             parts.append(PGNFormatter.formatGame(
                 moves: currentGame.moves,
                 round: round,
-                result: .ongoing,
+                result: currentGameResult,
                 metadata: metadata
             ))
         }
@@ -113,6 +119,7 @@ final class PGNArchive {
     
     func resetAll() {
         completedGames.removeAll()
+        currentGameResult = .ongoing
     }
 }
 

@@ -109,6 +109,7 @@ class ChessGame {
     private(set) var board: [[ChessPiece?]]
     private(set) var currentTurn: PieceColor = .white
     private(set) var moves: [ChessMove] = []
+    private(set) var gameResult: PGNResult = .ongoing
     var activeMoveAnimation: ActiveMoveAnimation?
 
     @ObservationIgnored private var kitBoard: Board
@@ -225,8 +226,25 @@ class ChessGame {
         kitGame = ChessKit.Game()
         currentIndex = kitGame.startingIndex
         moves = []
+        gameResult = .ongoing
         activeMoveAnimation = nil
         syncBoardFromKit()
+    }
+
+    var isGameOver: Bool {
+        gameResult != .ongoing
+    }
+
+    var gameStatusMessage: String? {
+        switch kitBoard.state {
+        case .checkmate(let color):
+            let winner = color == .black ? "White" : "Black"
+            return "Checkmate — \(winner) wins"
+        case .draw(let reason):
+            return ChessKitMapping.drawStatusMessage(for: reason)
+        default:
+            return nil
+        }
     }
 
     func undoLastMove() -> Bool {
@@ -350,6 +368,7 @@ class ChessGame {
         }
 
         currentTurn = ChessKitMapping.appColor(kitBoard.position.sideToMove)
+        gameResult = ChessKitMapping.pgnResult(from: kitBoard.state) ?? .ongoing
     }
 
     private func setAnimation(for move: Move, piece: ChessPiece) {

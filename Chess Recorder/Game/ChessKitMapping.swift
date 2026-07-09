@@ -73,6 +73,32 @@ enum ChessKitMapping {
         )
     }
 
+    static func pgnResult(from state: Board.State) -> PGNResult? {
+        switch state {
+        case .checkmate(let color):
+            return color == .black ? .whiteWins : .blackWins
+        case .draw:
+            return .draw
+        default:
+            return nil
+        }
+    }
+
+    static func drawStatusMessage(for reason: Board.State.DrawReason) -> String {
+        switch reason {
+        case .stalemate:
+            return "Stalemate — draw"
+        case .fiftyMoves:
+            return "Draw — fifty-move rule"
+        case .insufficientMaterial:
+            return "Draw — insufficient material"
+        case .repetition:
+            return "Draw — threefold repetition"
+        case .agreement:
+            return "Draw — by agreement"
+        }
+    }
+
     static func normalizeSAN(_ notation: String) -> String {
         var cleaned = notation
             .trimmingCharacters(in: .whitespacesAndNewlines)

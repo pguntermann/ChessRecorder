@@ -110,8 +110,18 @@ struct ContentView: View {
             engineAnalysis.refresh(game: game)
         }
         .onChange(of: game.moves.count) { _, _ in
-            engineAnalysis.refresh(game: game)
+            if game.isGameOver {
+                engineAnalysis.stop()
+            } else {
+                engineAnalysis.refresh(game: game)
+            }
             openingService.refresh(game: game)
+        }
+        .onChange(of: game.gameResult) { _, _ in
+            pgnArchive.syncCurrentGameResult(with: game)
+            if game.isGameOver {
+                engineAnalysis.stop()
+            }
         }
         .sheet(isPresented: $showingSettings) {
             SettingsView(
@@ -186,9 +196,9 @@ struct ContentView: View {
                     .frame(width: 14, height: 14)
                     .overlay(Circle().stroke(Color.secondary, lineWidth: 1))
                 
-                Text(game.currentTurn == .white ? "White to move" : "Black to move")
+                Text(game.gameStatusMessage ?? (game.currentTurn == .white ? "White to move" : "Black to move"))
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(game.isGameOver ? .primary : .secondary)
                 
                 Spacer()
                 
@@ -392,7 +402,8 @@ struct ContentView: View {
     }
     
     private func startNewGame(result: PGNResult) {
-        pgnArchive.finalizeCurrentGame(game, result: result)
+        let archiveResult = result == .ongoing ? game.gameResult : result
+        pgnArchive.finalizeCurrentGame(game, result: archiveResult)
         game.resetGame()
         speechRecognizer.transcript = ""
     }

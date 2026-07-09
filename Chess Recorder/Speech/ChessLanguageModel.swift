@@ -11,7 +11,7 @@ import Speech
 
 enum ChessLanguageModel {
     
-    private static let baseModelVersion = "1.4"
+    private static let baseModelVersion = "1.9"
     private static let modelIdentifier = "ChessRecorder.chess-moves"
     
     private static var preparedConfigurations: [RecognitionLanguage: SFSpeechLanguageModel.Configuration] = [:]
@@ -163,13 +163,17 @@ enum ChessLanguageModel {
                 SFCustomLanguageModelData.PhraseCount(phrase: phrase, count: count)
             }
             
+            for square in ["e4", "d4", "e5", "d5", "c4", "f3", "f6", "c3", "c6", "g1", "e3", "e6", "e7"] {
+                SFCustomLanguageModelData.PhraseCount(phrase: square, count: 300)
+            }
+
+            for phrase in ["c3", "c 3", "c drei", "see drei", "sea drei"] {
+                SFCustomLanguageModelData.PhraseCount(phrase: phrase, count: 500)
+            }
+
             for verb in captureVerbs {
                 SFCustomLanguageModelData.PhraseCount(phrase: "e \(verb) d4", count: 500)
                 SFCustomLanguageModelData.PhraseCount(phrase: "e \(verb) d vier", count: 200)
-            }
-            
-            for square in ["e4", "d4", "e5", "d5", "c4", "f3", "f6", "c3", "c6", "g1", "e3", "e6", "e7"] {
-                SFCustomLanguageModelData.PhraseCount(phrase: square, count: 300)
             }
 
             for rank in ["eins", "zwei", "drei", "vier", "fünf", "sechs", "sieben", "acht"] {
@@ -180,10 +184,26 @@ enum ChessLanguageModel {
                 SFCustomLanguageModelData.PhraseCount(phrase: word, count: 150)
             }
 
+            for piece in pieces {
+                SFCustomLanguageModelData.PhraseCount(phrase: piece, count: 800)
+            }
+
+            for file in files {
+                SFCustomLanguageModelData.PhraseCount(phrase: file, count: 500)
+            }
+
+            for phrase in ["h 5", "h 6", "h 7", "h 8", "h 3", "h 4", "h auf f3", "h auf g5",
+                           "läufer h auf g5", "springer h auf f3", "turm h auf h1",
+                           "läufer auf e5", "läufer e5", "springer auf f3", "springer f3",
+                           "turm auf d1", "dame auf h5"] {
+                SFCustomLanguageModelData.PhraseCount(phrase: phrase, count: 320)
+            }
+
             for phrase in ["zurück", "rückgängig", "kurz rochiert", "lang rochiert",
                            "kleine rochade", "große rochade", "grosse rochade", "lange rochade",
-                           "springer g1 auf f3", "turm f auf d1", "turm f1 auf d1"] {
-                SFCustomLanguageModelData.PhraseCount(phrase: phrase, count: 100)
+                           "springer g1 auf f3", "turm f auf d1", "turm f1 auf d1",
+                           "läufer f1 auf c4", "springer g1 auf f3"] {
+                SFCustomLanguageModelData.PhraseCount(phrase: phrase, count: 220)
             }
             
             SFCustomLanguageModelData.PhraseCountsFromTemplates(
@@ -206,11 +226,15 @@ enum ChessLanguageModel {
                 )
                 SFCustomLanguageModelData.TemplatePhraseCountGenerator.Template(
                     "<piece> <square>",
-                    count: 6000
+                    count: 7000
+                )
+                SFCustomLanguageModelData.TemplatePhraseCountGenerator.Template(
+                    "<piece> auf <square>",
+                    count: 5500
                 )
                 SFCustomLanguageModelData.TemplatePhraseCountGenerator.Template(
                     "<piece> <file> auf <square>",
-                    count: 3000
+                    count: 4500
                 )
                 SFCustomLanguageModelData.TemplatePhraseCountGenerator.Template(
                     "<file> <spokenRank>",
@@ -249,7 +273,15 @@ enum ChessLanguageModel {
                 SFCustomLanguageModelData.PhraseCount(phrase: square, count: 300)
             }
 
-            for word in ["see", "sea", "bee", "dee", "gee", "aitch"] {
+            for phrase in ["c3", "c 3", "see three", "sea three", "see 3", "sea 3", "cee three"] {
+                SFCustomLanguageModelData.PhraseCount(phrase: phrase, count: 500)
+            }
+
+            for (phrase, count) in ChessTranscriptNormalizer.englishPawnCaptureBoostPhrases() {
+                SFCustomLanguageModelData.PhraseCount(phrase: phrase, count: count)
+            }
+
+            for word in ["see", "sea", "cee", "bee", "dee", "gee", "aitch"] {
                 SFCustomLanguageModelData.PhraseCount(phrase: word, count: 200)
             }
 
@@ -257,8 +289,22 @@ enum ChessLanguageModel {
                 SFCustomLanguageModelData.PhraseCount(phrase: word, count: 150)
             }
 
-            for phrase in ["knight g1 to f3", "rook f to d1", "rook g1 to f3"] {
-                SFCustomLanguageModelData.PhraseCount(phrase: phrase, count: 100)
+            for piece in pieces {
+                SFCustomLanguageModelData.PhraseCount(phrase: piece, count: 800)
+            }
+
+            for file in files {
+                SFCustomLanguageModelData.PhraseCount(phrase: file, count: 400)
+            }
+
+            for phrase in [
+                "bishop e4 to e5", "bishop f1 to c4", "bishop takes e5", "bishop b5",
+                "bishop to e5", "bishop e5", "knight to f3", "knight f3",
+                "knight g1 to f3", "knight f3 to e5", "knight takes d4",
+                "rook e1 to e8", "rook f to d1", "rook g1 to f3", "rook to d1",
+                "queen d1 to h5", "queen to h5", "king e1 to e2", "pawn e4", "pawn to e4"
+            ] {
+                SFCustomLanguageModelData.PhraseCount(phrase: phrase, count: 280)
             }
             
             SFCustomLanguageModelData.PhraseCountsFromTemplates(
@@ -281,11 +327,15 @@ enum ChessLanguageModel {
                 )
                 SFCustomLanguageModelData.TemplatePhraseCountGenerator.Template(
                     "<piece> <square>",
-                    count: 6000
+                    count: 7000
+                )
+                SFCustomLanguageModelData.TemplatePhraseCountGenerator.Template(
+                    "<piece> to <square>",
+                    count: 5500
                 )
                 SFCustomLanguageModelData.TemplatePhraseCountGenerator.Template(
                     "<piece> <file> to <square>",
-                    count: 2500
+                    count: 4500
                 )
                 SFCustomLanguageModelData.TemplatePhraseCountGenerator.Template(
                     "<file> <spokenRank>",

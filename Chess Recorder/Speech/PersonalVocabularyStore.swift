@@ -652,7 +652,10 @@ final class PersonalVocabularyStore {
                 ("c6", "c6", 280), ("c 6", "c6", 260), ("c sechs", "c6", 300),
                 ("g6", "g6", 240), ("g 6", "g6", 220), ("g sechs", "g6", 260),
                 ("g1", "g1", 220), ("g 1", "g1", 200), ("g eins", "g1", 240),
-                ("c3", "c3", 240), ("c 3", "c3", 220), ("c drei", "c3", 250),
+                ("c3", "c3", 320), ("c 3", "c3", 300), ("see three", "c3", 320),
+                ("sea three", "c3", 320), ("since we", "c3", 300), ("her siri", "c3", 300),
+                ("see we", "c3", 300), ("sea we", "c3", 300),
+                ("c drei", "c3", 250),
                 ("h5", "h5", 200), ("h 5", "h5", 180), ("h funf", "h5", 210), ("h fünf", "h5", 210),
                 ("a3", "a3", 180), ("a 3", "a3", 160), ("a drei", "a3", 190),
                 ("kurz rochiert", "o-o", 240), ("kleine rochade", "o-o", 240), ("kurz rochade", "o-o", 240),
@@ -670,10 +673,10 @@ final class PersonalVocabularyStore {
 
         var phrases: [(String, Int)] = []
         for file in files {
-            phrases.append((file, 160))
+            phrases.append((file, 320))
         }
         for digit in digits {
-            phrases.append((digit, 160))
+            phrases.append((digit, 200))
         }
 
         switch language {
@@ -684,32 +687,63 @@ final class PersonalVocabularyStore {
             let spokenFiles = [
                 "see", "sea", "bee", "dee", "gee", "aitch"
             ]
+            let pieces = ["knight", "bishop", "rook", "queen", "king", "pawn"]
             for word in spokenRanks {
-                phrases.append((word, 140))
+                phrases.append((word, 160))
             }
             for word in spokenFiles {
-                phrases.append((word, 180))
+                phrases.append((word, 220))
             }
-            for phrase in ["rook f to d1", "rook g1 to f3", "knight g1 to f3"] {
-                phrases.append((phrase, 160))
+            for piece in pieces {
+                phrases.append((piece, 480))
+            }
+            for (phrase, count) in ChessTranscriptNormalizer.englishPawnCaptureBoostPhrases(
+                fileCount: 380,
+                misheardCount: 360
+            ) {
+                phrases.append((phrase, count))
+            }
+            for phrase in [
+                "c3", "c 3", "see three", "sea three", "see 3", "sea 3",
+                "bishop e4 to e5", "bishop f1 to c4", "bishop takes e5",
+                "bishop to e5", "bishop e5", "knight to f3", "knight f3",
+                "knight g1 to f3", "knight f3 to e5", "knight takes d4",
+                "rook f to d1", "rook g1 to f3", "rook e1 to e8", "rook to d1",
+                "queen d1 to h5", "queen to h5", "king e1 to e2", "pawn to e4"
+            ] {
+                phrases.append((phrase, 300))
             }
         case .german:
             let spokenRanks = [
                 "eins", "zwei", "drei", "vier", "funf", "fünf", "sechs", "sieben", "acht"
             ]
+            let pieces = ["springer", "laufer", "läufer", "turm", "dame", "konig", "könig", "bauer"]
             for word in spokenRanks {
-                phrases.append((word, 140))
+                phrases.append((word, 160))
+            }
+            for piece in pieces {
+                phrases.append((piece, 480))
             }
             for rank in 1...8 {
                 let rankText = String(rank)
-                phrases.append(("e\(rankText)", 240))
-                phrases.append(("e \(rankText)", 220))
+                phrases.append(("e\(rankText)", 280))
+                phrases.append(("e \(rankText)", 260))
             }
             for spoken in ["eins", "zwei", "drei", "vier", "funf", "fünf", "sechs", "sieben", "acht"] {
-                phrases.append(("e \(spoken)", 240))
+                phrases.append(("e \(spoken)", 280))
             }
-            for phrase in ["turm f auf d1", "springer g1 auf f3", "turm f1 auf d1"] {
-                phrases.append((phrase, 160))
+            for rank in 1...8 {
+                let rankText = String(rank)
+                phrases.append(("h\(rankText)", 360))
+                phrases.append(("h \(rankText)", 340))
+            }
+            for phrase in [
+                "turm f auf d1", "springer g1 auf f3", "turm f1 auf d1",
+                "läufer h auf g5", "springer h auf f3", "h auf f3", "h schlagt g5",
+                "läufer auf e5", "läufer e5", "springer auf f3", "springer f3",
+                "turm auf d1", "dame auf h5"
+            ] {
+                phrases.append((phrase, 300))
             }
         }
 

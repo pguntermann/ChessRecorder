@@ -465,10 +465,18 @@ nonisolated enum MoveInterpreter {
         
         var moves: [String] = []
         for index in 1..<words.count {
-            guard isPieceName(words[index - 1]),
-                  let square = sanitizeSquare(words[index]) else { continue }
+            guard isPieceName(words[index - 1]) else { continue }
             let piece = piecePrefix(words[index - 1])
-            if !piece.isEmpty {
+            guard !piece.isEmpty else { continue }
+
+            if let square = sanitizeSquare(words[index]) {
+                moves.append(piece + square)
+                continue
+            }
+
+            if index + 1 < words.count,
+               isMovePreposition(words[index]),
+               let square = sanitizeSquare(words[index + 1]) {
                 moves.append(piece + square)
             }
         }

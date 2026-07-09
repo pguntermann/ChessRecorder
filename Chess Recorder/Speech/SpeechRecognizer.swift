@@ -48,6 +48,7 @@ class SpeechRecognizer {
     var isLanguageModelReady = false
     var isInitializing = true
     var isRebuildingLanguageModel = false
+    var initializationPhase: InitializationPhase = .requestingPermissions
     var currentLanguage: RecognitionLanguage = .english
     var pendingFailure: RecognitionFailureContext?
     var dictationPauseDeadline: Date?
@@ -72,6 +73,7 @@ class SpeechRecognizer {
     var dictationPauseSeconds: Double = 0.9
     
     var onMoveDetected: ((String) -> Bool)?
+    var onMoveCandidatesDetected: (([String]) -> Bool)?
     var onUndoDetected: (() -> Void)?
     
     var isReadyForUse: Bool {
@@ -134,10 +136,16 @@ class SpeechRecognizer {
             hasCompletedStartup = true
         }
         
+        setInitializationPhase(.requestingPermissions)
         await requestAuthorization()
         currentLanguage = language
         speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: language.rawValue))
         await prepareLanguageModel(for: language)
+    }
+
+    @MainActor
+    func setInitializationPhase(_ phase: InitializationPhase) {
+        initializationPhase = phase
     }
     
     @MainActor
@@ -169,7 +177,13 @@ class SpeechRecognizer {
         isLanguageModelReady = false
         guard let vocabularyStore else { return }
         _ = vocabularyStore.seedCommonPhrasesIfNeeded(for: language)
-        if await ChessLanguageModel.prepare(for: language, vocabulary: vocabularyStore) != nil {
+        if await ChessLanguageModel.prepare(
+            for: language,
+            vocabulary: vocabularyStore,
+            onPhaseChange: { [weak self] phase in
+                self?.initializationPhase = phase
+            }
+        ) != nil {
             isLanguageModelReady = true
         }
     }
@@ -432,6 +446,15 @@ class SpeechRecognizer {
         }
         
         print("Move candidates: \(candidates.joined(separator: ", "))")
+
+        if onMoveCandidatesDetected?(candidates) == true {
+            print("Accepted move from candidates: \(candidates.first ?? "")")
+            lastProcessedMove = candidates.first
+            lastAcceptedTranscript = correctedText
+            pendingFailure = nil
+            prepareForNextMove()
+            return
+        }
         
         var rejectedMoves: [String] = []
         

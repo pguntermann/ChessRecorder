@@ -135,24 +135,46 @@ class ChessGame {
     @discardableResult
     func executeSAN(_ notation: String) -> Bool {
         if let coordinateMove = ChessKitMapping.parseCoordinateMove(notation) {
-            return performMove(
+            if performMove(
                 from: coordinateMove.from,
                 to: coordinateMove.to,
                 promotion: coordinateMove.promotion
-            )
+            ) {
+                return true
+            }
+            return executeLegalMatch(notation: notation)
         }
 
         let normalized = ChessKitMapping.normalizeSAN(notation)
         let position = kitBoard.position
 
-        let parsed = Move(san: normalized, position: position)
+        if let parsed = Move(san: normalized, position: position)
             ?? (ChessKitMapping.isPawnFileCaptureSAN(normalized)
                 ? nil
-                : Move(san: normalized.uppercased(), position: position))
+                : Move(san: normalized.uppercased(), position: position)) {
+            if applyParsedMove(parsed) {
+                return true
+            }
+        }
 
-        guard let parsed else { return false }
+        return executeLegalMatch(notation: notation)
+    }
 
-        return applyParsedMove(parsed)
+    /// Tries spoken move candidates against the current legal moves (same path as touch input).
+    @discardableResult
+    func executeVoiceCandidates(_ candidates: [String]) -> Bool {
+        for notation in candidates {
+            if executeSAN(notation) {
+                return true
+            }
+        }
+
+        let legalMoves = enumerateLegalKitMoves()
+        guard let matched = LegalMoveResolver.matchBest(candidates: candidates, among: legalMoves) else {
+            return false
+        }
+
+        return applyLegalMove(matched)
     }
 
     @discardableResult
@@ -208,20 +230,22 @@ class ChessGame {
     }
 
     func undoLastMove() -> Bool {
-        guard currentIndex != kitGame.startingIndex else { return false }
+        guard kitGame.moves.hasIndex(before: currentIndex) else { return false }
 
-        currentIndex = currentIndex.previous
+        currentIndex = kitGame.moves.index(before: currentIndex)
         guard let position = kitGame.positions[currentIndex] else { return false }
 
         kitBoard.update(position: position, resetPositionCounts: true)
-        moves.removeLast()
+        if !moves.isEmpty {
+            moves.removeLast()
+        }
         activeMoveAnimation = nil
         syncBoardFromKit()
         return true
     }
 
     var canUndo: Bool {
-        currentIndex != kitGame.startingIndex
+        kitGame.moves.hasIndex(before: currentIndex)
     }
 
     func fen() -> String {
@@ -244,6 +268,50 @@ class ChessGame {
     }
 
     // MARK: - ChessKit integration
+
+    @discardableResult
+    private func executeLegalMatch(notation: String) -> Bool {
+        let legalMoves = enumerateLegalKitMoves()
+        guard let matched = LegalMoveResolver.match(notation: notation, among: legalMoves) else {
+            return false
+        }
+        return applyLegalMove(matched)
+    }
+
+    @discardableResult
+    private func applyLegalMove(_ move: Move) -> Bool {
+        performMove(
+            from: ChessKitMapping.appPosition(from: move.start),
+            to: ChessKitMapping.appPosition(from: move.end),
+            promotion: move.promotedPiece.map { ChessKitMapping.appPieceType($0.kind) }
+        )
+    }
+
+    private func enumerateLegalKitMoves() -> [Move] {
+        var moves: [Move] = []
+        let side = kitBoard.position.sideToMove
+
+        for piece in kitBoard.position.pieces where piece.color == side {
+            let start = piece.square
+            for end in kitBoard.legalMoves(forPieceAt: start) {
+                var trialBoard = kitBoard
+                guard let move = trialBoard.move(pieceAt: start, to: end) else { continue }
+
+                if case .promotion = trialBoard.state {
+                    for kind in [Piece.Kind.queen, .rook, .bishop, .knight] {
+                        var promotionBoard = kitBoard
+                        guard promotionBoard.move(pieceAt: start, to: end) != nil else { continue }
+                        guard case .promotion(let promotionMove) = promotionBoard.state else { continue }
+                        moves.append(promotionBoard.completePromotion(of: promotionMove, to: kind))
+                    }
+                } else {
+                    moves.append(move)
+                }
+            }
+        }
+
+        return moves
+    }
 
     private func applyParsedMove(_ parsed: Move) -> Bool {
         let from = ChessKitMapping.appPosition(from: parsed.start)

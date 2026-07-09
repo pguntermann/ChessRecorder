@@ -52,7 +52,43 @@ nonisolated enum MoveInterpreter {
         }
 
         // Prefer parsed moves over learned shortcuts when both are available.
-        return deduplicatedMoves([interpreted, results].flatMap { $0 })
+        let combined = deduplicatedMoves([interpreted, results].flatMap { $0 })
+        if language == .german {
+            return expandGermanFileConfusionCandidates(combined)
+        }
+        return combined
+    }
+
+    /// Adds e/g/a file variants — German ASR often confuses the short "e" sound.
+    private static func expandGermanFileConfusionCandidates(_ moves: [String]) -> [String] {
+        var expanded = moves
+        var seen = Set(moves.map { $0.lowercased() })
+
+        func append(_ move: String) {
+            let key = move.lowercased()
+            guard seen.insert(key).inserted else { return }
+            expanded.append(move)
+        }
+
+        for move in moves {
+            if move.count == 2 {
+                for variant in LegalMoveResolver.squareNotationVariants(for: move) {
+                    append(variant)
+                }
+                continue
+            }
+
+            if move.count == 3,
+               let first = move.first,
+               "NBRQK".contains(String(first).uppercased()) {
+                let square = String(move.suffix(2))
+                for variant in LegalMoveResolver.squareNotationVariants(for: square) {
+                    append(String(first) + variant)
+                }
+            }
+        }
+
+        return expanded
     }
 
     private static func deduplicatedMoves(_ moves: [String]) -> [String] {

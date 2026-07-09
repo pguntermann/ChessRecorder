@@ -700,6 +700,14 @@ final class PersonalVocabularyStore {
             for word in spokenRanks {
                 phrases.append((word, 140))
             }
+            for rank in 1...8 {
+                let rankText = String(rank)
+                phrases.append(("e\(rankText)", 240))
+                phrases.append(("e \(rankText)", 220))
+            }
+            for spoken in ["eins", "zwei", "drei", "vier", "funf", "fünf", "sechs", "sieben", "acht"] {
+                phrases.append(("e \(spoken)", 240))
+            }
             for phrase in ["turm f auf d1", "springer g1 auf f3", "turm f1 auf d1"] {
                 phrases.append((phrase, 160))
             }

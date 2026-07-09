@@ -89,7 +89,8 @@ enum ChessTranscriptNormalizer {
         )
         
         let spokenLetters: [(String, String)] = [
-            (" dee ", " d "), (" tee ", " t "), (" bee ", " b ")
+            (" dee ", " d "), (" tee ", " t "), (" bee ", " b "),
+            (" eh ", " e ")
         ]
         for (wrong, right) in spokenLetters {
             result = result.replacingOccurrences(of: wrong, with: right)

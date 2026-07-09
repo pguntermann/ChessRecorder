@@ -24,6 +24,7 @@ struct ContentView: View {
     @State private var boardOrientation: BoardOrientation = .whiteAtBottom
     @State private var engineAnalysis = EngineAnalysisService()
     @State private var openingService = OpeningService()
+    @State private var isAppReady = false
     
     init(settingsStore: SettingsStore, vocabularyStore: PersonalVocabularyStore) {
         self.settingsStore = settingsStore
@@ -69,12 +70,12 @@ struct ContentView: View {
             }
         }
         .overlay {
-            if speechRecognizer.isInitializing {
-                InitializationOverlay()
+            if !isAppReady {
+                InitializationOverlay(phase: speechRecognizer.initializationPhase)
                     .transition(.opacity)
             }
         }
-        .animation(.easeInOut(duration: 0.25), value: speechRecognizer.isInitializing)
+        .animation(.easeInOut(duration: 0.25), value: isAppReady)
         .task {
             setupSpeechRecognizer()
             speechRecognizer.dictationPauseSeconds = settingsStore.settings.dictationPauseSeconds
@@ -83,9 +84,12 @@ struct ContentView: View {
                 unlimited: settingsStore.settings.isEngineAnalysisUncapped
             )
             await speechRecognizer.startup(with: settingsStore.settings.defaultRecognitionLanguage)
+            speechRecognizer.setInitializationPhase(.preparingEngine)
             await engineAnalysis.prepare()
+            speechRecognizer.setInitializationPhase(.loadingOpenings)
             await openingService.prepare()
             openingService.refresh(game: game)
+            isAppReady = true
         }
         .onDisappear {
             Task { await engineAnalysis.shutdown() }
@@ -223,7 +227,7 @@ struct ContentView: View {
     
     private var controlToolbar: some View {
         HStack(spacing: 8) {
-            Image("logo")
+            Image("logo_sr")
                 .resizable()
                 .aspectRatio(contentMode: .fit)
                 .frame(width: 28, height: 28)
@@ -312,6 +316,10 @@ struct ContentView: View {
     }
     
     private func setupSpeechRecognizer() {
+        speechRecognizer.onMoveCandidatesDetected = { candidates in
+            self.processVoiceMoveCandidates(candidates)
+        }
+
         speechRecognizer.onMoveDetected = { moveNotation in
             self.processMoveFromSpeech(moveNotation)
         }
@@ -364,6 +372,16 @@ struct ContentView: View {
     }
     
     @discardableResult
+    private func processVoiceMoveCandidates(_ candidates: [String]) -> Bool {
+        print("Processing move candidates: \(candidates.joined(separator: ", "))")
+        guard chessEngine.executeVoiceCandidates(candidates) else {
+            print("Could not find valid move for \(candidates.joined(separator: ", "))")
+            return false
+        }
+        return true
+    }
+
+    @discardableResult
     private func processMoveFromSpeech(_ notation: String) -> Bool {
         print("Processing move: \(notation)")
         guard chessEngine.executeMove(notation: notation) else {
@@ -395,28 +413,84 @@ struct ContentView: View {
 }
 
 private struct InitializationOverlay: View {
+    let phase: InitializationPhase
+
     var body: some View {
         ZStack {
             Color(uiColor: .systemBackground)
                 .opacity(0.94)
-            
-            VStack(spacing: 16) {
+
+            VStack(spacing: 20) {
                 ProgressView()
                     .controlSize(.large)
-                
-                Text("Preparing speech recognition…")
-                    .font(.headline)
-                
-                Text("Loading chess vocabulary for voice input")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
+
+                VStack(spacing: 8) {
+                    Text(phase.title)
+                        .font(.headline)
+
+                    Text(phase.detail)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(InitializationPhase.orderedSteps, id: \.self) { step in
+                        InitializationStepRow(
+                            title: step.title,
+                            isComplete: step.isComplete(relativeTo: phase),
+                            isCurrent: step == phase
+                        )
+                    }
+                }
+                .frame(maxWidth: 320, alignment: .leading)
+                .padding(.top, 4)
+
+                Text("Step \(phase.stepNumber) of \(InitializationPhase.totalSteps)")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
             }
             .padding(32)
         }
         .ignoresSafeArea()
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Initializing speech recognition")
+        .accessibilityLabel("\(phase.title). \(phase.detail)")
+    }
+}
+
+private struct InitializationStepRow: View {
+    let title: String
+    let isComplete: Bool
+    let isCurrent: Bool
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: iconName)
+                .foregroundStyle(iconColor)
+                .frame(width: 16)
+
+            Text(title)
+                .font(.subheadline)
+                .foregroundStyle(textColor)
+        }
+    }
+
+    private var iconName: String {
+        if isComplete { return "checkmark.circle.fill" }
+        if isCurrent { return "ellipsis.circle.fill" }
+        return "circle"
+    }
+
+    private var iconColor: Color {
+        if isComplete { return .green }
+        if isCurrent { return .accentColor }
+        return .secondary.opacity(0.45)
+    }
+
+    private var textColor: Color {
+        if isCurrent { return .primary }
+        if isComplete { return .secondary }
+        return .secondary.opacity(0.55)
     }
 }
 

@@ -11,7 +11,7 @@ import Speech
 
 enum ChessLanguageModel {
     
-    private static let baseModelVersion = "1.3"
+    private static let baseModelVersion = "1.4"
     private static let modelIdentifier = "ChessRecorder.chess-moves"
     
     private static var preparedConfigurations: [RecognitionLanguage: SFSpeechLanguageModel.Configuration] = [:]
@@ -21,7 +21,8 @@ enum ChessLanguageModel {
     
     static func prepare(
         for language: RecognitionLanguage,
-        vocabulary: PersonalVocabularyStore
+        vocabulary: PersonalVocabularyStore,
+        onPhaseChange: (@MainActor (InitializationPhase) -> Void)? = nil
     ) async -> SFSpeechLanguageModel.Configuration? {
         let revision = vocabulary.revision(for: language)
         if let existing = preparedConfigurations[language],
@@ -35,7 +36,12 @@ enum ChessLanguageModel {
         }
         
         let task = Task<SFSpeechLanguageModel.Configuration?, Never> {
-            await buildAndPrepare(for: language, vocabulary: vocabulary, revision: revision)
+            await buildAndPrepare(
+                for: language,
+                vocabulary: vocabulary,
+                revision: revision,
+                onPhaseChange: onPhaseChange
+            )
         }
         preparationTasks[language] = task
         let result = await task.value
@@ -65,7 +71,8 @@ enum ChessLanguageModel {
     private static func buildAndPrepare(
         for language: RecognitionLanguage,
         vocabulary: PersonalVocabularyStore,
-        revision: Int
+        revision: Int,
+        onPhaseChange: (@MainActor (InitializationPhase) -> Void)?
     ) async -> SFSpeechLanguageModel.Configuration? {
         guard SFSpeechRecognizer(locale: Locale(identifier: language.rawValue))?.supportsOnDeviceRecognition == true else {
             print("ChessLanguageModel: on-device recognition unavailable for \(language.rawValue)")
@@ -76,19 +83,25 @@ enum ChessLanguageModel {
             let locale = Locale(identifier: language.speechLocaleIdentifier)
             let exportURL = modelExportURL(for: language)
             let preparedURL = modelPreparedURL(for: language)
+
+            await reportPhase(.loadingPersonalVocabulary, onPhaseChange: onPhaseChange)
             let personalPhrases = vocabulary.speechPhraseCounts(for: language)
-            
+
+            await reportPhase(.buildingTrainingData, onPhaseChange: onPhaseChange)
             let data = buildTrainingData(
                 for: language,
                 locale: locale,
                 personalPhrases: personalPhrases,
                 revision: revision
             )
+
+            await reportPhase(.exportingTrainingData, onPhaseChange: onPhaseChange)
             try await data.export(to: exportURL)
             print("ChessLanguageModel: exported training data to \(exportURL.lastPathComponent)")
             
             let config = SFSpeechLanguageModel.Configuration(languageModel: preparedURL)
-            
+
+            await reportPhase(.compilingSpeechModel, onPhaseChange: onPhaseChange)
             try await SFSpeechLanguageModel.prepareCustomLanguageModel(
                 for: exportURL,
                 configuration: config
@@ -105,6 +118,16 @@ enum ChessLanguageModel {
         }
     }
     
+    private static func reportPhase(
+        _ phase: InitializationPhase,
+        onPhaseChange: (@MainActor (InitializationPhase) -> Void)?
+    ) async {
+        guard let onPhaseChange else { return }
+        await MainActor.run {
+            onPhaseChange(phase)
+        }
+    }
+
     private static func buildTrainingData(
         for language: RecognitionLanguage,
         locale: Locale,
@@ -145,8 +168,12 @@ enum ChessLanguageModel {
                 SFCustomLanguageModelData.PhraseCount(phrase: "e \(verb) d vier", count: 200)
             }
             
-            for square in ["e4", "d4", "e5", "d5", "c4", "f3", "f6", "c3", "c6", "g1"] {
+            for square in ["e4", "d4", "e5", "d5", "c4", "f3", "f6", "c3", "c6", "g1", "e3", "e6", "e7"] {
                 SFCustomLanguageModelData.PhraseCount(phrase: square, count: 300)
+            }
+
+            for rank in ["eins", "zwei", "drei", "vier", "fünf", "sechs", "sieben", "acht"] {
+                SFCustomLanguageModelData.PhraseCount(phrase: "e \(rank)", count: 280)
             }
 
             for word in spokenRanks {

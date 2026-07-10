@@ -9,8 +9,7 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @Bindable var settingsStore: SettingsStore
     @Bindable var vocabularyStore: PersonalVocabularyStore
-    var onLanguageChanged: (RecognitionLanguage) -> Void
-    var onVocabularyChanged: (RecognitionLanguage) -> Void
+    @Binding var pendingSpeechModelWork: PendingSpeechModelWork
     
     @State private var lightColor: Color
     @State private var darkColor: Color
@@ -18,25 +17,45 @@ struct SettingsView: View {
     @State private var selectedLanguage: RecognitionLanguage
     @State private var showingAddPhrase = false
     @State private var showingAddCorrection = false
+    @State private var phraseListLanguage: RecognitionLanguage
     
     init(
         settingsStore: SettingsStore,
         vocabularyStore: PersonalVocabularyStore,
-        onLanguageChanged: @escaping (RecognitionLanguage) -> Void,
-        onVocabularyChanged: @escaping (RecognitionLanguage) -> Void
+        pendingSpeechModelWork: Binding<PendingSpeechModelWork>
     ) {
         self.settingsStore = settingsStore
         self.vocabularyStore = vocabularyStore
-        self.onLanguageChanged = onLanguageChanged
-        self.onVocabularyChanged = onVocabularyChanged
+        _pendingSpeechModelWork = pendingSpeechModelWork
         let settings = settingsStore.settings
         _lightColor = State(initialValue: settings.lightSquareColor.color)
         _darkColor = State(initialValue: settings.darkSquareColor.color)
         _coordinateColor = State(initialValue: settings.coordinateColor.color)
         _selectedLanguage = State(initialValue: settings.defaultRecognitionLanguage)
+        _phraseListLanguage = State(initialValue: settings.defaultRecognitionLanguage)
     }
     
     var body: some View {
+        navigationContent
+            .sheet(isPresented: $showingAddPhrase) {
+                TeachPhraseView(
+                    language: selectedLanguage,
+                    initialPhrase: "",
+                    attemptedMoves: []
+                ) { phrase, move in
+                    vocabularyStore.learn(phrase: phrase, moveNotation: move, language: selectedLanguage)
+                    scheduleSpeechModelUpdate(for: selectedLanguage)
+                }
+            }
+            .sheet(isPresented: $showingAddCorrection) {
+                TeachCorrectionView(language: selectedLanguage) { heard, replacement in
+                    vocabularyStore.learnCorrection(heard: heard, replacement: replacement, language: selectedLanguage)
+                    scheduleSpeechModelUpdate(for: selectedLanguage)
+                }
+            }
+    }
+
+    private var navigationContent: some View {
         NavigationStack {
             Form {
                 Section {
@@ -47,7 +66,8 @@ struct SettingsView: View {
                     }
                     .onChange(of: selectedLanguage) { _, language in
                         settingsStore.update { $0.defaultLanguage = language.rawValue }
-                        onLanguageChanged(language)
+                        requestLanguageChange(language)
+                        phraseListLanguage = language
                     }
                     
                     VStack(alignment: .leading) {
@@ -230,9 +250,9 @@ struct SettingsView: View {
                     }
                     
                     if !learnedEntries.isEmpty {
-                        Button("Clear \(selectedLanguage.displayName) phrases", role: .destructive) {
-                            vocabularyStore.reset(language: selectedLanguage)
-                            onVocabularyChanged(selectedLanguage)
+                        Button("Clear \(phraseListLanguage.displayName) phrases", role: .destructive) {
+                            vocabularyStore.reset(language: phraseListLanguage)
+                            scheduleSpeechModelUpdate(for: phraseListLanguage)
                         }
                     }
                 } header: {
@@ -294,7 +314,7 @@ struct SettingsView: View {
                     Button("Reset to defaults", role: .destructive) {
                         settingsStore.resetToDefaults()
                         applyLocalStateFromStore()
-                        onLanguageChanged(settingsStore.settings.defaultRecognitionLanguage)
+                        requestLanguageChange(settingsStore.settings.defaultRecognitionLanguage)
                     }
                 }
             }
@@ -306,30 +326,30 @@ struct SettingsView: View {
                 }
             }
         }
-        .sheet(isPresented: $showingAddPhrase) {
-            TeachPhraseView(
-                language: selectedLanguage,
-                initialPhrase: "",
-                attemptedMoves: []
-            ) { phrase, move in
-                vocabularyStore.learn(phrase: phrase, moveNotation: move, language: selectedLanguage)
-                onVocabularyChanged(selectedLanguage)
-            }
-        }
-        .sheet(isPresented: $showingAddCorrection) {
-            TeachCorrectionView(language: selectedLanguage) { heard, replacement in
-                vocabularyStore.learnCorrection(heard: heard, replacement: replacement, language: selectedLanguage)
-                onVocabularyChanged(selectedLanguage)
-            }
-        }
     }
     
     private var learnedEntries: [LearnedPhrase] {
-        vocabularyStore.entries(for: selectedLanguage)
+        vocabularyStore.entries(for: phraseListLanguage)
     }
 
     private var correctionEntries: [LearnedCorrection] {
-        vocabularyStore.correctionEntries(for: selectedLanguage)
+        vocabularyStore.correctionEntries(for: phraseListLanguage)
+    }
+
+    private func scheduleSpeechModelUpdate(for language: RecognitionLanguage) {
+        requestVocabularyReload(for: language)
+    }
+
+    private func requestLanguageChange(_ language: RecognitionLanguage) {
+        var work = pendingSpeechModelWork
+        work.requestLanguageChange(language)
+        pendingSpeechModelWork = work
+    }
+
+    private func requestVocabularyReload(for language: RecognitionLanguage) {
+        var work = pendingSpeechModelWork
+        work.requestVocabularyReload(for: language)
+        pendingSpeechModelWork = work
     }
     
     private var moveAnimationLabel: String {
@@ -363,14 +383,14 @@ struct SettingsView: View {
         for index in indexSet {
             vocabularyStore.remove(id: learnedEntries[index].id)
         }
-        onVocabularyChanged(selectedLanguage)
+        scheduleSpeechModelUpdate(for: phraseListLanguage)
     }
 
     private func deleteCorrections(at indexSet: IndexSet) {
         for index in indexSet {
             vocabularyStore.remove(id: correctionEntries[index].id)
         }
-        onVocabularyChanged(selectedLanguage)
+        scheduleSpeechModelUpdate(for: phraseListLanguage)
     }
 
     private func applyLocalStateFromStore() {
@@ -379,5 +399,6 @@ struct SettingsView: View {
         darkColor = settings.darkSquareColor.color
         coordinateColor = settings.coordinateColor.color
         selectedLanguage = settings.defaultRecognitionLanguage
+        phraseListLanguage = settings.defaultRecognitionLanguage
     }
 }

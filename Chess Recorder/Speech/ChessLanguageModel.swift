@@ -34,12 +34,15 @@ enum ChessLanguageModel {
         if let task = preparationTasks[language] {
             return await task.value
         }
-        
-        let task = Task<SFSpeechLanguageModel.Configuration?, Never> {
+
+        await reportPhase(.loadingPersonalVocabulary, onPhaseChange: onPhaseChange)
+        let personalPhrases = vocabulary.speechPhraseCounts(for: language)
+
+        let task = Task.detached(priority: .userInitiated) {
             await buildAndPrepare(
                 for: language,
-                vocabulary: vocabulary,
                 revision: revision,
+                personalPhrases: personalPhrases,
                 onPhaseChange: onPhaseChange
             )
         }
@@ -70,8 +73,8 @@ enum ChessLanguageModel {
     
     private static func buildAndPrepare(
         for language: RecognitionLanguage,
-        vocabulary: PersonalVocabularyStore,
         revision: Int,
+        personalPhrases: [(phrase: String, count: Int)],
         onPhaseChange: (@MainActor (InitializationPhase) -> Void)?
     ) async -> SFSpeechLanguageModel.Configuration? {
         guard SFSpeechRecognizer(locale: Locale(identifier: language.rawValue))?.supportsOnDeviceRecognition == true else {
@@ -83,9 +86,6 @@ enum ChessLanguageModel {
             let locale = Locale(identifier: language.speechLocaleIdentifier)
             let exportURL = modelExportURL(for: language)
             let preparedURL = modelPreparedURL(for: language)
-
-            await reportPhase(.loadingPersonalVocabulary, onPhaseChange: onPhaseChange)
-            let personalPhrases = vocabulary.speechPhraseCounts(for: language)
 
             await reportPhase(.buildingTrainingData, onPhaseChange: onPhaseChange)
             let data = buildTrainingData(

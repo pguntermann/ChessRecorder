@@ -5,6 +5,27 @@
 
 import Foundation
 
+enum InitializationContext: Equatable {
+    case startup
+    case speechModelRebuild
+
+    var steps: [InitializationPhase] {
+        switch self {
+        case .startup:
+            return InitializationPhase.orderedSteps
+        case .speechModelRebuild:
+            return [
+                .loadingPersonalVocabulary,
+                .buildingTrainingData,
+                .exportingTrainingData,
+                .compilingSpeechModel
+            ]
+        }
+    }
+
+    var totalSteps: Int { steps.count }
+}
+
 enum InitializationPhase: Equatable, CaseIterable {
     case requestingPermissions
     case loadingPersonalVocabulary
@@ -68,11 +89,40 @@ enum InitializationPhase: Equatable, CaseIterable {
 
     static var totalSteps: Int { orderedSteps.count }
 
-    func isComplete(relativeTo current: InitializationPhase) -> Bool {
-        guard let currentIndex = Self.orderedSteps.firstIndex(of: current),
-              let selfIndex = Self.orderedSteps.firstIndex(of: self) else {
+    func isComplete(relativeTo current: InitializationPhase, in context: InitializationContext) -> Bool {
+        let steps = context.steps
+        guard let currentIndex = steps.firstIndex(of: current),
+              let selfIndex = steps.firstIndex(of: self) else {
             return false
         }
         return selfIndex < currentIndex
+    }
+
+    func stepNumber(in context: InitializationContext) -> Int {
+        (context.steps.firstIndex(of: self) ?? 0) + 1
+    }
+}
+
+struct PendingSpeechModelWork: Equatable {
+    enum Action: Equatable {
+        case changeLanguage(RecognitionLanguage)
+        case reloadVocabulary(RecognitionLanguage)
+    }
+
+    private(set) var action: Action?
+
+    var needsWork: Bool { action != nil }
+
+    mutating func requestLanguageChange(_ language: RecognitionLanguage) {
+        action = .changeLanguage(language)
+    }
+
+    mutating func requestVocabularyReload(for language: RecognitionLanguage) {
+        if case .changeLanguage = action { return }
+        action = .reloadVocabulary(language)
+    }
+
+    mutating func clear() {
+        action = nil
     }
 }

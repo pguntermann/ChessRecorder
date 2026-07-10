@@ -25,6 +25,8 @@ struct ContentView: View {
     @State private var engineAnalysis = EngineAnalysisService()
     @State private var openingService = OpeningService()
     @State private var isAppReady = false
+    @State private var pendingSpeechModelWork = PendingSpeechModelWork()
+    @State private var showSpeechModelRebuildOverlay = false
     
     init(settingsStore: SettingsStore, vocabularyStore: PersonalVocabularyStore) {
         self.settingsStore = settingsStore
@@ -37,6 +39,8 @@ struct ContentView: View {
     }
     
     var body: some View {
+        @Bindable var speechRecognizer = speechRecognizer
+
         GeometryReader { geometry in
             if geometry.size.width > geometry.size.height {
                 HStack(spacing: 0) {
@@ -71,8 +75,16 @@ struct ContentView: View {
         }
         .overlay {
             if !isAppReady {
-                InitializationOverlay(phase: speechRecognizer.initializationPhase)
-                    .transition(.opacity)
+                InitializationOverlay(
+                    phase: speechRecognizer.initializationPhase,
+                    context: .startup
+                )
+                .transition(.opacity)
+            } else if showSpeechModelRebuildOverlay || speechRecognizer.isRebuildingLanguageModel {
+                InitializationOverlay(
+                    phase: speechRecognizer.initializationPhase,
+                    context: .speechModelRebuild
+                )
             }
         }
         .animation(.easeInOut(duration: 0.25), value: isAppReady)
@@ -127,13 +139,15 @@ struct ContentView: View {
             SettingsView(
                 settingsStore: settingsStore,
                 vocabularyStore: vocabularyStore,
-                onLanguageChanged: { language in
-                    Task { await speechRecognizer.setLanguage(language) }
-                },
-                onVocabularyChanged: { language in
-                    Task { await speechRecognizer.reloadLanguageModel(for: language) }
-                }
+                pendingSpeechModelWork: $pendingSpeechModelWork
             )
+        }
+        .onChange(of: showingSettings) { wasShowing, isShowing in
+            if isShowing {
+                pendingSpeechModelWork.clear()
+            } else if wasShowing {
+                startDeferredSpeechModelRebuildIfNeeded()
+            }
         }
         .sheet(isPresented: $showingHelp) {
             HelpView()
@@ -325,6 +339,38 @@ struct ContentView: View {
         }
     }
     
+    @MainActor
+    private func startDeferredSpeechModelRebuildIfNeeded() {
+        guard pendingSpeechModelWork.needsWork else { return }
+        showSpeechModelRebuildOverlay = true
+        speechRecognizer.beginLanguageModelRebuild()
+        Task { await applyDeferredSpeechModelWork() }
+    }
+
+    @MainActor
+    private func applyDeferredSpeechModelWork() async {
+        guard let action = pendingSpeechModelWork.action else {
+            showSpeechModelRebuildOverlay = false
+            speechRecognizer.endLanguageModelRebuild()
+            return
+        }
+        pendingSpeechModelWork.clear()
+
+        defer {
+            showSpeechModelRebuildOverlay = false
+        }
+
+        await Task.yield()
+        try? await Task.sleep(for: .milliseconds(150))
+
+        switch action {
+        case .changeLanguage(let language):
+            await speechRecognizer.changeLanguage(language)
+        case .reloadVocabulary(let language):
+            await speechRecognizer.reloadLanguageModel(for: language)
+        }
+    }
+    
     private func setupSpeechRecognizer() {
         speechRecognizer.onMoveCandidatesDetected = { candidates in
             self.processVoiceMoveCandidates(candidates)
@@ -420,88 +466,6 @@ struct ContentView: View {
         } else {
             print("No moves to undo")
         }
-    }
-}
-
-private struct InitializationOverlay: View {
-    let phase: InitializationPhase
-
-    var body: some View {
-        ZStack {
-            Color(uiColor: .systemBackground)
-                .opacity(0.94)
-
-            VStack(spacing: 20) {
-                ProgressView()
-                    .controlSize(.large)
-
-                VStack(spacing: 8) {
-                    Text(phase.title)
-                        .font(.headline)
-
-                    Text(phase.detail)
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                }
-
-                VStack(alignment: .leading, spacing: 10) {
-                    ForEach(InitializationPhase.orderedSteps, id: \.self) { step in
-                        InitializationStepRow(
-                            title: step.title,
-                            isComplete: step.isComplete(relativeTo: phase),
-                            isCurrent: step == phase
-                        )
-                    }
-                }
-                .frame(maxWidth: 320, alignment: .leading)
-                .padding(.top, 4)
-
-                Text("Step \(phase.stepNumber) of \(InitializationPhase.totalSteps)")
-                    .font(.caption)
-                    .foregroundStyle(.tertiary)
-            }
-            .padding(32)
-        }
-        .ignoresSafeArea()
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(phase.title). \(phase.detail)")
-    }
-}
-
-private struct InitializationStepRow: View {
-    let title: String
-    let isComplete: Bool
-    let isCurrent: Bool
-
-    var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: iconName)
-                .foregroundStyle(iconColor)
-                .frame(width: 16)
-
-            Text(title)
-                .font(.subheadline)
-                .foregroundStyle(textColor)
-        }
-    }
-
-    private var iconName: String {
-        if isComplete { return "checkmark.circle.fill" }
-        if isCurrent { return "ellipsis.circle.fill" }
-        return "circle"
-    }
-
-    private var iconColor: Color {
-        if isComplete { return .green }
-        if isCurrent { return .accentColor }
-        return .secondary.opacity(0.45)
-    }
-
-    private var textColor: Color {
-        if isCurrent { return .primary }
-        if isComplete { return .secondary }
-        return .secondary.opacity(0.55)
     }
 }
 

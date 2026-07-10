@@ -95,8 +95,9 @@ class SpeechRecognizer {
     func learnPhrase(_ phrase: String, moveNotation: String) async {
         guard let vocabularyStore else { return }
         
-        isRebuildingLanguageModel = true
-        defer { isRebuildingLanguageModel = false }
+        beginLanguageModelRebuild()
+        await yieldForSpeechModelUI()
+        defer { endLanguageModelRebuild() }
         
         vocabularyStore.learn(phrase: phrase, moveNotation: moveNotation, language: currentLanguage)
         pendingFailure = nil
@@ -111,8 +112,11 @@ class SpeechRecognizer {
     
     @MainActor
     func reloadLanguageModel(for language: RecognitionLanguage) async {
-        isRebuildingLanguageModel = true
-        defer { isRebuildingLanguageModel = false }
+        if !isRebuildingLanguageModel {
+            beginLanguageModelRebuild()
+        }
+        await yieldForSpeechModelUI()
+        defer { endLanguageModelRebuild() }
         
         ChessLanguageModel.invalidate(for: language)
         if language == currentLanguage {
@@ -149,34 +153,63 @@ class SpeechRecognizer {
     }
     
     @MainActor
-    func setLanguage(_ language: RecognitionLanguage) async {
+    func changeLanguage(_ language: RecognitionLanguage) async {
         guard language != currentLanguage || !isLanguageModelReady else {
             if isRecording {
                 restartRecognitionSession()
             }
+            if isRebuildingLanguageModel {
+                endLanguageModelRebuild()
+            }
             return
         }
-        
+
+        if hasCompletedStartup {
+            if !isRebuildingLanguageModel {
+                beginLanguageModelRebuild()
+            }
+            await yieldForSpeechModelUI()
+            defer { endLanguageModelRebuild() }
+        }
+
         currentLanguage = language
         speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: language.rawValue))
-        
-        if hasCompletedStartup {
-            isRebuildingLanguageModel = true
-            defer { isRebuildingLanguageModel = false }
-        }
-        
         await prepareLanguageModel(for: language)
-        
+
         if isRecording {
             restartRecognitionSession()
         }
     }
+
+    @MainActor
+    func setLanguage(_ language: RecognitionLanguage) async {
+        await changeLanguage(language)
+    }
     
+    @MainActor
+    func beginLanguageModelRebuild() {
+        isRebuildingLanguageModel = true
+        setInitializationPhase(.loadingPersonalVocabulary)
+    }
+
+    @MainActor
+    func endLanguageModelRebuild() {
+        isRebuildingLanguageModel = false
+    }
+
+    @MainActor
+    private func yieldForSpeechModelUI() async {
+        await Task.yield()
+        // One frame for SwiftUI to present the blocking overlay before heavy work.
+        try? await Task.sleep(for: .milliseconds(50))
+    }
+
     @MainActor
     private func prepareLanguageModel(for language: RecognitionLanguage) async {
         isLanguageModelReady = false
         guard let vocabularyStore else { return }
         _ = vocabularyStore.seedCommonPhrasesIfNeeded(for: language)
+        await yieldForSpeechModelUI()
         if await ChessLanguageModel.prepare(
             for: language,
             vocabulary: vocabularyStore,

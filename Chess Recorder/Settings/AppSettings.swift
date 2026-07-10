@@ -57,6 +57,7 @@ struct AppSettings: Codable, Equatable {
     var pgnSite: String
     var pgnWhite: String
     var pgnBlack: String
+    var pgnHideHeaderTags: Bool
     
     enum CodingKeys: String, CodingKey {
         case pieceSizePercent
@@ -79,6 +80,7 @@ struct AppSettings: Codable, Equatable {
         case pgnSite
         case pgnWhite
         case pgnBlack
+        case pgnHideHeaderTags
     }
     
     init(
@@ -101,7 +103,8 @@ struct AppSettings: Codable, Equatable {
         openingNameVisible: Bool = true,
         pgnSite: String = "?",
         pgnWhite: String = "?",
-        pgnBlack: String = "?"
+        pgnBlack: String = "?",
+        pgnHideHeaderTags: Bool = true
     ) {
         self.pieceSizePercent = pieceSizePercent
         self.lightSquareColor = lightSquareColor
@@ -123,6 +126,7 @@ struct AppSettings: Codable, Equatable {
         self.pgnSite = pgnSite
         self.pgnWhite = pgnWhite
         self.pgnBlack = pgnBlack
+        self.pgnHideHeaderTags = pgnHideHeaderTags
     }
     
     init(from decoder: Decoder) throws {
@@ -152,6 +156,7 @@ struct AppSettings: Codable, Equatable {
         pgnSite = try container.decodeIfPresent(String.self, forKey: .pgnSite) ?? "?"
         pgnWhite = try container.decodeIfPresent(String.self, forKey: .pgnWhite) ?? "?"
         pgnBlack = try container.decodeIfPresent(String.self, forKey: .pgnBlack) ?? "?"
+        pgnHideHeaderTags = try container.decodeIfPresent(Bool.self, forKey: .pgnHideHeaderTags) ?? true
     }
     
     var pgnMetadata: PGNMetadata {
@@ -163,14 +168,14 @@ struct AppSettings: Codable, Equatable {
     }
     
     var defaultRecognitionLanguage: RecognitionLanguage {
-        RecognitionLanguage(rawValue: defaultLanguage) ?? .german
+        RecognitionLanguage(rawValue: defaultLanguage) ?? .english
     }
     
     static let `default` = AppSettings(
         pieceSizePercent: 0.9,
         lightSquareColor: CodableColor(red: 0.86, green: 0.93, blue: 0.98),
         darkSquareColor: CodableColor(red: 0.36, green: 0.52, blue: 0.71),
-        defaultLanguage: RecognitionLanguage.german.rawValue,
+        defaultLanguage: RecognitionLanguage.english.rawValue,
         coordinateColor: CodableColor(red: 0.12, green: 0.22, blue: 0.35),
         coordinateFontName: "",
         coordinateFontSize: 14,
@@ -186,7 +191,8 @@ struct AppSettings: Codable, Equatable {
         openingNameVisible: true,
         pgnSite: "?",
         pgnWhite: "?",
-        pgnBlack: "?"
+        pgnBlack: "?",
+        pgnHideHeaderTags: true
     )
 }
 

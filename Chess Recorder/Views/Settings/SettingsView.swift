@@ -180,10 +180,17 @@ struct SettingsView: View {
                     } label: {
                         Label("Switch White & Black", systemImage: "arrow.left.arrow.right")
                     }
+
+                    Toggle("Hide PGN header tags", isOn: Binding(
+                        get: { settingsStore.settings.pgnHideHeaderTags },
+                        set: { newValue in
+                            settingsStore.update { $0.pgnHideHeaderTags = newValue }
+                        }
+                    ))
                 } header: {
                     Text("PGN")
                 } footer: {
-                    Text("Player names are used for [White] and [Black] tags in exported PGN. Use Switch to swap sides between games.")
+                    Text("Player names are used for [White] and [Black] tags in exported PGN. Use Switch to swap sides between games. Hiding header tags affects the notation panel only; Copy and Share still include full PGN headers.")
                 }
                 
                 Section {

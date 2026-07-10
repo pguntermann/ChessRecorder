@@ -43,6 +43,10 @@ struct ContentView: View {
     private var chessEngine: ChessEngine {
         ChessEngine(game: game)
     }
+
+    private var canAcceptNewMoves: Bool {
+        game.isAtLatestMove && !pgnArchive.activeGameIsReviewOnly
+    }
     
     var body: some View {
         @Bindable var speechRecognizer = speechRecognizer
@@ -130,6 +134,7 @@ struct ContentView: View {
             engineAnalysis.refresh(game: game)
         }
         .onChange(of: game.moves.count) { _, _ in
+            pgnArchive.syncActiveGame(from: game)
             if game.isGameOver {
                 engineAnalysis.stop()
             } else {
@@ -146,7 +151,7 @@ struct ContentView: View {
             openingService.refresh(game: game)
         }
         .onChange(of: game.gameResult) { _, _ in
-            pgnArchive.syncCurrentGameResult(with: game)
+            pgnArchive.syncActiveGame(from: game)
             if game.isGameOver {
                 engineAnalysis.stop()
             }
@@ -219,7 +224,8 @@ struct ContentView: View {
                 engineAnalysis: engineAnalysis,
                 showEvaluationBar: settingsStore.settings.engineAnalysisShowEvaluationBar,
                 showBoardArrow: settingsStore.settings.engineAnalysisShowBoardArrow,
-                engineAnalysisVisible: settingsStore.settings.engineAnalysisVisible
+                engineAnalysisVisible: settingsStore.settings.engineAnalysisVisible,
+                canAcceptNewMoves: canAcceptNewMoves
             )
 
             HStack(spacing: 8) {
@@ -238,6 +244,10 @@ struct ContentView: View {
                             .multilineTextAlignment(.leading)
                     }
                     .buttonStyle(.plain)
+                } else if pgnArchive.activeGameIsReviewOnly, let activeGame = pgnArchive.activeGame {
+                    Text("Round \(activeGame.round) · \(activeGame.result.rawValue) — review only")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
                 } else {
                     Text(game.gameStatusMessage ?? (game.currentTurn == .white ? "White to move" : "Black to move"))
                         .font(.subheadline)
@@ -265,6 +275,7 @@ struct ContentView: View {
             game: game,
             pgnArchive: pgnArchive,
             metadata: settingsStore.settings.pgnMetadata,
+            hidePGNHeaderTags: settingsStore.settings.pgnHideHeaderTags,
             transcript: speechRecognizer.transcript,
             isRecording: speechRecognizer.isRecording,
             dictationPauseDeadline: speechRecognizer.dictationPauseDeadline,
@@ -276,7 +287,9 @@ struct ContentView: View {
             engineAnalysis: engineAnalysis,
             onTeachPhrase: { showingTeachPhrase = true },
             onDismissFailure: { speechRecognizer.clearPendingFailure() },
-            onClearPGN: clearPGN
+            onClearPGN: clearPGN,
+            onActivateGame: activateGame,
+            onDeleteGame: deleteGame
         )
     }
     
@@ -316,17 +329,17 @@ struct ContentView: View {
                         .font(.subheadline)
                 }
                 .frame(minWidth: 76)
-                .foregroundColor(speechRecognizer.isRecording ? .red : (game.isAtLatestMove ? .blue : .secondary))
+                .foregroundColor(speechRecognizer.isRecording ? .red : (canAcceptNewMoves ? .blue : .secondary))
                 .padding(.horizontal, 8)
                 .padding(.vertical, 6)
                 .background(
                     RoundedRectangle(cornerRadius: 8)
                         .fill(speechRecognizer.isRecording
                             ? Color.red.opacity(0.1)
-                            : (game.isAtLatestMove ? Color.blue.opacity(0.1) : Color.secondary.opacity(0.1)))
+                            : (canAcceptNewMoves ? Color.blue.opacity(0.1) : Color.secondary.opacity(0.1)))
                 )
             }
-            .disabled(!speechRecognizer.isReadyForUse || !game.isAtLatestMove)
+            .disabled(!speechRecognizer.isReadyForUse || !canAcceptNewMoves)
             
             Button {
                 navigateBack()
@@ -352,7 +365,7 @@ struct ContentView: View {
                 Image(systemName: "arrow.uturn.backward")
                     .imageScale(.medium)
             }
-            .disabled(!game.canUndo)
+            .disabled(!game.canUndo || pgnArchive.activeGameIsReviewOnly)
             
             Menu {
                 Button("New Game") {
@@ -440,7 +453,7 @@ struct ContentView: View {
         }
         
         speechRecognizer.onUndoDetected = {
-            guard self.game.canUndo else { return }
+            guard self.game.canUndo, !self.pgnArchive.activeGameIsReviewOnly else { return }
             self.undoLastMove()
         }
     }
@@ -488,7 +501,7 @@ struct ContentView: View {
     
     @discardableResult
     private func processVoiceMoveCandidates(_ candidates: [String]) -> Bool {
-        guard game.isAtLatestMove else { return false }
+        guard canAcceptNewMoves else { return false }
         print("Processing move candidates: \(candidates.joined(separator: ", "))")
         guard chessEngine.executeVoiceCandidates(candidates) else {
             print("Could not find valid move for \(candidates.joined(separator: ", "))")
@@ -499,7 +512,7 @@ struct ContentView: View {
 
     @discardableResult
     private func processMoveFromSpeech(_ notation: String) -> Bool {
-        guard game.isAtLatestMove else { return false }
+        guard canAcceptNewMoves else { return false }
         print("Processing move: \(notation)")
         guard chessEngine.executeMove(notation: notation) else {
             print("Could not find valid move for \(notation)")
@@ -510,7 +523,7 @@ struct ContentView: View {
     
     private func startNewGame(result: PGNResult) {
         let archiveResult = result == .ongoing ? game.gameResult : result
-        pgnArchive.finalizeCurrentGame(game, result: archiveResult)
+        pgnArchive.finalizeActiveGame(with: archiveResult, from: game)
         game.resetGame()
         speechRecognizer.transcript = ""
     }
@@ -519,6 +532,36 @@ struct ContentView: View {
         pgnArchive.resetAll()
         game.resetGame()
         speechRecognizer.transcript = ""
+    }
+
+    private func activateGame(id: UUID) {
+        guard pgnArchive.activeGameID != id else { return }
+
+        pgnArchive.syncActiveGame(from: game)
+        guard let recordedGame = pgnArchive.games.first(where: { $0.id == id }) else { return }
+
+        pgnArchive.setActiveGame(id: id)
+        _ = game.loadMainLine(moves: recordedGame.moves)
+
+        if speechRecognizer.isRecording, pgnArchive.activeGameIsReviewOnly {
+            speechRecognizer.stopRecording()
+        }
+    }
+
+    private func deleteGame(id: UUID) {
+        pgnArchive.syncActiveGame(from: game)
+        let nextActiveID = pgnArchive.removeGame(id: id)
+
+        if let nextActiveID,
+           let recordedGame = pgnArchive.games.first(where: { $0.id == nextActiveID }) {
+            _ = game.loadMainLine(moves: recordedGame.moves)
+        } else {
+            game.resetGame()
+        }
+
+        if speechRecognizer.isRecording, pgnArchive.activeGameIsReviewOnly {
+            speechRecognizer.stopRecording()
+        }
     }
     
     private func undoLastMove() {
@@ -550,6 +593,7 @@ private struct BoardWithEvaluationLayout: View {
     let showEvaluationBar: Bool
     let showBoardArrow: Bool
     let engineAnalysisVisible: Bool
+    let canAcceptNewMoves: Bool
 
     var body: some View {
         BoardEvalRowLayout(showEvaluationBar: showEvaluationBar) {
@@ -557,7 +601,7 @@ private struct BoardWithEvaluationLayout: View {
                 game: game,
                 settings: settings,
                 orientation: orientation,
-                touchInputEnabled: settings.touchInputEnabled && game.isAtLatestMove,
+                touchInputEnabled: settings.touchInputEnabled && canAcceptNewMoves,
                 analysisArrow: showBoardArrow ? engineAnalysis.display.nextMoveArrow : nil,
                 chessEngine: chessEngine
             )

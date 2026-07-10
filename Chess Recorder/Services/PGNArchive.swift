@@ -10,6 +10,10 @@ enum PGNResult: String {
     case whiteWins = "1-0"
     case blackWins = "0-1"
     case draw = "1/2-1/2"
+
+    var isFinal: Bool {
+        self != .ongoing
+    }
 }
 
 struct PGNMetadata: Equatable {
@@ -18,11 +22,35 @@ struct PGNMetadata: Equatable {
     let black: String
 }
 
-struct RecordedGame {
-    let moves: [ChessMove]
-    let round: Int
-    let result: PGNResult
-    let date: Date
+struct RecordedGame: Identifiable {
+    let id: UUID
+    var moves: [ChessMove]
+    var round: Int
+    var result: PGNResult
+    var date: Date
+
+    init(
+        id: UUID = UUID(),
+        moves: [ChessMove],
+        round: Int,
+        result: PGNResult,
+        date: Date = Date()
+    ) {
+        self.id = id
+        self.moves = moves
+        self.round = round
+        self.result = result
+        self.date = date
+    }
+
+    var isReviewOnly: Bool {
+        result.isFinal
+    }
+
+    var summaryTitle: String {
+        let moveLabel = moves.isEmpty ? "No moves" : "\(moves.count) moves"
+        return "Round \(round) · \(result.rawValue) · \(moveLabel)"
+    }
 }
 
 enum PGNFormatter {
@@ -39,7 +67,7 @@ enum PGNFormatter {
         }
         return pgn.trimmingCharacters(in: .whitespaces)
     }
-    
+
     static func headers(
         round: Int,
         result: PGNResult = .ongoing,
@@ -56,7 +84,7 @@ enum PGNFormatter {
         [Result "\(result.rawValue)"]
         """
     }
-    
+
     static func formatGame(
         moves: [ChessMove],
         round: Int,
@@ -69,13 +97,13 @@ enum PGNFormatter {
         guard !moves.isEmpty else { return headers }
         return headers + "\n\n" + moveText
     }
-    
+
     private static func escapeTag(_ value: String) -> String {
         value
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
     }
-    
+
     private static func dateString(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
@@ -86,49 +114,124 @@ enum PGNFormatter {
 
 @Observable
 final class PGNArchive {
-    private(set) var completedGames: [RecordedGame] = []
-    private(set) var currentGameResult: PGNResult = .ongoing
-    
-    func finalizeCurrentGame(_ game: ChessGame, result: PGNResult) {
-        guard !game.moves.isEmpty else { return }
-        completedGames.append(RecordedGame(
-            moves: game.moves,
-            round: completedGames.count + 1,
-            result: result,
-            date: Date()
-        ))
-        currentGameResult = .ongoing
+    private(set) var games: [RecordedGame] = []
+    private(set) var activeGameID: UUID?
+
+    var activeGame: RecordedGame? {
+        guard let activeGameID else { return nil }
+        return games.first { $0.id == activeGameID }
     }
 
-    func syncCurrentGameResult(with game: ChessGame) {
-        currentGameResult = game.gameResult
+    var activeGameIsReviewOnly: Bool {
+        activeGame?.isReviewOnly ?? false
     }
-    
-    func displayText(currentGame: ChessGame, metadata: PGNMetadata) -> String {
-        var parts = completedGames.map {
-            PGNFormatter.formatGame(
-                moves: $0.moves,
-                round: $0.round,
-                result: $0.result,
-                metadata: metadata,
-                date: $0.date
-            )
-        }
-        if !currentGame.moves.isEmpty {
-            let round = completedGames.count + 1
-            parts.append(PGNFormatter.formatGame(
-                moves: currentGame.moves,
-                round: round,
-                result: currentGameResult,
-                metadata: metadata
-            ))
-        }
-        return parts.joined(separator: "\n\n")
+
+    func ensureActiveGameExists() {
+        guard activeGameID == nil || !games.contains(where: { $0.id == activeGameID }) else { return }
+        appendNewOngoingGame()
     }
-    
+
+    func syncActiveGame(from chessGame: ChessGame) {
+        if chessGame.moves.isEmpty {
+            if let activeGameID,
+               let index = games.firstIndex(where: { $0.id == activeGameID }) {
+                games[index].moves = []
+            }
+            return
+        }
+
+        ensureActiveGameExists()
+        guard let activeGameID,
+              let index = games.firstIndex(where: { $0.id == activeGameID }) else { return }
+
+        games[index].moves = chessGame.moves
+        if games[index].result == .ongoing {
+            games[index].result = chessGame.gameResult
+        }
+    }
+
+    func finalizeActiveGame(with result: PGNResult, from chessGame: ChessGame) {
+        if !chessGame.moves.isEmpty {
+            ensureActiveGameExists()
+            if let activeGameID,
+               let index = games.firstIndex(where: { $0.id == activeGameID }) {
+                games[index].moves = chessGame.moves
+                games[index].result = result
+            }
+        } else if let activeGameID,
+                  let index = games.firstIndex(where: { $0.id == activeGameID }),
+                  games[index].moves.isEmpty,
+                  games[index].result == .ongoing {
+            games.remove(at: index)
+        }
+
+        appendNewOngoingGame()
+        renumberRounds()
+    }
+
+    func setActiveGame(id: UUID) {
+        guard games.contains(where: { $0.id == id }) else { return }
+        activeGameID = id
+    }
+
+    /// Removes a game and returns the ID of the game that should be loaded next, if any.
+    @discardableResult
+    func removeGame(id: UUID) -> UUID? {
+        guard let index = games.firstIndex(where: { $0.id == id }) else { return activeGameID }
+
+        let wasActive = activeGameID == id
+        games.remove(at: index)
+        renumberRounds()
+
+        guard !games.isEmpty else {
+            activeGameID = nil
+            return nil
+        }
+
+        if wasActive {
+            let nextIndex = min(index, games.count - 1)
+            activeGameID = games[nextIndex].id
+            return activeGameID
+        }
+
+        return activeGameID
+    }
+
+    func displayText(metadata: PGNMetadata) -> String {
+        games
+            .filter { !$0.moves.isEmpty }
+            .map {
+                PGNFormatter.formatGame(
+                    moves: $0.moves,
+                    round: $0.round,
+                    result: $0.result,
+                    metadata: metadata,
+                    date: $0.date
+                )
+            }
+            .joined(separator: "\n\n")
+    }
+
     func resetAll() {
-        completedGames.removeAll()
-        currentGameResult = .ongoing
+        games.removeAll()
+        activeGameID = nil
+    }
+
+    private func appendNewOngoingGame() {
+        let id = UUID()
+        games.append(RecordedGame(
+            id: id,
+            moves: [],
+            round: games.count + 1,
+            result: .ongoing
+        ))
+        activeGameID = id
+    }
+
+    private func renumberRounds() {
+        for index in games.indices {
+            games[index].round = index + 1
+        }
     }
 }
 

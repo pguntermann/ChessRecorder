@@ -14,8 +14,9 @@ private struct ShareablePGNExport: Identifiable {
 
 struct NotationPanelView: View {
     let game: ChessGame
-    let pgnArchive: PGNArchive
+    @Bindable var pgnArchive: PGNArchive
     let metadata: PGNMetadata
+    var hidePGNHeaderTags: Bool = true
     let transcript: String
     let isRecording: Bool
     let dictationPauseDeadline: Date?
@@ -28,15 +29,17 @@ struct NotationPanelView: View {
     var onTeachPhrase: (() -> Void)?
     var onDismissFailure: (() -> Void)?
     var onClearPGN: (() -> Void)?
+    var onActivateGame: ((UUID) -> Void)?
+    var onDeleteGame: ((UUID) -> Void)?
     
     @State private var exportItem: ShareablePGNExport?
 
     private var fullPGNNotation: String {
-        pgnArchive.displayText(currentGame: game, metadata: metadata)
+        pgnArchive.displayText(metadata: metadata)
     }
 
     private var hasAnyPGNContent: Bool {
-        !pgnArchive.completedGames.isEmpty || !game.moves.isEmpty
+        !pgnArchive.games.isEmpty || !game.moves.isEmpty
     }
     
     private var transcriptPlaceholder: String {
@@ -149,29 +152,39 @@ struct NotationPanelView: View {
                 
                 if hasAnyPGNContent {
                     VStack(alignment: .leading, spacing: 12) {
-                        ForEach(Array(pgnArchive.completedGames.enumerated()), id: \.offset) { _, recordedGame in
-                            Text(
-                                PGNFormatter.formatGame(
-                                    moves: recordedGame.moves,
-                                    round: recordedGame.round,
-                                    result: recordedGame.result,
+                        ForEach(pgnArchive.games) { recordedGame in
+                            SwipeToDeleteRow {
+                                onDeleteGame?(recordedGame.id)
+                            } content: {
+                                GamePGNRowView(
+                                    recordedGame: recordedGame,
                                     metadata: metadata,
-                                    date: recordedGame.date
+                                    hideHeaderTags: hidePGNHeaderTags,
+                                    isActive: recordedGame.id == pgnArchive.activeGameID,
+                                    activePlyIndex: game.activePlyIndex,
+                                    isAtLatestMove: game.isAtLatestMove,
+                                    showMoveHighlight: recordedGame.id == pgnArchive.activeGameID
                                 )
-                            )
-                            .font(.system(.caption, design: .monospaced))
-                            .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    onActivateGame?(recordedGame.id)
+                                }
+                            }
                         }
 
-                        if !game.moves.isEmpty {
-                            CurrentGamePGNView(
-                                moves: game.moves,
-                                round: pgnArchive.completedGames.count + 1,
-                                result: pgnArchive.currentGameResult,
+                        if pgnArchive.games.isEmpty, !game.moves.isEmpty {
+                            GamePGNRowView(
+                                recordedGame: RecordedGame(
+                                    moves: game.moves,
+                                    round: 1,
+                                    result: game.gameResult
+                                ),
                                 metadata: metadata,
+                                hideHeaderTags: hidePGNHeaderTags,
+                                isActive: true,
                                 activePlyIndex: game.activePlyIndex,
-                                isAtLatestMove: game.isAtLatestMove
+                                isAtLatestMove: game.isAtLatestMove,
+                                showMoveHighlight: true
                             )
                         }
                     }
@@ -219,37 +232,183 @@ struct NotationPanelView: View {
     }
 }
 
-private struct CurrentGamePGNView: View {
-    let moves: [ChessMove]
-    let round: Int
-    let result: PGNResult
-    let metadata: PGNMetadata
-    let activePlyIndex: Int
-    let isAtLatestMove: Bool
+private struct SwipeToDeleteRow<Content: View>: View {
+    let onDelete: () -> Void
+    @ViewBuilder let content: () -> Content
+
+    @State private var offset: CGFloat = 0
+
+    private let revealWidth: CGFloat = 88
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(currentGameHeaders)
-                .font(.system(.caption, design: .monospaced))
-                .foregroundStyle(.secondary)
-                .textSelection(.enabled)
+        ZStack(alignment: .trailing) {
+            deleteBackground
 
-            Text(highlightedMovetext)
-                .font(.system(.caption, design: .monospaced))
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            content()
+                .background {
+                    Rectangle()
+                        .fill(Color(uiColor: .secondarySystemGroupedBackground))
+                }
+                .offset(x: offset)
+                .gesture(dragGesture)
         }
     }
 
-    private var currentGameHeaders: String {
-        PGNFormatter.headers(round: round, result: result, metadata: metadata)
+    private var deleteBackground: some View {
+        HStack(spacing: 0) {
+            Spacer(minLength: 0)
+
+            Button {
+                performDelete(animated: true)
+            } label: {
+                Image(systemName: "trash.fill")
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(.white)
+                    .frame(width: revealWidth)
+                    .frame(maxHeight: .infinity)
+                    .background(Color(uiColor: .systemRed))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Delete")
+        }
+    }
+
+    private var dragGesture: some Gesture {
+        DragGesture(minimumDistance: 16, coordinateSpace: .local)
+            .onChanged { value in
+                guard abs(value.translation.width) > abs(value.translation.height) else { return }
+
+                if value.translation.width < 0 {
+                    offset = max(-revealWidth, value.translation.width)
+                } else if offset < 0 {
+                    offset = min(0, -revealWidth + value.translation.width)
+                }
+            }
+            .onEnded { value in
+                guard abs(value.translation.width) > abs(value.translation.height) else {
+                    snapClosed()
+                    return
+                }
+
+                let predicted = value.predictedEndTranslation.width
+                if value.translation.width < -revealWidth * 1.25 || predicted < -revealWidth * 2.5 {
+                    performDelete(animated: true)
+                } else if offset < -revealWidth / 2 {
+                    snapOpen()
+                } else {
+                    snapClosed()
+                }
+            }
+    }
+
+    private func snapOpen() {
+        withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
+            offset = -revealWidth
+        }
+    }
+
+    private func snapClosed() {
+        withAnimation(.spring(response: 0.32, dampingFraction: 0.86)) {
+            offset = 0
+        }
+    }
+
+    private func performDelete(animated: Bool) {
+        if animated {
+            withAnimation(.easeOut(duration: 0.22)) {
+                offset = -400
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) {
+                onDelete()
+                offset = 0
+            }
+        } else {
+            onDelete()
+            offset = 0
+        }
+    }
+}
+
+private struct GamePGNRowView: View {
+    let recordedGame: RecordedGame
+    let metadata: PGNMetadata
+    var hideHeaderTags: Bool = true
+    let isActive: Bool
+    let activePlyIndex: Int
+    let isAtLatestMove: Bool
+    let showMoveHighlight: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Text(recordedGame.summaryTitle)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(isActive ? .primary : .secondary)
+
+                if isActive {
+                    Text("Active")
+                        .font(.caption2.weight(.semibold))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.accentColor.opacity(0.18), in: Capsule())
+                        .foregroundStyle(Color.accentColor)
+                }
+
+                if recordedGame.isReviewOnly {
+                    Text("Review")
+                        .font(.caption2.weight(.semibold))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.secondary.opacity(0.15), in: Capsule())
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+            }
+
+            if !hideHeaderTags {
+                Text(PGNFormatter.headers(
+                    round: recordedGame.round,
+                    result: recordedGame.result,
+                    metadata: metadata,
+                    date: recordedGame.date
+                ))
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            if recordedGame.moves.isEmpty {
+                Text("No moves yet")
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(.secondary)
+            } else if showMoveHighlight {
+                Text(highlightedMovetext)
+                    .font(.system(.caption, design: .monospaced))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else {
+                Text(PGNFormatter.movetext(from: recordedGame.moves, result: recordedGame.result))
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background {
+            Rectangle()
+                .fill(isActive ? Color.accentColor.opacity(0.08) : Color.clear)
+        }
     }
 
     private var highlightedMovetext: AttributedString {
         var text = AttributedString()
         let activeMoveIndex = activePlyIndex > 0 ? activePlyIndex - 1 : nil
 
-        for (index, move) in moves.enumerated() {
+        for (index, move) in recordedGame.moves.enumerated() {
             if index % 2 == 0 {
                 var moveNumber = AttributedString("\(index / 2 + 1). ")
                 moveNumber.foregroundColor = moveColor(for: index, isMoveNumber: true)
@@ -268,8 +427,8 @@ private struct CurrentGamePGNView: View {
             text.append(AttributedString(" "))
         }
 
-        if result != .ongoing {
-            var resultText = AttributedString(result.rawValue)
+        if recordedGame.result != .ongoing {
+            var resultText = AttributedString(recordedGame.result.rawValue)
             resultText.foregroundColor = .secondary
             text.append(resultText)
         }

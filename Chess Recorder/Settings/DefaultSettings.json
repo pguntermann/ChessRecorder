@@ -13,7 +13,7 @@
     "green" : 0.52,
     "red" : 0.36
   },
-  "defaultLanguage" : "de-DE",
+  "defaultLanguage" : "en-US",
   "dictationPauseSeconds" : 0.9,
   "engineAnalysisDepth" : 10,
   "engineAnalysisShowEvaluationBar" : false,
@@ -35,6 +35,7 @@
   },
   "moveAnimationDuration" : 0.35,
   "pgnBlack" : "?",
+  "pgnHideHeaderTags" : true,
   "pgnSite" : "?",
   "pgnWhite" : "?",
   "pieceSizePercent" : 0.9,

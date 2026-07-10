@@ -282,6 +282,15 @@ class ChessGame {
         return replayMainLine(Array(moves.dropLast().map(\.san)))
     }
 
+    @discardableResult
+    func loadMainLine(moves recordedMoves: [ChessMove]) -> Bool {
+        if recordedMoves.isEmpty {
+            resetGame()
+            return true
+        }
+        return replayMainLine(recordedMoves.map(\.san))
+    }
+
     var isGameOver: Bool {
         gameResult != .ongoing
     }

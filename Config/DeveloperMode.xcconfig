@@ -1,0 +1,2 @@
+// Debug-only Swift compilation condition for developer settings.
+SWIFT_ACTIVE_COMPILATION_CONDITIONS = $(inherited) DEVELOPER_MODE

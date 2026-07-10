@@ -30,6 +30,7 @@ struct EngineAnalysisSectionView: View {
                         analysisService.isActive ? "Stop" : "Start",
                         systemImage: analysisService.isActive ? "stop.fill" : "play.fill"
                     )
+                    .font(.subheadline)
                     .imageScale(.medium)
                 }
                 .disabled(!analysisService.isEngineReady)

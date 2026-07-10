@@ -13,6 +13,7 @@ struct ContentView: View {
     @Environment(\.openURL) private var openURL
     @Bindable var settingsStore: SettingsStore
     @Bindable var vocabularyStore: PersonalVocabularyStore
+    @Bindable var developerModeStore: DeveloperModeStore
     @State private var game = ChessGame()
     @State private var pgnArchive = PGNArchive()
     @State private var speechRecognizer: SpeechRecognizer
@@ -28,9 +29,14 @@ struct ContentView: View {
     @State private var pendingSpeechModelWork = PendingSpeechModelWork()
     @State private var showSpeechModelRebuildOverlay = false
     
-    init(settingsStore: SettingsStore, vocabularyStore: PersonalVocabularyStore) {
+    init(
+        settingsStore: SettingsStore,
+        vocabularyStore: PersonalVocabularyStore,
+        developerModeStore: DeveloperModeStore
+    ) {
         self.settingsStore = settingsStore
         self.vocabularyStore = vocabularyStore
+        self.developerModeStore = developerModeStore
         _speechRecognizer = State(initialValue: SpeechRecognizer(vocabularyStore: vocabularyStore))
     }
     
@@ -139,6 +145,7 @@ struct ContentView: View {
             SettingsView(
                 settingsStore: settingsStore,
                 vocabularyStore: vocabularyStore,
+                developerModeStore: developerModeStore,
                 pendingSpeechModelWork: $pendingSpeechModelWork
             )
         }
@@ -182,6 +189,7 @@ struct ContentView: View {
         } message: { issue in
             Text(recordingPermissionMessage(for: issue))
         }
+        .statusBar(hidden: developerModeStore.hidesStatusBar)
     }
     
     private var boardSection: some View {
@@ -562,5 +570,9 @@ private struct BoardEvalRowLayout: Layout {
 }
 
 #Preview {
-    ContentView(settingsStore: SettingsStore(), vocabularyStore: PersonalVocabularyStore())
+    ContentView(
+        settingsStore: SettingsStore(),
+        vocabularyStore: PersonalVocabularyStore(),
+        developerModeStore: DeveloperModeStore()
+    )
 }

@@ -114,6 +114,7 @@ struct NotationPanelView: View {
                         copyPGNToClipboard()
                     } label: {
                         Label("Copy", systemImage: "doc.on.doc")
+                            .font(.subheadline)
                             .imageScale(.medium)
                     }
                     .disabled(pgnNotation.isEmpty)
@@ -122,6 +123,7 @@ struct NotationPanelView: View {
                         sharePGN()
                     } label: {
                         Label("Share", systemImage: "square.and.arrow.up")
+                            .font(.subheadline)
                             .imageScale(.medium)
                     }
                     .disabled(pgnNotation.isEmpty)
@@ -130,6 +132,7 @@ struct NotationPanelView: View {
                         onClearPGN?()
                     } label: {
                         Label("Clear", systemImage: "trash")
+                            .font(.subheadline)
                             .imageScale(.medium)
                     }
                     .disabled(pgnNotation.isEmpty)

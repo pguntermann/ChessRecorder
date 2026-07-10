@@ -9,6 +9,7 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @Bindable var settingsStore: SettingsStore
     @Bindable var vocabularyStore: PersonalVocabularyStore
+    @Bindable var developerModeStore: DeveloperModeStore
     @Binding var pendingSpeechModelWork: PendingSpeechModelWork
     
     @State private var lightColor: Color
@@ -23,10 +24,12 @@ struct SettingsView: View {
     init(
         settingsStore: SettingsStore,
         vocabularyStore: PersonalVocabularyStore,
+        developerModeStore: DeveloperModeStore,
         pendingSpeechModelWork: Binding<PendingSpeechModelWork>
     ) {
         self.settingsStore = settingsStore
         self.vocabularyStore = vocabularyStore
+        self.developerModeStore = developerModeStore
         _pendingSpeechModelWork = pendingSpeechModelWork
         let settings = settingsStore.settings
         _lightColor = State(initialValue: settings.lightSquareColor.color)
@@ -323,6 +326,14 @@ struct SettingsView: View {
                         settingsStore.resetToDefaults()
                         applyLocalStateFromStore()
                         requestLanguageChange(settingsStore.settings.defaultRecognitionLanguage)
+                    }
+                }
+
+                if developerModeStore.showsDeveloperSettings {
+                    Section {
+                        Toggle("Screenshot mode", isOn: $developerModeStore.isScreenshotModeEnabled)
+                    } footer: {
+                        Text("Hides the system status bar for clean App Store screenshots.")
                     }
                 }
             }

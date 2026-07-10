@@ -14,6 +14,9 @@
 /* Begin PBXFileReference section */
 		1760A27E2FFED5F20026DE7C /* Chess Recorder.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Chess Recorder.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		17F0A1042FFF00000026DE7C /* Version.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Version.xcconfig; sourceTree = "<group>"; };
+		17F0A1052FFF00000026DE7D /* Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Debug.xcconfig; sourceTree = "<group>"; };
+		17F0A1062FFF00000026DE7E /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Release.xcconfig; sourceTree = "<group>"; };
+		17F0A1072FFF00000026DE7F /* DeveloperMode.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = DeveloperMode.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -57,6 +60,9 @@
 		17F0A1032FFF00000026DE7C /* Config */ = {
 			isa = PBXGroup;
 			children = (
+				17F0A1052FFF00000026DE7D /* Debug.xcconfig */,
+				17F0A1062FFF00000026DE7E /* Release.xcconfig */,
+				17F0A1072FFF00000026DE7F /* DeveloperMode.xcconfig */,
 				17F0A1042FFF00000026DE7C /* Version.xcconfig */,
 			);
 			path = Config;
@@ -271,7 +277,7 @@
 		};
 		1760A28A2FFED5F20026DE7C /* Debug */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 17F0A1042FFF00000026DE7C /* Version.xcconfig */;
+			baseConfigurationReference = 17F0A1052FFF00000026DE7D /* Debug.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
@@ -312,7 +318,7 @@
 		};
 		1760A28B2FFED5F20026DE7C /* Release */ = {
 			isa = XCBuildConfiguration;
-			baseConfigurationReference = 17F0A1042FFF00000026DE7C /* Version.xcconfig */;
+			baseConfigurationReference = 17F0A1062FFF00000026DE7E /* Release.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;

@@ -345,7 +345,7 @@ struct ContentView: View {
                 Image(systemName: "questionmark.circle")
                     .imageScale(.medium)
             }
-            .accessibilityLabel("Help")
+            .accessibilityLabel("About & Help")
         }
         .frame(height: 50)
         .padding(.horizontal, 12)

@@ -741,7 +741,8 @@ Public License instead of this License.  But first, please read
 ### ECO Opening Database (`eco_base.json`, `eco_interpolated.json`)
 - **Location in app**: `Chess Recorder/Resources/Assets.xcassets/eco_base.dataset/`, `eco_interpolated.dataset/`
 - **Source**: https://github.com/hayatbiralem/eco.json (compiled by Ömür Yanıkoğlu)
-- **License**: MIT License
+- **Upstream data**: https://github.com/lichess-org/chess-openings (ECO opening TSV files; authoritative `eco_tsv` source)
+- **License**: MIT License (eco.json); CC0 Public Domain Dedication (lichess chess-openings)
 - **Notes**: Used for FEN-based opening name lookup during game recording. `fromTo.json` is bundled for reference but is not used at runtime.
 
 ### cburnett SVG Chess Pieces

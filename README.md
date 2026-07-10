@@ -8,6 +8,8 @@
 
 Chess Recorder is an iOS app for recording chess games by voice. Speak your moves in plain language — square names, piece names, captures, castling, and undo — and the app updates the board, builds the move list, and can export the game as PGN. Optional on-device engine analysis shows evaluation, a principal variation, and a best-move arrow while you record.
 
+![Chess Recorder on iPad — landscape view with board, live transcript, engine analysis, and PGN notation](Chess%20Recorder/Resources/Screenshots/ipad_mini_ls1.PNG)
+
 **Contents:** [Features](#features) · [Requirements](#requirements) · [Building](#building) · [Usage](#usage) · [Project layout](#project-layout) · [License](#license) · [Contributing](#contributing) · [Contact](#contact) · [Acknowledgments](#acknowledgments)
 
 ## Features
@@ -125,6 +127,8 @@ Chess Recorder builds on several open-source projects:
 - [ChessKit](https://github.com/chesskit-app/chesskit-swift) — chess rules and move generation (MIT)
 - [LucidEngine](https://github.com/CarlosDanielDev/lucid-engine) — Swift wrapper around Stockfish (GPL-3.0 engine core)
 - [Stockfish](https://stockfishchess.org/) — chess engine (GPL-3.0)
+- [eco.json](https://github.com/hayatbiralem/eco.json) — FEN-based ECO opening name lookup (`eco_base`, `eco_interpolated`; MIT)
+- [lichess chess-openings](https://github.com/lichess-org/chess-openings) — ECO opening TSV files used as the authoritative opening data source (CC0)
 - **cburnett** SVG chess pieces — [Wikimedia Commons](https://commons.wikimedia.org/wiki/Category:SVG_chess_pieces) (CC BY-SA 3.0 / GFDL 1.2)
 
 Full license texts and attribution details are in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).

@@ -12,7 +12,9 @@ struct HelpView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
-                    header
+                    aboutSection
+
+                    Divider()
 
                     helpSection(
                         title: "Getting started",
@@ -58,7 +60,7 @@ struct HelpView: View {
                 }
                 .padding()
             }
-            .navigationTitle("Help")
+            .navigationTitle("About & Help")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
@@ -68,24 +70,82 @@ struct HelpView: View {
         }
     }
 
-    private var header: some View {
-        VStack(spacing: 12) {
-            Image("logo")
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-                .frame(width: 96, height: 96)
-                .clipShape(RoundedRectangle(cornerRadius: 20))
+    private var aboutSection: some View {
+        VStack(spacing: 20) {
+            VStack(spacing: 12) {
+                Image("logo")
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 96, height: 96)
+                    .clipShape(RoundedRectangle(cornerRadius: 20))
 
-            Text(AppInfo.displayName)
-                .font(.title2)
-                .bold()
+                Text(AppInfo.displayName)
+                    .font(.title2)
+                    .bold()
 
-            Text(AppInfo.versionLabel)
+                Text(AppInfo.versionLabel)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity)
+
+            attributionSection
+        }
+    }
+
+    private var attributionSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Attribution & License")
+                .font(.headline)
+
+            Text("Chess Recorder is free software released under the GNU General Public License v3.0.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Text("Chess Recorder builds on several open-source projects:")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 4)
+
+            VStack(alignment: .leading, spacing: 6) {
+                ForEach(AppInfo.acknowledgments) { acknowledgment in
+                    bulletLink(
+                        "\(acknowledgment.name) (\(acknowledgment.license))",
+                        destination: acknowledgment.url
+                    )
+                }
+            }
+
+            Text("The full source code and additional information can be accessed using the links below:")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.top, 8)
+
+            VStack(alignment: .leading, spacing: 6) {
+                bulletLink("Source code", destination: AppInfo.repositoryURL)
+                bulletLink("License", destination: AppInfo.licenseURL)
+                bulletLink("Third-party licenses", destination: AppInfo.thirdPartyLicensesURL)
+            }
         }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 8)
+        .padding()
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.secondary.opacity(0.1))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+    }
+
+    private func bulletLink(_ title: String, destination: URL) -> some View {
+        Link(destination: destination) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text("•")
+                    .foregroundStyle(.secondary)
+                Text(title)
+            }
+            .font(.subheadline)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 
     private func helpSection(title: String, body: String) -> some View {

@@ -461,6 +461,16 @@ nonisolated enum MoveInterpreter {
     ) -> [String] {
         guard start + 2 < words.count else { return [] }
 
+        // "knight bd7" — ASR may merge file disambiguation with destination square.
+        if start + 1 < words.count,
+           words[start + 1].count == 3,
+           let file = words[start + 1].first,
+           "abcdefgh".contains(file),
+           let square = sanitizeSquare(String(words[start + 1].dropFirst())),
+           file != square.first {
+            return [piece + String(file) + square]
+        }
+
         let disambiguator = words[start + 1]
         guard let suffix = disambiguationSuffix(forToken: disambiguator, language: language) else {
             return []
@@ -488,6 +498,9 @@ nonisolated enum MoveInterpreter {
 
     private static func disambiguationSuffix(forToken token: String, language: RecognitionLanguage) -> String? {
         if token.count == 1, let file = token.first, "abcdefgh".contains(file) {
+            return String(file)
+        }
+        if let file = ChessTranscriptNormalizer.spokenFileLetter(for: token, language: language) {
             return String(file)
         }
         let rank = ChessTranscriptNormalizer.normalizeSpokenRankToken(token, language: language)
@@ -815,6 +828,18 @@ nonisolated enum MoveInterpreter {
                     moves.append(move)
                 }
             }
+
+            let fileDisambiguatedRegex = try! Regex("\(piecePattern)([a-h])([a-h][1-8])")
+            if let match = compact.matches(of: fileDisambiguatedRegex).last {
+                let output = String(compact[match.range])
+                if let move = pieceFileDisambiguatedTargetNotation(
+                    compact: output,
+                    prefix: prefix,
+                    markers: markerNames(for: piecePattern)
+                ) {
+                    moves.append(move)
+                }
+            }
         }
         
         if let move = extractCompactPawnCapture(from: compact) {
@@ -933,6 +958,27 @@ nonisolated enum MoveInterpreter {
         }
 
         return prefix + filePart + toPart
+    }
+
+    /// "knightbd7" → Nbd7 (file disambiguation + destination square, no "to").
+    private static func pieceFileDisambiguatedTargetNotation(
+        compact: String,
+        prefix: String,
+        markers: [String]
+    ) -> String? {
+        guard let marker = markers.first(where: { compact.hasPrefix($0) }) else { return nil }
+        let remainder = String(compact.dropFirst(marker.count))
+        guard remainder.count == 3,
+              let file = remainder.first,
+              "abcdefgh".contains(file) else {
+            return nil
+        }
+        let square = String(remainder.dropFirst())
+        guard let destination = sanitizeSquare(square),
+              file != destination.first else {
+            return nil
+        }
+        return prefix + String(file) + destination
     }
     
     private static func extractCompactPawnPromotions(from compact: String) -> [String] {

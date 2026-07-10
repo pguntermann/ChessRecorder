@@ -67,6 +67,8 @@ class SpeechRecognizer {
     private var recognitionGeneration = 0
     private var stableTranscriptTask: Task<Void, Never>?
     private var lastScheduledTranscript: String?
+    /// ASR sometimes drops the source file on the final hypothesis after a correct partial ("d takes c4" → "takes c4").
+    private var lastSeenCaptureFile: Character?
     
     private let undoCooldown: TimeInterval = 1.0
     private let finalPauseNanoseconds: UInt64 = 150_000_000
@@ -351,6 +353,7 @@ class SpeechRecognizer {
         rawTranscript = ""
         lastAcceptedTranscript = nil
         lastProcessedMove = nil
+        lastSeenCaptureFile = nil
         clearFailureState()
         stableTranscriptTask?.cancel()
         stableTranscriptTask = nil
@@ -363,6 +366,7 @@ class SpeechRecognizer {
         transcript = ""
         rawTranscript = ""
         lastAcceptedTranscript = nil
+        lastSeenCaptureFile = nil
         clearDictationPauseIndicator()
         stableTranscriptTask?.cancel()
         stableTranscriptTask = nil
@@ -403,7 +407,7 @@ class SpeechRecognizer {
             }
             
             guard let result else { return }
-            let newTranscript = result.bestTranscription.formattedString
+            let newTranscript = self.mergeDroppedCaptureFile(in: result.bestTranscription.formattedString)
             
             Task { @MainActor in
                 guard generation == self.recognitionGeneration else { return }
@@ -527,6 +531,38 @@ class SpeechRecognizer {
         let normalized = ChessTranscriptNormalizer.normalizeForPhraseMatching(text, language: currentLanguage)
         return vocabularyStore?.applyCorrections(to: normalized, language: currentLanguage) ?? normalized
     }
+
+    /// Restores a pawn file letter when ASR revises a partial like "d takes c4" into "takes c4".
+    private func mergeDroppedCaptureFile(in raw: String) -> String {
+        let lowered = raw
+            .precomposedStringWithCanonicalMapping
+            .lowercased()
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !lowered.isEmpty else { return raw }
+
+        if let regex = try? NSRegularExpression(
+            pattern: #"\b([a-h])\s+(takes|take|captures|capture)\b"#
+        ),
+           let match = regex.firstMatch(
+            in: lowered,
+            range: NSRange(lowered.startIndex..., in: lowered)
+           ),
+           let fileRange = Range(match.range(at: 1), in: lowered),
+           let file = lowered[fileRange].first {
+            lastSeenCaptureFile = file
+            return raw
+        }
+
+        guard let file = lastSeenCaptureFile else { return raw }
+        guard lowered.range(
+            of: #"^\s*(takes|take|captures|capture)\b"#,
+            options: .regularExpression
+        ) != nil else {
+            return raw
+        }
+
+        return "\(file) \(raw.trimmingCharacters(in: .whitespacesAndNewlines))"
+    }
     
     private func getChessVocabulary(for language: RecognitionLanguage) -> [String] {
         var words: [String]
@@ -540,6 +576,8 @@ class SpeechRecognizer {
                 "see", "sea", "she", "cee", "bee", "dee", "gee", "aitch",
                 "hey", "ay", "a3",
                 "takes", "take", "captures", "capture", "castle",
+                "d takes", "d takes c4", "d takes e4", "detects", "detects c4",
+                "knight b to d7", "night to be 7", "knight bd7",
                 "e4", "d4", "exd5", "nf3", "nf6", "nc3", "nc6", "nxd4", "qxb4", "O-O"
             ]
         case .german:

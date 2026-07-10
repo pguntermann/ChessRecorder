@@ -61,8 +61,10 @@ enum ChessTranscriptNormalizer {
             (#"\b([a-h][18])\s+(rock|look)\b"#, "$1 rook"),
             (#"\b(rock|look)\s+([a-h][18])\b"#, "rook $2"),
             (#"\bknit\b"#, "knight"),
-            (#"\bnite\b"#, "knight")
+            (#"\bnite\b"#, "knight"),
+            (#"\bnight\b"#, "knight")
         ])
+        result = fixEnglishDetectsMishearing(in: result)
         
         result = applyRegexReplacements(result, patterns: [
             (#"\b(see|sea|cee|she)\s+(?=\#(englishRankToken))\b"#, "c "),
@@ -170,7 +172,7 @@ enum ChessTranscriptNormalizer {
     private static let englishSpokenFileLetters: [String: Character] = [
         "see": "c", "sea": "c", "cee": "c", "she": "c",
         "bee": "b", "be": "b",
-        "dee": "d",
+        "de": "d", "dee": "d",
         "ee": "e",
         "gee": "g",
         "aitch": "h", "each": "h",
@@ -227,7 +229,9 @@ enum ChessTranscriptNormalizer {
         for (spoken, file) in englishSpokenFileLetters {
             groups[file, default: []].append(spoken)
         }
-        groups["a", default: []].append("a")
+        for file in "abcdefgh" {
+            groups[file, default: []].append(String(file))
+        }
         return groups.map { file, words in
             (words.joined(separator: "|"), String(file))
         }
@@ -242,6 +246,41 @@ enum ChessTranscriptNormalizer {
         return groups.map { file, words in
             (words.joined(separator: "|"), String(file))
         }
+    }
+
+    /// ASR often hears "d takes" as "detects" (merged) or "de takes" (split).
+    private static func fixEnglishDetectsMishearing(in text: String) -> String {
+        applyRegexReplacements(text, patterns: englishDetectsMishearingPatterns())
+    }
+
+    /// Fixes piece-move homophones without guessing destination files.
+    /// "be 7" is left for square coalescing → b7; rank-only destinations use the legal-move resolver.
+    private static func fixEnglishPieceMoveMishearings(in text: String) -> String {
+        applyRegexReplacements(text, patterns: englishPieceMoveMishearingPatterns())
+    }
+
+    static func englishPieceMoveMishearingPatterns() -> [(String, String)] {
+        let pieces = "knight|bishop|rook|queen|king"
+        return [
+            // "night to be 7" — ASR dropped the b-file disambiguator before "to"
+            (#"\b(\#(pieces))\s+to\s+(bee|be)\s+"#, "$1 b to "),
+            // "knight be to d7" — homophone "be" used as the b-file disambiguator
+            (#"\b(\#(pieces))\s+(bee|be)\s+(?=to\b)"#, "$1 b ")
+        ]
+    }
+
+    static func englishDetectsMishearingPatterns() -> [(String, String)] {
+        let homophones = englishSpokenFileLetters.keys
+            .sorted { $0.count > $1.count }
+            .joined(separator: "|")
+        let captureTarget = "(?:\(homophones)|[a-h])(?:[1-8]|\\s+(?:\(englishRankToken)))"
+        return [
+            (#"\bdetects\s*(?=\#(captureTarget))"#, "d takes "),
+            (#"\bdetects(?=[a-h][1-8]\b)"#, "d takes "),
+            (#"\bdetect\s*(?=\#(captureTarget))"#, "d take "),
+            (#"\bdetect(?=[a-h][1-8]\b)"#, "d take "),
+            (#"\bd\s+e\s+(takes|take|captures|capture)\b"#, "d $1")
+        ]
     }
 
     private static func fixEnglishPawnCaptureMishearings(in text: String) -> String {
@@ -489,6 +528,11 @@ enum ChessTranscriptNormalizer {
     /// Shared normalization for learned-phrase matching and move parsing.
     static func normalizeForPhraseMatching(_ text: String, language: RecognitionLanguage) -> String {
         var result = normalize(text, language: language)
+
+        if language == .english {
+            result = fixEnglishDetectsMishearing(in: result)
+            result = fixEnglishPieceMoveMishearings(in: result)
+        }
         
         result = result
             .replacingOccurrences(of: "0-0-0", with: "o-o-o")

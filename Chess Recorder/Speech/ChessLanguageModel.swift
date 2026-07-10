@@ -11,7 +11,7 @@ import Speech
 
 enum ChessLanguageModel {
     
-    private static let baseModelVersion = "3.1"
+    private static let baseModelVersion = "3.3"
     private static let modelIdentifier = "ChessRecorder.chess-moves"
     
     private static var preparedConfigurations: [RecognitionLanguage: SFSpeechLanguageModel.Configuration] = [:]
@@ -300,6 +300,10 @@ enum ChessLanguageModel {
                 SFCustomLanguageModelData.PhraseCount(phrase: phrase, count: count)
             }
 
+            for phrase in ["detects c4", "detects c 4", "detects e4", "detects e 4", "de takes c4", "de takes c 4"] {
+                SFCustomLanguageModelData.PhraseCount(phrase: phrase, count: 460)
+            }
+
             for word in ["see", "sea", "cee", "bee", "dee", "gee", "aitch", "hey", "ay"] {
                 SFCustomLanguageModelData.PhraseCount(phrase: word, count: 200)
             }
@@ -320,11 +324,14 @@ enum ChessLanguageModel {
                 "bishop b5 check", "knight f3 check", "rook d1 check", "queen h5 check",
                 "bishop to e5 check", "knight takes d4 check",
                 "bishop takes d7", "bishop shop takes d7", "bishop takes 7",
-                "c takes d4", "e takes d5", "c a d4", "e a d5",
+                "c takes d4", "e takes d5", "d takes c4", "d takes e4", "c a d4", "e a d5",
+                "detects c4", "detects c 4", "detects e4", "de takes c4", "de takes c 4",
                 "she takes d4", "she d4", "c d4", "see d4",
                 "g8 rook", "e8 queen", "f8 knight", "e8 bishop",
                 "f takes e8 rook", "g8 promote rook",
                 "knight e5 to d7", "night e5 to d7", "knight e5 to 7",
+                "knight b to d7", "night b to d7", "knight be to d7", "night to be 7",
+                "knight bd7", "night bd7", "knight b d7",
                 "knight g1 to f3", "knight f3 to e5"
             ] {
                 SFCustomLanguageModelData.PhraseCount(phrase: phrase, count: 280)
@@ -335,6 +342,8 @@ enum ChessLanguageModel {
                 "bishop to e5", "bishop e5", "knight to f3", "knight f3",
                 "knight g1 to f3", "knight f3 to e5", "knight takes d4",
                 "knight e5 to d7", "night e5 to d7", "knight e5 to 7",
+                "knight b to d7", "night b to d7", "knight be to d7", "night to be 7",
+                "knight bd7", "night bd7",
                 "a6", "a 6", "hey six", "ay six",
                 "a3", "a 3", "hey three", "hey 3",
                 "rook e1 to e8", "rook f to d1", "rook g1 to f3", "rook to d1",

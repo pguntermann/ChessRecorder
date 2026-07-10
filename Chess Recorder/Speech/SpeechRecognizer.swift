@@ -69,6 +69,8 @@ class SpeechRecognizer {
     private var lastScheduledTranscript: String?
     /// ASR sometimes drops the source file on the final hypothesis after a correct partial ("d takes c4" → "takes c4").
     private var lastSeenCaptureFile: Character?
+    private var audioSessionObserverTokens: [NSObjectProtocol] = []
+    private var recognitionRecoveryTask: Task<Void, Never>?
     
     private let undoCooldown: TimeInterval = 1.0
     private let finalPauseNanoseconds: UInt64 = 150_000_000
@@ -278,6 +280,8 @@ class SpeechRecognizer {
     
     @MainActor
     func startRecording() throws {
+        recognitionRecoveryTask?.cancel()
+        recognitionRecoveryTask = nil
         stopRecognitionTask()
         
         let audioSession = AVAudioSession.sharedInstance()
@@ -298,6 +302,7 @@ class SpeechRecognizer {
         audioEngine.prepare()
         try audioEngine.start()
         
+        installAudioSessionObservers()
         isRecording = true
     }
     
@@ -305,6 +310,10 @@ class SpeechRecognizer {
     func stopRecording() {
         guard isRecording else { return }
         isRecording = false
+        
+        recognitionRecoveryTask?.cancel()
+        recognitionRecoveryTask = nil
+        removeAudioSessionObservers()
         
         stableTranscriptTask?.cancel()
         stableTranscriptTask = nil
@@ -351,8 +360,62 @@ class SpeechRecognizer {
             return
         }
         
-        stopRecognitionTask()
+        stopRecognitionTask(endAudio: false)
         try? beginRecognitionTask()
+    }
+    
+    @MainActor
+    private func scheduleRecognitionRecovery() {
+        recognitionRecoveryTask?.cancel()
+        recognitionRecoveryTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(200))
+            guard !Task.isCancelled else { return }
+            guard self.isRecording else { return }
+            self.restartRecognitionSession()
+        }
+    }
+    
+    @MainActor
+    private func installAudioSessionObservers() {
+        removeAudioSessionObservers()
+        let center = NotificationCenter.default
+        
+        let routeToken = center.addObserver(
+            forName: AVAudioSession.routeChangeNotification,
+            object: AVAudioSession.sharedInstance(),
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.isRecording else { return }
+                self.scheduleRecognitionRecovery()
+            }
+        }
+        
+        let interruptionToken = center.addObserver(
+            forName: AVAudioSession.interruptionNotification,
+            object: AVAudioSession.sharedInstance(),
+            queue: .main
+        ) { [weak self] notification in
+            Task { @MainActor in
+                guard let self, self.isRecording else { return }
+                guard let info = notification.userInfo,
+                      let typeValue = info[AVAudioSessionInterruptionTypeKey] as? UInt,
+                      let type = AVAudioSession.InterruptionType(rawValue: typeValue),
+                      type == .ended else { return }
+                self.scheduleRecognitionRecovery()
+            }
+        }
+        
+        audioSessionObserverTokens = [routeToken, interruptionToken]
+    }
+    
+    @MainActor
+    private func removeAudioSessionObservers() {
+        let center = NotificationCenter.default
+        for token in audioSessionObserverTokens {
+            center.removeObserver(token)
+        }
+        audioSessionObserverTokens.removeAll()
     }
     
     @MainActor
@@ -405,12 +468,21 @@ class SpeechRecognizer {
             guard let self else { return }
             
             if let error {
-                guard !Self.isBenignRecognitionError(error) else { return }
                 Task { @MainActor in
-                    guard generation == self.recognitionGeneration else { return }
                     guard self.isRecording else { return }
-                    print("Recognition error: \(error.localizedDescription)")
-                    self.restartRecognitionSession()
+                    
+                    if Self.isBenignCancellationError(error) {
+                        return
+                    }
+                    
+                    guard generation == self.recognitionGeneration else { return }
+                    
+                    if Self.isRetryRecognitionError(error) {
+                        print("Recognition session ended (203 Retry) — recovering")
+                    } else {
+                        print("Recognition error: \(error.localizedDescription)")
+                    }
+                    self.scheduleRecognitionRecovery()
                 }
                 return
             }
@@ -427,11 +499,17 @@ class SpeechRecognizer {
         }
     }
     
-    private static func isBenignRecognitionError(_ error: Error) -> Bool {
+    private static func isBenignCancellationError(_ error: Error) -> Bool {
         let nsError = error as NSError
-        // 216 = session cancelled/ended; 203 = no speech; 301/1110 = end-of-utterance variants
+        // 216 = session cancelled (e.g. rotation/stop); 301/1110 = end-of-utterance variants
         return nsError.domain == "kAFAssistantErrorDomain"
-            && [203, 216, 301, 1110].contains(nsError.code)
+            && [216, 301, 1110].contains(nsError.code)
+    }
+    
+    private static func isRetryRecognitionError(_ error: Error) -> Bool {
+        let nsError = error as NSError
+        // 203 = "Retry" — task ended; start a fresh recognition request while still recording
+        return nsError.domain == "kAFAssistantErrorDomain" && nsError.code == 203
     }
     
     @MainActor
@@ -674,10 +752,12 @@ class SpeechRecognizer {
             .replacingOccurrences(of: "ß", with: "ss")
     }
     
-    private func stopRecognitionTask() {
+    private func stopRecognitionTask(endAudio: Bool = true) {
         recognitionTask?.cancel()
         recognitionTask = nil
-        recognitionRequest?.endAudio()
+        if endAudio {
+            recognitionRequest?.endAudio()
+        }
         recognitionRequest = nil
     }
 }

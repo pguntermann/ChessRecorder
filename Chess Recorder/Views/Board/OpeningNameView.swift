@@ -10,8 +10,11 @@ struct OpeningNameView: View {
     let isVisible: Bool
     let isLoaded: Bool
     let hasMoves: Bool
+    var compact: Bool = false
 
-    private static let reservedHeight: CGFloat = 40
+    private var reservedHeight: CGFloat {
+        compact ? 28 : 40
+    }
 
     private var showsLabel: Bool {
         isLoaded && hasMoves
@@ -21,14 +24,14 @@ struct OpeningNameView: View {
         Group {
             if isVisible {
                 Text(display.label)
-                    .font(.subheadline.weight(.medium))
+                    .font(compact ? .caption.weight(.medium) : .subheadline.weight(.medium))
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
-                    .lineLimit(2)
+                    .lineLimit(compact ? 1 : 2)
                     .minimumScaleFactor(0.85)
                     .opacity(showsLabel ? 1 : 0)
                     .frame(maxWidth: .infinity)
-                    .frame(height: Self.reservedHeight)
+                    .frame(height: reservedHeight)
                     .accessibilityHidden(!showsLabel)
                     .accessibilityLabel("Opening \(display.name), ECO \(display.eco)")
             }

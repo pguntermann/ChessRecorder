@@ -53,36 +53,9 @@ struct ContentView: View {
 
         GeometryReader { geometry in
             if geometry.size.width > geometry.size.height {
-                HStack(spacing: 0) {
-                    boardSection
-                        .frame(width: geometry.size.height * 0.9)
-                        .padding()
-                    
-                    Divider()
-                    
-                    VStack(spacing: 0) {
-                        controlToolbar(compact: false)
-                        ScrollView {
-                            notationPanel
-                        }
-                    }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
+                landscapeLayout(in: geometry)
             } else {
-                VStack(spacing: 0) {
-                    controlToolbar(compact: true)
-                    
-                    ScrollView {
-                        VStack(spacing: 16) {
-                            boardSection
-                                .padding()
-                            
-                            Divider()
-                            
-                            notationPanel
-                        }
-                    }
-                }
+                portraitLayout(in: geometry)
             }
         }
         .overlay {
@@ -206,27 +179,94 @@ struct ContentView: View {
         }
         .statusBar(hidden: developerModeStore.hidesStatusBar)
     }
+
+    @ViewBuilder
+    private func landscapeLayout(in geometry: GeometryProxy) -> some View {
+        let boardColumnWidth = landscapeBoardColumnWidth(in: geometry)
+        let boardAreaHeight = landscapeBoardAreaHeight(in: geometry)
+        let sidebarWidth = max(0, geometry.size.width - boardColumnWidth - 1)
+
+        HStack(alignment: .top, spacing: 0) {
+            boardSection(compactOpening: true, boardAreaHeight: boardAreaHeight)
+                .padding(8)
+                .frame(width: boardColumnWidth, height: geometry.size.height, alignment: .topLeading)
+                .clipped()
+
+            Divider()
+
+            VStack(spacing: 0) {
+                controlToolbar(compact: false, availableWidth: sidebarWidth)
+                ScrollView {
+                    notationPanel
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .safeAreaPadding(.trailing)
+        }
+    }
+
+    private func landscapeBoardAreaHeight(in geometry: GeometryProxy) -> CGFloat {
+        let openingHeight: CGFloat = settingsStore.settings.openingNameVisible ? 28 : 0
+        let sectionSpacing: CGFloat = 6
+        let statusHeight: CGFloat = 44
+        let verticalPadding: CGFloat = 16
+        let spacingCount: CGFloat = openingHeight > 0 ? 2 : 1
+
+        return geometry.size.height
+            - verticalPadding
+            - openingHeight
+            - statusHeight
+            - sectionSpacing * spacingCount
+    }
+
+    private func landscapeBoardColumnWidth(in geometry: GeometryProxy) -> CGFloat {
+        let showEvalBar = settingsStore.settings.engineAnalysisShowEvaluationBar
+        let evalOverhead: CGFloat = showEvalBar ? 48 : 0
+        let columnPadding: CGFloat = 16
+        let boardAreaHeight = landscapeBoardAreaHeight(in: geometry)
+        let boardSide = floor(max(0, boardAreaHeight) / 8) * 8
+
+        return boardSide + evalOverhead + columnPadding
+    }
+
+    @ViewBuilder
+    private func portraitLayout(in geometry: GeometryProxy) -> some View {
+        VStack(spacing: 0) {
+            controlToolbar(compact: true, availableWidth: geometry.size.width)
+
+            ScrollView {
+                VStack(spacing: 16) {
+                    boardSection()
+                        .padding()
+
+                    Divider()
+
+                    notationPanel
+                }
+            }
+        }
+    }
     
-    private var boardSection: some View {
-        VStack(spacing: 10) {
+    private func boardSection(
+        compactOpening: Bool = false,
+        boardAreaHeight: CGFloat? = nil
+    ) -> some View {
+        VStack(alignment: .leading, spacing: compactOpening ? 6 : 10) {
             OpeningNameView(
                 display: openingService.display,
                 isVisible: settingsStore.settings.openingNameVisible,
                 isLoaded: openingService.isLoaded,
-                hasMoves: !game.moves.isEmpty
+                hasMoves: !game.moves.isEmpty,
+                compact: compactOpening
             )
 
-            BoardWithEvaluationLayout(
-                game: game,
-                settings: settingsStore.settings,
-                orientation: boardOrientation,
-                chessEngine: chessEngine,
-                engineAnalysis: engineAnalysis,
-                showEvaluationBar: settingsStore.settings.engineAnalysisShowEvaluationBar,
-                showBoardArrow: settingsStore.settings.engineAnalysisShowBoardArrow,
-                engineAnalysisVisible: settingsStore.settings.engineAnalysisVisible,
-                canAcceptNewMoves: canAcceptNewMoves
-            )
+            if let boardAreaHeight {
+                boardLayout
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .frame(height: max(0, boardAreaHeight), alignment: .topLeading)
+            } else {
+                boardLayout
+            }
 
             HStack(spacing: 8) {
                 Circle()
@@ -242,6 +282,9 @@ struct ContentView: View {
                             .font(.subheadline)
                             .foregroundStyle(.orange)
                             .multilineTextAlignment(.leading)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.85)
+                            .layoutPriority(1)
                     }
                     .buttonStyle(.plain)
                 } else if pgnArchive.activeGameIsReviewOnly, let activeGame = pgnArchive.activeGame {
@@ -252,9 +295,12 @@ struct ContentView: View {
                     Text(game.gameStatusMessage ?? (game.currentTurn == .white ? "White to move" : "Black to move"))
                         .font(.subheadline)
                         .foregroundStyle(game.isGameOver ? .primary : .secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.85)
+                        .layoutPriority(1)
                 }
                 
-                Spacer()
+                Spacer(minLength: 0)
                 
                 Button {
                     withAnimation(.easeInOut(duration: 0.25)) {
@@ -264,10 +310,29 @@ struct ContentView: View {
                     Label("Turn board", systemImage: "arrow.up.arrow.down")
                         .labelStyle(.iconOnly)
                         .imageScale(.medium)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
                 }
                 .accessibilityLabel("Turn board")
+                .layoutPriority(2)
             }
+            .padding(.horizontal, 4)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var boardLayout: some View {
+        BoardWithEvaluationLayout(
+            game: game,
+            settings: settingsStore.settings,
+            orientation: boardOrientation,
+            chessEngine: chessEngine,
+            engineAnalysis: engineAnalysis,
+            showEvaluationBar: settingsStore.settings.engineAnalysisShowEvaluationBar,
+            showBoardArrow: settingsStore.settings.engineAnalysisShowBoardArrow,
+            engineAnalysisVisible: settingsStore.settings.engineAnalysisVisible,
+            canAcceptNewMoves: canAcceptNewMoves
+        )
     }
     
     private var notationPanel: some View {
@@ -293,8 +358,14 @@ struct ContentView: View {
         )
     }
     
-    private func controlToolbar(compact: Bool) -> some View {
-        HStack(spacing: 8) {
+    private func controlToolbar(compact: Bool, availableWidth: CGFloat) -> some View {
+        let isNarrowPortrait = compact && availableWidth < 420
+        let isNarrowSidebar = !compact && availableWidth < 400
+        let useIconOnlyRecord = isNarrowPortrait || isNarrowSidebar
+        let iconHitSize: CGFloat = (isNarrowPortrait || isNarrowSidebar) ? 36 : (compact ? 40 : 44)
+        let iconSpacing: CGFloat = compact ? (isNarrowPortrait ? 0 : 4) : (isNarrowSidebar ? 0 : 2)
+
+        return HStack(spacing: iconSpacing) {
             if compact {
                 Image("logo_sr")
                     .resizable()
@@ -302,50 +373,62 @@ struct ContentView: View {
                     .frame(width: 24, height: 24)
                     .accessibilityHidden(true)
 
-                Text("Chess Recorder")
-                    .font(.headline)
-                    .bold()
-                    .lineLimit(1)
-            } else {
-                Image("logo_sr")
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-                    .frame(width: 28, height: 28)
-                    .accessibilityLabel("Chess Recorder")
+                if !isNarrowPortrait {
+                    Text("Chess Recorder")
+                        .font(.headline)
+                        .bold()
+                        .lineLimit(1)
+                }
             }
             
-            Spacer(minLength: 4)
+            Spacer(minLength: compact ? (isNarrowPortrait ? 0 : 4) : 0)
             
             Text(speechRecognizer.currentLanguage.flag)
                 .font(.title3)
+                .frame(width: iconHitSize, height: iconHitSize)
                 .accessibilityLabel(speechRecognizer.currentLanguage.displayName)
             
-            Button {
-                toggleRecording()
-            } label: {
-                HStack(spacing: 4) {
-                    Image(systemName: speechRecognizer.isRecording ? "mic.fill" : "mic")
-                    Text(speechRecognizer.isRecording ? "Stop" : "Record")
-                        .font(.subheadline)
+            if useIconOnlyRecord {
+                Button {
+                    toggleRecording()
+                } label: {
+                    ToolbarIconLabel(
+                        speechRecognizer.isRecording ? "mic.fill" : "mic",
+                        hitSize: iconHitSize
+                    )
+                    .foregroundColor(speechRecognizer.isRecording ? .red : (canAcceptNewMoves ? .blue : .secondary))
                 }
-                .frame(minWidth: 76)
-                .foregroundColor(speechRecognizer.isRecording ? .red : (canAcceptNewMoves ? .blue : .secondary))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 6)
-                .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(speechRecognizer.isRecording
-                            ? Color.red.opacity(0.1)
-                            : (canAcceptNewMoves ? Color.blue.opacity(0.1) : Color.secondary.opacity(0.1)))
-                )
+                .disabled(!speechRecognizer.isReadyForUse || !canAcceptNewMoves)
+                .accessibilityLabel(speechRecognizer.isRecording ? "Stop recording" : "Record")
+            } else {
+                Button {
+                    toggleRecording()
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: speechRecognizer.isRecording ? "mic.fill" : "mic")
+                            .imageScale(.medium)
+                        Text(speechRecognizer.isRecording ? "Stop" : "Record")
+                            .font(.subheadline)
+                            .lineLimit(1)
+                    }
+                    .fixedSize(horizontal: true, vertical: false)
+                    .foregroundColor(speechRecognizer.isRecording ? .red : (canAcceptNewMoves ? .blue : .secondary))
+                    .padding(.horizontal, compact ? 8 : 6)
+                    .padding(.vertical, 6)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(speechRecognizer.isRecording
+                                ? Color.red.opacity(0.1)
+                                : (canAcceptNewMoves ? Color.blue.opacity(0.1) : Color.secondary.opacity(0.1)))
+                    )
+                }
+                .disabled(!speechRecognizer.isReadyForUse || !canAcceptNewMoves)
             }
-            .disabled(!speechRecognizer.isReadyForUse || !canAcceptNewMoves)
             
             Button {
                 navigateBack()
             } label: {
-                Image(systemName: "chevron.left")
-                    .imageScale(.medium)
+                ToolbarIconLabel("chevron.left", hitSize: iconHitSize)
             }
             .disabled(!game.canGoBack)
             .accessibilityLabel("Previous move")
@@ -353,8 +436,7 @@ struct ContentView: View {
             Button {
                 navigateForward()
             } label: {
-                Image(systemName: "chevron.right")
-                    .imageScale(.medium)
+                ToolbarIconLabel("chevron.right", hitSize: iconHitSize)
             }
             .disabled(!game.canGoForward)
             .accessibilityLabel("Next move")
@@ -362,8 +444,7 @@ struct ContentView: View {
             Button {
                 undoLastMove()
             } label: {
-                Image(systemName: "arrow.uturn.backward")
-                    .imageScale(.medium)
+                ToolbarIconLabel("arrow.uturn.backward", hitSize: iconHitSize)
             }
             .disabled(!game.canUndo || pgnArchive.activeGameIsReviewOnly)
             
@@ -382,29 +463,26 @@ struct ContentView: View {
                     startNewGame(result: .draw)
                 }
             } label: {
-                Label("Game", systemImage: "ellipsis.circle")
-                    .labelStyle(.iconOnly)
-                    .imageScale(.medium)
+                ToolbarIconLabel("ellipsis.circle", hitSize: iconHitSize)
             }
             
             Button {
                 showingSettings = true
             } label: {
-                Image(systemName: "gearshape")
-                    .imageScale(.medium)
+                ToolbarIconLabel("gearshape", hitSize: iconHitSize)
             }
             .accessibilityLabel("Settings")
 
             Button {
                 showingHelp = true
             } label: {
-                Image(systemName: "questionmark.circle")
-                    .imageScale(.medium)
+                ToolbarIconLabel("questionmark.circle", hitSize: iconHitSize)
             }
             .accessibilityLabel("About & Help")
         }
-        .frame(height: 50)
-        .padding(.horizontal, 12)
+        .frame(maxWidth: .infinity)
+        .frame(height: compact ? 52 : 56)
+        .padding(.horizontal, compact ? (isNarrowPortrait ? 6 : 12) : (isNarrowSidebar ? 6 : 8))
         .background(Color(uiColor: .systemBackground))
         .overlay(alignment: .bottom) {
             Divider()
@@ -584,6 +662,23 @@ struct ContentView: View {
     }
 }
 
+private struct ToolbarIconLabel: View {
+    let systemName: String
+    var hitSize: CGFloat = 44
+
+    init(_ systemName: String, hitSize: CGFloat = 44) {
+        self.systemName = systemName
+        self.hitSize = hitSize
+    }
+
+    var body: some View {
+        Image(systemName: systemName)
+            .imageScale(.medium)
+            .frame(width: hitSize, height: hitSize)
+            .contentShape(Rectangle())
+    }
+}
+
 private struct BoardWithEvaluationLayout: View {
     let game: ChessGame
     let settings: AppSettings
@@ -626,11 +721,15 @@ private struct BoardEvalRowLayout: Layout {
     private let spacing: CGFloat = 10
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        guard let width = proposal.width else { return .zero }
+        let availableWidth = proposal.width ?? .infinity
+        let availableHeight = proposal.height ?? .infinity
         let boardSide = boardSideLength(
-            availableWidth: width,
-            availableHeight: proposal.height ?? .infinity
+            availableWidth: availableWidth,
+            availableHeight: availableHeight
         )
+        let horizontalOverhead = showEvaluationBar ? evalBarWidth + spacing : 0
+        let contentWidth = boardSide + horizontalOverhead
+        let width = proposal.width.map { min($0, contentWidth) } ?? contentWidth
         return CGSize(width: width, height: max(boardSide, 0))
     }
 

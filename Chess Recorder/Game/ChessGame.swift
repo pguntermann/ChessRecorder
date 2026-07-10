@@ -285,6 +285,14 @@ class ChessGame {
         return fens
     }
 
+    /// Starting position followed by each position after a move — used for phase detection.
+    func fenSequenceFromStart() -> [String] {
+        guard let startFEN = kitGame.positions[kitGame.startingIndex]?.fen else {
+            return [fen()]
+        }
+        return [startFEN] + fensAfterMoves()
+    }
+
     // MARK: - ChessKit integration
 
     @discardableResult

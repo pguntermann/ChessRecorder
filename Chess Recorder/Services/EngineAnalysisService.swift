@@ -12,9 +12,33 @@ struct AnalysisArrowMove: Equatable {
     let to: ChessPosition
 }
 
+enum EngineGamePhase: String, Equatable {
+    case opening = "Opening"
+    case middlegame = "Middlegame"
+    case endgame = "Endgame"
+}
+
+struct WinProbabilityDisplay: Equatable {
+    let white: Double
+    let draw: Double
+    let black: Double
+
+    init(wdl: WinProbability) {
+        white = wdl.white
+        draw = wdl.draw
+        black = wdl.black
+    }
+
+    var whitePercent: Int { Int((white * 100).rounded()) }
+    var drawPercent: Int { Int((draw * 100).rounded()) }
+    var blackPercent: Int { Int((black * 100).rounded()) }
+}
+
 struct EngineAnalysisDisplay: Equatable {
     var evaluationText: String = "—"
     var evaluationBarWhiteFraction: Double = 0.5
+    var winProbability: WinProbabilityDisplay?
+    var gamePhase: EngineGamePhase?
     var principalLineUCI: String = ""
     var principalLineSAN: String = ""
     var nextMoveArrow: AnalysisArrowMove?
@@ -106,6 +130,7 @@ final class EngineAnalysisService {
         
         let fen = game.fen()
         let sideToMove = game.currentTurn
+        let gamePhase = Self.currentPhase(fens: game.fenSequenceFromStart())
         
         analysisTask = Task {
             await withTaskCancellationHandler {
@@ -127,17 +152,20 @@ final class EngineAnalysisService {
                         guard !Task.isCancelled else { return }
 
                         latestAssessment = assessment
-                        display = EngineAnalysisDisplay(
-                            evaluationText: Self.formatEvaluation(assessment.score, sideToMove: sideToMove),
-                            evaluationBarWhiteFraction: Self.evaluationBarWhiteFraction(assessment.score, sideToMove: sideToMove),
-                            principalLineUCI: Self.formatPrincipalLineUCI(assessment.principalVariation.map(\.uci)),
-                            principalLineSAN: ChessKitMapping.formatEnginePrincipalLineSAN(assessment.principalVariation.map(\.uci), fen: fen),
-                            nextMoveArrow: Self.arrowMove(from: assessment.principalVariation.first?.uci),
+                        display = Self.makeDisplay(
+                            assessment: assessment,
+                            fen: fen,
+                            sideToMove: sideToMove,
+                            gamePhase: gamePhase,
                             statusMessage: Self.depthStatusMessage(
                                 currentDepth: assessment.depth,
                                 targetDepth: configuredDepth,
                                 unlimited: isDepthUnlimited,
-                                isFinal: !Self.hasNextDepth(after: assessment.depth, targetDepth: configuredDepth, unlimited: isDepthUnlimited)
+                                isFinal: !Self.hasNextDepth(
+                                    after: assessment.depth,
+                                    targetDepth: configuredDepth,
+                                    unlimited: isDepthUnlimited
+                                )
                             )
                         )
                         nextDepth = Self.nextDepth(after: assessment.depth, targetDepth: configuredDepth, unlimited: isDepthUnlimited)
@@ -145,18 +173,23 @@ final class EngineAnalysisService {
                         guard !Task.isCancelled else { return }
 
                         if let latestAssessment {
-                            display = EngineAnalysisDisplay(
-                                evaluationText: Self.formatEvaluation(latestAssessment.score, sideToMove: sideToMove),
-                                evaluationBarWhiteFraction: Self.evaluationBarWhiteFraction(latestAssessment.score, sideToMove: sideToMove),
-                                principalLineUCI: Self.formatPrincipalLineUCI(latestAssessment.principalVariation.map(\.uci)),
-                                principalLineSAN: ChessKitMapping.formatEnginePrincipalLineSAN(latestAssessment.principalVariation.map(\.uci), fen: fen),
-                                nextMoveArrow: Self.arrowMove(from: latestAssessment.principalVariation.first?.uci),
-                                statusMessage: Self.statusMessage(for: error, fallbackDepth: latestAssessment.depth, unlimited: isDepthUnlimited)
+                            display = Self.makeDisplay(
+                                assessment: latestAssessment,
+                                fen: fen,
+                                sideToMove: sideToMove,
+                                gamePhase: gamePhase,
+                                statusMessage: Self.statusMessage(
+                                    for: error,
+                                    fallbackDepth: latestAssessment.depth,
+                                    unlimited: isDepthUnlimited
+                                )
                             )
                         } else {
                             display = EngineAnalysisDisplay(
                                 evaluationText: "—",
                                 evaluationBarWhiteFraction: 0.5,
+                                winProbability: nil,
+                                gamePhase: gamePhase,
                                 principalLineUCI: "",
                                 principalLineSAN: "",
                                 nextMoveArrow: nil,
@@ -224,6 +257,46 @@ final class EngineAnalysisService {
         }
     }
     
+    private static func makeDisplay(
+        assessment: PositionAssessment,
+        fen: String,
+        sideToMove: PieceColor,
+        gamePhase: EngineGamePhase,
+        statusMessage: String
+    ) -> EngineAnalysisDisplay {
+        let whiteScore = whitePerspectiveScore(assessment.score, sideToMove: sideToMove)
+        let wdl = WinProbabilityCalculator.calculate(score: whiteScore)
+
+        return EngineAnalysisDisplay(
+            evaluationText: formatEvaluation(assessment.score, sideToMove: sideToMove),
+            evaluationBarWhiteFraction: evaluationBarWhiteFraction(assessment.score, sideToMove: sideToMove),
+            winProbability: WinProbabilityDisplay(wdl: wdl),
+            gamePhase: gamePhase,
+            principalLineUCI: formatPrincipalLineUCI(assessment.principalVariation.map(\.uci)),
+            principalLineSAN: ChessKitMapping.formatEnginePrincipalLineSAN(assessment.principalVariation.map(\.uci), fen: fen),
+            nextMoveArrow: arrowMove(from: assessment.principalVariation.first?.uci),
+            statusMessage: statusMessage
+        )
+    }
+
+    static func currentPhase(fens: [String]) -> EngineGamePhase {
+        guard fens.count >= 2 else { return .opening }
+
+        let phases = GamePhaseDetector.detect(fens: fens)
+        let moveNumber = fens.count - 1
+
+        if let endgame = phases.endgame, endgame.contains(moveNumber) {
+            return .endgame
+        }
+        if let middlegame = phases.middlegame, middlegame.contains(moveNumber) {
+            return .middlegame
+        }
+        if let opening = phases.opening, opening.contains(moveNumber) {
+            return .opening
+        }
+        return .opening
+    }
+
     private static func formatEvaluation(_ score: Score, sideToMove: PieceColor) -> String {
         let whitePerspective = whitePerspectiveScore(score, sideToMove: sideToMove)
         switch whitePerspective {

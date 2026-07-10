@@ -40,14 +40,13 @@ enum PGNFormatter {
         return pgn.trimmingCharacters(in: .whitespaces)
     }
     
-    static func formatGame(
-        moves: [ChessMove],
+    static func headers(
         round: Int,
         result: PGNResult = .ongoing,
         metadata: PGNMetadata,
         date: Date = Date()
     ) -> String {
-        let headers = """
+        """
         [Event "Chess Recorder"]
         [Site "\(escapeTag(metadata.site))"]
         [Date "\(dateString(date))"]
@@ -56,6 +55,16 @@ enum PGNFormatter {
         [Black "\(escapeTag(metadata.black))"]
         [Result "\(result.rawValue)"]
         """
+    }
+    
+    static func formatGame(
+        moves: [ChessMove],
+        round: Int,
+        result: PGNResult = .ongoing,
+        metadata: PGNMetadata,
+        date: Date = Date()
+    ) -> String {
+        let headers = Self.headers(round: round, result: result, metadata: metadata, date: date)
         let moveText = Self.movetext(from: moves, result: result)
         guard !moves.isEmpty else { return headers }
         return headers + "\n\n" + moveText

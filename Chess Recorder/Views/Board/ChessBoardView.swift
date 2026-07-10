@@ -74,6 +74,14 @@ struct ChessBoardView: View {
             }
             .frame(width: squareSize * 8, height: squareSize * 8)
             .border(Color.secondary, width: 2)
+            .overlay {
+                if !game.isAtLatestMove {
+                    HistoryBrowsingOverlay(squareSize: squareSize)
+                }
+            }
+            .onChange(of: game.activePlyIndex) { _, _ in
+                clearSelection()
+            }
             .onChange(of: game.activeMoveAnimation?.id) { _, newID in
                 guard newID != nil, settings.moveAnimationDuration <= 0,
                       let animation = game.activeMoveAnimation else { return }
@@ -187,6 +195,36 @@ struct ChessBoardView: View {
         if position == animation.primary.to { return true }
         if let secondary = animation.secondary, position == secondary.to { return true }
         return false
+    }
+}
+
+private struct HistoryBrowsingOverlay: View {
+    let squareSize: CGFloat
+
+    private var iconSize: CGFloat { max(14, squareSize * 0.24) }
+    private var labelSize: CGFloat { max(12, squareSize * 0.21) }
+
+    var body: some View {
+        HStack(spacing: max(5, squareSize * 0.1)) {
+            Image(systemName: "clock.arrow.circlepath")
+                .font(.system(size: iconSize, weight: .semibold))
+                .symbolRenderingMode(.hierarchical)
+
+            Text("Reviewing history")
+                .font(.system(size: labelSize, weight: .semibold))
+        }
+        .foregroundStyle(.primary)
+        .padding(.horizontal, max(10, squareSize * 0.22))
+        .padding(.vertical, max(6, squareSize * 0.12))
+        .background(.ultraThinMaterial, in: Capsule())
+        .overlay {
+            Capsule()
+                .strokeBorder(Color.primary.opacity(0.15), lineWidth: 1)
+        }
+        .shadow(color: .black.opacity(0.12), radius: 4, y: 2)
+        .padding(.top, max(6, squareSize * 0.08))
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .allowsHitTesting(false)
     }
 }
 

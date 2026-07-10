@@ -14,7 +14,8 @@ private struct ShareablePGNExport: Identifiable {
 
 struct NotationPanelView: View {
     let game: ChessGame
-    let pgnNotation: String
+    let pgnArchive: PGNArchive
+    let metadata: PGNMetadata
     let transcript: String
     let isRecording: Bool
     let dictationPauseDeadline: Date?
@@ -29,6 +30,14 @@ struct NotationPanelView: View {
     var onClearPGN: (() -> Void)?
     
     @State private var exportItem: ShareablePGNExport?
+
+    private var fullPGNNotation: String {
+        pgnArchive.displayText(currentGame: game, metadata: metadata)
+    }
+
+    private var hasAnyPGNContent: Bool {
+        !pgnArchive.completedGames.isEmpty || !game.moves.isEmpty
+    }
     
     private var transcriptPlaceholder: String {
         if isRebuildingLanguageModel {
@@ -117,7 +126,7 @@ struct NotationPanelView: View {
                             .font(.subheadline)
                             .imageScale(.medium)
                     }
-                    .disabled(pgnNotation.isEmpty)
+                    .disabled(fullPGNNotation.isEmpty)
                     
                     Button {
                         sharePGN()
@@ -126,7 +135,7 @@ struct NotationPanelView: View {
                             .font(.subheadline)
                             .imageScale(.medium)
                     }
-                    .disabled(pgnNotation.isEmpty)
+                    .disabled(fullPGNNotation.isEmpty)
                     
                     Button {
                         onClearPGN?()
@@ -135,13 +144,43 @@ struct NotationPanelView: View {
                             .font(.subheadline)
                             .imageScale(.medium)
                     }
-                    .disabled(pgnNotation.isEmpty)
+                    .disabled(fullPGNNotation.isEmpty)
                 }
                 
-                Text(pgnNotation.isEmpty ? "No games yet" : pgnNotation)
-                    .font(.system(.caption, design: .monospaced))
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                if hasAnyPGNContent {
+                    VStack(alignment: .leading, spacing: 12) {
+                        ForEach(Array(pgnArchive.completedGames.enumerated()), id: \.offset) { _, recordedGame in
+                            Text(
+                                PGNFormatter.formatGame(
+                                    moves: recordedGame.moves,
+                                    round: recordedGame.round,
+                                    result: recordedGame.result,
+                                    metadata: metadata,
+                                    date: recordedGame.date
+                                )
+                            )
+                            .font(.system(.caption, design: .monospaced))
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+
+                        if !game.moves.isEmpty {
+                            CurrentGamePGNView(
+                                moves: game.moves,
+                                round: pgnArchive.completedGames.count + 1,
+                                result: pgnArchive.currentGameResult,
+                                metadata: metadata,
+                                activePlyIndex: game.activePlyIndex,
+                                isAtLatestMove: game.isAtLatestMove
+                            )
+                        }
+                    }
+                } else {
+                    Text("No games yet")
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
             .padding()
             .background(Color.secondary.opacity(0.1))
@@ -155,17 +194,17 @@ struct NotationPanelView: View {
     
     private func copyPGNToClipboard() {
         #if os(iOS)
-        UIPasteboard.general.string = pgnNotation
+        UIPasteboard.general.string = fullPGNNotation
         #else
         NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(pgnNotation, forType: .string)
+        NSPasteboard.general.setString(fullPGNNotation, forType: .string)
         #endif
     }
     
     private func sharePGN() {
-        guard !pgnNotation.isEmpty else { return }
+        guard !fullPGNNotation.isEmpty else { return }
         do {
-            let url = try PGNExport.writeTemporaryFile(content: pgnNotation)
+            let url = try PGNExport.writeTemporaryFile(content: fullPGNNotation)
             exportItem = ShareablePGNExport(url: url)
         } catch {
             print("PGN export failed: \(error.localizedDescription)")
@@ -177,6 +216,72 @@ struct NotationPanelView: View {
             try? FileManager.default.removeItem(at: exportItem.url)
         }
         exportItem = nil
+    }
+}
+
+private struct CurrentGamePGNView: View {
+    let moves: [ChessMove]
+    let round: Int
+    let result: PGNResult
+    let metadata: PGNMetadata
+    let activePlyIndex: Int
+    let isAtLatestMove: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(currentGameHeaders)
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+
+            Text(highlightedMovetext)
+                .font(.system(.caption, design: .monospaced))
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private var currentGameHeaders: String {
+        PGNFormatter.headers(round: round, result: result, metadata: metadata)
+    }
+
+    private var highlightedMovetext: AttributedString {
+        var text = AttributedString()
+        let activeMoveIndex = activePlyIndex > 0 ? activePlyIndex - 1 : nil
+
+        for (index, move) in moves.enumerated() {
+            if index % 2 == 0 {
+                var moveNumber = AttributedString("\(index / 2 + 1). ")
+                moveNumber.foregroundColor = moveColor(for: index, isMoveNumber: true)
+                text.append(moveNumber)
+            }
+
+            var san = AttributedString(move.algebraicNotation)
+            san.foregroundColor = moveColor(for: index, isMoveNumber: false)
+
+            if index == activeMoveIndex {
+                san.font = .system(.caption, design: .monospaced).bold()
+                san.backgroundColor = Color.accentColor.opacity(0.25)
+            }
+
+            text.append(san)
+            text.append(AttributedString(" "))
+        }
+
+        if result != .ongoing {
+            var resultText = AttributedString(result.rawValue)
+            resultText.foregroundColor = .secondary
+            text.append(resultText)
+        }
+
+        return text
+    }
+
+    private func moveColor(for index: Int, isMoveNumber: Bool) -> Color {
+        if !isAtLatestMove && index >= activePlyIndex {
+            return .secondary.opacity(0.45)
+        }
+        return isMoveNumber ? .secondary : .primary
     }
 }
 

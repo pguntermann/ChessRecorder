@@ -137,6 +137,14 @@ struct ContentView: View {
             }
             openingService.refresh(game: game)
         }
+        .onChange(of: game.activePlyIndex) { _, _ in
+            if game.isGameOver {
+                engineAnalysis.stop()
+            } else {
+                engineAnalysis.refresh(game: game)
+            }
+            openingService.refresh(game: game)
+        }
         .onChange(of: game.gameResult) { _, _ in
             pgnArchive.syncCurrentGameResult(with: game)
             if game.isGameOver {
@@ -220,9 +228,21 @@ struct ContentView: View {
                     .frame(width: 14, height: 14)
                     .overlay(Circle().stroke(Color.secondary, lineWidth: 1))
                 
-                Text(game.gameStatusMessage ?? (game.currentTurn == .white ? "White to move" : "Black to move"))
-                    .font(.subheadline)
-                    .foregroundStyle(game.isGameOver ? .primary : .secondary)
+                if !game.isAtLatestMove {
+                    Button {
+                        _ = game.goToLatestPosition()
+                    } label: {
+                        Text("Viewing move \(game.activePlyIndex) of \(game.moves.count) — tap to go to latest")
+                            .font(.subheadline)
+                            .foregroundStyle(.orange)
+                            .multilineTextAlignment(.leading)
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    Text(game.gameStatusMessage ?? (game.currentTurn == .white ? "White to move" : "Black to move"))
+                        .font(.subheadline)
+                        .foregroundStyle(game.isGameOver ? .primary : .secondary)
+                }
                 
                 Spacer()
                 
@@ -243,7 +263,8 @@ struct ContentView: View {
     private var notationPanel: some View {
         NotationPanelView(
             game: game,
-            pgnNotation: pgnArchive.displayText(currentGame: game, metadata: settingsStore.settings.pgnMetadata),
+            pgnArchive: pgnArchive,
+            metadata: settingsStore.settings.pgnMetadata,
             transcript: speechRecognizer.transcript,
             isRecording: speechRecognizer.isRecording,
             dictationPauseDeadline: speechRecognizer.dictationPauseDeadline,
@@ -295,15 +316,35 @@ struct ContentView: View {
                         .font(.subheadline)
                 }
                 .frame(minWidth: 76)
-                .foregroundColor(speechRecognizer.isRecording ? .red : .blue)
+                .foregroundColor(speechRecognizer.isRecording ? .red : (game.isAtLatestMove ? .blue : .secondary))
                 .padding(.horizontal, 8)
                 .padding(.vertical, 6)
                 .background(
                     RoundedRectangle(cornerRadius: 8)
-                        .fill(speechRecognizer.isRecording ? Color.red.opacity(0.1) : Color.blue.opacity(0.1))
+                        .fill(speechRecognizer.isRecording
+                            ? Color.red.opacity(0.1)
+                            : (game.isAtLatestMove ? Color.blue.opacity(0.1) : Color.secondary.opacity(0.1)))
                 )
             }
-            .disabled(!speechRecognizer.isReadyForUse)
+            .disabled(!speechRecognizer.isReadyForUse || !game.isAtLatestMove)
+            
+            Button {
+                navigateBack()
+            } label: {
+                Image(systemName: "chevron.left")
+                    .imageScale(.medium)
+            }
+            .disabled(!game.canGoBack)
+            .accessibilityLabel("Previous move")
+            
+            Button {
+                navigateForward()
+            } label: {
+                Image(systemName: "chevron.right")
+                    .imageScale(.medium)
+            }
+            .disabled(!game.canGoForward)
+            .accessibilityLabel("Next move")
             
             Button {
                 undoLastMove()
@@ -447,6 +488,7 @@ struct ContentView: View {
     
     @discardableResult
     private func processVoiceMoveCandidates(_ candidates: [String]) -> Bool {
+        guard game.isAtLatestMove else { return false }
         print("Processing move candidates: \(candidates.joined(separator: ", "))")
         guard chessEngine.executeVoiceCandidates(candidates) else {
             print("Could not find valid move for \(candidates.joined(separator: ", "))")
@@ -457,6 +499,7 @@ struct ContentView: View {
 
     @discardableResult
     private func processMoveFromSpeech(_ notation: String) -> Bool {
+        guard game.isAtLatestMove else { return false }
         print("Processing move: \(notation)")
         guard chessEngine.executeMove(notation: notation) else {
             print("Could not find valid move for \(notation)")
@@ -485,6 +528,17 @@ struct ContentView: View {
             print("No moves to undo")
         }
     }
+
+    private func navigateBack() {
+        guard game.goToPreviousPosition() else { return }
+        if speechRecognizer.isRecording {
+            speechRecognizer.stopRecording()
+        }
+    }
+
+    private func navigateForward() {
+        _ = game.goToNextPosition()
+    }
 }
 
 private struct BoardWithEvaluationLayout: View {
@@ -503,7 +557,7 @@ private struct BoardWithEvaluationLayout: View {
                 game: game,
                 settings: settings,
                 orientation: orientation,
-                touchInputEnabled: settings.touchInputEnabled,
+                touchInputEnabled: settings.touchInputEnabled && game.isAtLatestMove,
                 analysisArrow: showBoardArrow ? engineAnalysis.display.nextMoveArrow : nil,
                 chessEngine: chessEngine
             )

@@ -110,6 +110,8 @@ class ChessGame {
     private(set) var currentTurn: PieceColor = .white
     private(set) var moves: [ChessMove] = []
     private(set) var gameResult: PGNResult = .ongoing
+    /// Half-move count from the starting position to the viewed position (0 = start).
+    private(set) var activePlyIndex: Int = 0
     var activeMoveAnimation: ActiveMoveAnimation?
 
     @ObservationIgnored private var kitBoard: Board
@@ -135,6 +137,8 @@ class ChessGame {
 
     @discardableResult
     func executeSAN(_ notation: String) -> Bool {
+        guard isAtLatestMove else { return false }
+
         if let coordinateMove = ChessKitMapping.parseCoordinateMove(notation) {
             if performMove(
                 from: coordinateMove.from,
@@ -164,6 +168,8 @@ class ChessGame {
     /// Tries spoken move candidates against the current legal moves (same path as touch input).
     @discardableResult
     func executeVoiceCandidates(_ candidates: [String]) -> Bool {
+        guard isAtLatestMove else { return false }
+
         for notation in candidates {
             if executeSAN(notation) {
                 return true
@@ -184,6 +190,8 @@ class ChessGame {
         to: ChessPosition,
         promotion: PieceType? = nil
     ) -> Bool {
+        guard isAtLatestMove else { return false }
+
         let start = ChessKitMapping.kitSquare(from: from)
         let end = ChessKitMapping.kitSquare(from: to)
         guard let piece = pieceAt(from) else { return false }
@@ -227,8 +235,51 @@ class ChessGame {
         currentIndex = kitGame.startingIndex
         moves = []
         gameResult = .ongoing
+        activePlyIndex = 0
         activeMoveAnimation = nil
         syncBoardFromKit()
+    }
+
+    var isAtLatestMove: Bool {
+        currentIndex == kitGame.moves.endIndex
+    }
+
+    var canGoBack: Bool {
+        kitGame.moves.hasIndex(before: currentIndex)
+    }
+
+    var canGoForward: Bool {
+        kitGame.moves.hasIndex(after: currentIndex)
+    }
+
+    var canUndo: Bool {
+        isAtLatestMove && !moves.isEmpty
+    }
+
+    @discardableResult
+    func goToPreviousPosition() -> Bool {
+        guard canGoBack else { return false }
+        navigateTo(index: kitGame.moves.index(before: currentIndex))
+        return true
+    }
+
+    @discardableResult
+    func goToNextPosition() -> Bool {
+        guard canGoForward else { return false }
+        navigateTo(index: kitGame.moves.index(after: currentIndex))
+        return true
+    }
+
+    @discardableResult
+    func goToLatestPosition() -> Bool {
+        guard !isAtLatestMove else { return false }
+        navigateTo(index: kitGame.moves.endIndex)
+        return true
+    }
+
+    func undoLastMove() -> Bool {
+        guard canUndo else { return false }
+        return replayMainLine(Array(moves.dropLast().map(\.san)))
     }
 
     var isGameOver: Bool {
@@ -247,23 +298,129 @@ class ChessGame {
         }
     }
 
-    func undoLastMove() -> Bool {
-        guard kitGame.moves.hasIndex(before: currentIndex) else { return false }
+    private func navigateTo(index: MoveTree.Index) {
+        guard let position = kitGame.positions[index] else { return }
 
-        currentIndex = kitGame.moves.index(before: currentIndex)
-        guard let position = kitGame.positions[currentIndex] else { return false }
-
+        currentIndex = index
         kitBoard.update(position: position, resetPositionCounts: true)
-        if !moves.isEmpty {
-            moves.removeLast()
-        }
         activeMoveAnimation = nil
         syncBoardFromKit()
+        refreshActivePlyIndex()
+    }
+
+    @discardableResult
+    private func replayMainLine(_ sans: [String]) -> Bool {
+        kitBoard = Board()
+        kitGame = ChessKit.Game()
+        currentIndex = kitGame.startingIndex
+        moves = []
+        gameResult = .ongoing
+        activeMoveAnimation = nil
+        syncBoardFromKit()
+        activePlyIndex = 0
+
+        for san in sans {
+            guard applyReplaySAN(san) else {
+                resetGame()
+                return false
+            }
+        }
         return true
     }
 
-    var canUndo: Bool {
-        kitGame.moves.hasIndex(before: currentIndex)
+    @discardableResult
+    private func applyReplaySAN(_ notation: String) -> Bool {
+        if let coordinateMove = ChessKitMapping.parseCoordinateMove(notation) {
+            if applyReplayMove(
+                from: coordinateMove.from,
+                to: coordinateMove.to,
+                promotion: coordinateMove.promotion
+            ) {
+                return true
+            }
+            return executeLegalMatchForReplay(notation: notation)
+        }
+
+        let normalized = ChessKitMapping.normalizeSAN(notation)
+        let position = kitBoard.position
+
+        if let parsed = Move(san: normalized, position: position)
+            ?? (ChessKitMapping.isPawnFileCaptureSAN(normalized)
+                ? nil
+                : Move(san: normalized.uppercased(), position: position)),
+           applyParsedMoveForReplay(parsed) {
+            return true
+        }
+
+        return executeLegalMatchForReplay(notation: notation)
+    }
+
+    @discardableResult
+    private func applyReplayMove(
+        from: ChessPosition,
+        to: ChessPosition,
+        promotion: PieceType? = nil
+    ) -> Bool {
+        let start = ChessKitMapping.kitSquare(from: from)
+        let end = ChessKitMapping.kitSquare(from: to)
+        guard pieceAt(from) != nil else { return false }
+
+        guard var kitMove = kitBoard.move(pieceAt: start, to: end) else {
+            return false
+        }
+
+        if case .promotion(let promoMove) = kitBoard.state {
+            let kind = ChessKitMapping.kitKind(promotion ?? .queen)
+            kitMove = kitBoard.completePromotion(of: promoMove, to: kind)
+        }
+
+        return commitReplayMove(kitMove)
+    }
+
+    @discardableResult
+    private func applyParsedMoveForReplay(_ parsed: Move) -> Bool {
+        let from = ChessKitMapping.appPosition(from: parsed.start)
+        guard pieceAt(from) != nil else { return false }
+
+        guard var kitMove = kitBoard.move(pieceAt: parsed.start, to: parsed.end) else {
+            return false
+        }
+
+        if case .promotion(let promoMove) = kitBoard.state {
+            let kind = parsed.promotedPiece?.kind ?? .queen
+            kitMove = kitBoard.completePromotion(of: promoMove, to: kind)
+        }
+
+        return commitReplayMove(kitMove)
+    }
+
+    @discardableResult
+    private func executeLegalMatchForReplay(notation: String) -> Bool {
+        let legalMoves = enumerateLegalKitMoves()
+        guard let matched = LegalMoveResolver.match(notation: notation, among: legalMoves) else {
+            return false
+        }
+        return applyParsedMoveForReplay(matched)
+    }
+
+    @discardableResult
+    private func commitReplayMove(_ kitMove: Move) -> Bool {
+        currentIndex = kitGame.make(move: kitMove, from: currentIndex)
+        moves.append(ChessKitMapping.appMove(from: kitMove))
+        syncBoardFromKit()
+        refreshActivePlyIndex()
+        return true
+    }
+
+    private func refreshActivePlyIndex() {
+        var count = 0
+        var index = kitGame.startingIndex
+        while index != currentIndex {
+            guard kitGame.moves.hasIndex(after: index) else { break }
+            index = kitGame.moves.index(after: index)
+            count += 1
+        }
+        activePlyIndex = count
     }
 
     func fen() -> String {
@@ -356,9 +513,12 @@ class ChessGame {
     }
 
     private func finalizeMove(_ kitMove: Move, animatedPiece: ChessPiece) -> Bool {
+        guard isAtLatestMove else { return false }
+
         currentIndex = kitGame.make(move: kitMove, from: currentIndex)
         moves.append(ChessKitMapping.appMove(from: kitMove))
         syncBoardFromKit()
+        refreshActivePlyIndex()
         setAnimation(for: kitMove, piece: animatedPiece)
         return true
     }

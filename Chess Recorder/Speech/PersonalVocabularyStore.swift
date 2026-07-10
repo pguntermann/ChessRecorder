@@ -753,6 +753,8 @@ final class PersonalVocabularyStore {
             }
             for phrase in [
                 "turm f auf d1", "springer g1 auf f3", "turm f1 auf d1",
+                "turm h auf g1", "turm h auf h1",
+                "d schlagt e4", "d schlagt e vier",
                 "läufer h auf g5", "springer h auf f3", "h auf f3", "h schlagt g5",
                 "läufer auf e5", "läufer e5", "springer auf f3", "springer f3",
                 "turm auf d1", "dame auf h5",

@@ -174,6 +174,8 @@ enum ChessLanguageModel {
             for verb in captureVerbs {
                 SFCustomLanguageModelData.PhraseCount(phrase: "e \(verb) d4", count: 500)
                 SFCustomLanguageModelData.PhraseCount(phrase: "e \(verb) d vier", count: 200)
+                SFCustomLanguageModelData.PhraseCount(phrase: "d \(verb) e4", count: 500)
+                SFCustomLanguageModelData.PhraseCount(phrase: "d \(verb) e vier", count: 200)
             }
 
             for rank in ["eins", "zwei", "drei", "vier", "fünf", "sechs", "sieben", "acht"] {
@@ -193,7 +195,7 @@ enum ChessLanguageModel {
             }
 
             for phrase in ["h 5", "h 6", "h 7", "h 8", "h 3", "h 4", "h auf f3", "h auf g5",
-                           "läufer h auf g5", "springer h auf f3", "turm h auf h1",
+                           "läufer h auf g5", "springer h auf f3", "turm h auf h1", "turm h auf g1",
                            "läufer auf e5", "läufer e5", "springer auf f3", "springer f3",
                            "turm auf d1", "dame auf h5",
                            "läufer b5 schach", "springer f3 schach", "turm d1 schach",
@@ -206,7 +208,8 @@ enum ChessLanguageModel {
             for phrase in ["zurück", "rückgängig", "kurz rochiert", "lang rochiert",
                            "kleine rochade", "große rochade", "grosse rochade", "lange rochade",
                            "springer g1 auf f3", "turm f auf d1", "turm f1 auf d1",
-                           "läufer f1 auf c4", "springer g1 auf f3"] {
+                           "läufer f1 auf c4", "springer g1 auf f3",
+                           "e2 nach d4", "g1 nach f3", "e2 auf d4", "g1 auf f3"] {
                 SFCustomLanguageModelData.PhraseCount(phrase: phrase, count: 220)
             }
             
@@ -247,6 +250,14 @@ enum ChessLanguageModel {
                 SFCustomLanguageModelData.TemplatePhraseCountGenerator.Template(
                     "<square>",
                     count: 4000
+                )
+                SFCustomLanguageModelData.TemplatePhraseCountGenerator.Template(
+                    "<square> nach <square>",
+                    count: 3500
+                )
+                SFCustomLanguageModelData.TemplatePhraseCountGenerator.Template(
+                    "<square> auf <square>",
+                    count: 3500
                 )
             }
         }
@@ -327,7 +338,8 @@ enum ChessLanguageModel {
                 "a6", "a 6", "hey six", "ay six",
                 "a3", "a 3", "hey three", "hey 3",
                 "rook e1 to e8", "rook f to d1", "rook g1 to f3", "rook to d1",
-                "queen d1 to h5", "queen to h5", "king e1 to e2", "pawn e4", "pawn to e4"
+                "queen d1 to h5", "queen to h5", "king e1 to e2", "pawn e4", "pawn to e4",
+                "e2 to d4", "g1 to f3", "e2 nach d4"
             ] {
                 SFCustomLanguageModelData.PhraseCount(phrase: phrase, count: 280)
             }
@@ -369,6 +381,10 @@ enum ChessLanguageModel {
                 SFCustomLanguageModelData.TemplatePhraseCountGenerator.Template(
                     "<square>",
                     count: 4000
+                )
+                SFCustomLanguageModelData.TemplatePhraseCountGenerator.Template(
+                    "<square> to <square>",
+                    count: 3500
                 )
             }
         }

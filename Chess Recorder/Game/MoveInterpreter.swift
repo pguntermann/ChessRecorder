@@ -143,6 +143,7 @@ nonisolated enum MoveInterpreter {
             for move in extractPieceCaptures(from: tokens, piecePrefix: englishPiecePrefix, language: language) { add(move) }
             for move in extractPawnCaptures(from: pawnCaptureTokens, language: language) { add(move) }
             for move in extractImplicitPawnCaptures(from: tokens, language: language) { add(move) }
+            for move in extractSquareToSquareMoves(from: tokens, language: language) { add(move) }
             for move in extractPieceToSquare(from: tokens, piecePrefix: englishPiecePrefix) { add(move) }
             for move in extractSpacedSquares(from: tokens) { add(move) }
             if !hasCaptureVerb && !hasPieceName {
@@ -157,6 +158,7 @@ nonisolated enum MoveInterpreter {
             for move in extractPieceCaptures(from: tokens, piecePrefix: germanPiecePrefix, language: language) { add(move) }
             for move in extractPawnCaptures(from: pawnCaptureTokens, language: language) { add(move) }
             for move in extractImplicitPawnCaptures(from: tokens, language: language) { add(move) }
+            for move in extractSquareToSquareMoves(from: tokens, language: language) { add(move) }
             for move in extractPieceToSquare(from: tokens, piecePrefix: germanPiecePrefix) { add(move) }
             for move in extractSpacedSquares(from: tokens) { add(move) }
             if !hasCaptureVerb && !hasPieceName {
@@ -211,17 +213,16 @@ nonisolated enum MoveInterpreter {
                words[index].count == 1,
                let file = words[index].first,
                "abcdefgh".contains(file),
-               !isCaptureVerb(words[index + 1]) {
-                let middleRank = ChessTranscriptNormalizer.normalizeSpokenRankToken(words[index + 1], language: language)
-                let trailingRank = ChessTranscriptNormalizer.spokenRankDigit(for: words[index + 2], language: language)
-                if middleRank.count == 1,
-                   "12345678".contains(middleRank),
-                   let trailingRank,
-                   middleRank != trailingRank {
-                    result.append(String(file) + trailingRank)
-                    index += 3
-                    continue
-                }
+               !isCaptureVerb(words[index + 1]),
+               let merged = mergedMisheardRankSquare(
+                   file: file,
+                   middleToken: words[index + 1],
+                   thirdToken: words[index + 2],
+                   language: language
+               ) {
+                result.append(merged)
+                index += 3
+                continue
             }
 
             if index + 1 < words.count,
@@ -240,6 +241,8 @@ nonisolated enum MoveInterpreter {
             
             if let square = sanitizeSquare(words[index]) {
                 if index + 1 < words.count,
+                   sanitizeSquare(words[index + 1]) == nil,
+                   !isMovePreposition(words[index + 1]),
                    let file = square.first,
                    let trailingRank = ChessTranscriptNormalizer.spokenRankDigit(for: words[index + 1], language: language),
                    String(square.suffix(1)) != trailingRank {
@@ -719,6 +722,37 @@ nonisolated enum MoveInterpreter {
         return moves
     }
 
+    /// "e2 nach d4", "g1 to f3" → coordinate notation (e2d4, g1f3).
+    private static func extractSquareToSquareMoves(
+        from words: [String],
+        language: RecognitionLanguage
+    ) -> [String] {
+        var moves: [String] = []
+
+        for index in 0..<words.count {
+            guard let from = sanitizeSquare(words[index]) else { continue }
+
+            var cursor = index + 1
+            while cursor < words.count && isMovePreposition(words[cursor]) {
+                cursor += 1
+            }
+            guard cursor < words.count else { continue }
+
+            var destinations = squareCandidates(from: words[cursor], language: language)
+            if destinations.isEmpty,
+               cursor + 1 < words.count,
+               let square = combineSquare(file: words[cursor], rank: words[cursor + 1]) {
+                destinations = [square]
+            }
+
+            for to in destinations where to != from {
+                moves.append(from + to)
+            }
+        }
+
+        return moves
+    }
+
     private static func extractSpacedSquares(from words: [String]) -> [String] {
         guard words.count >= 2 else { return [] }
         
@@ -788,6 +822,10 @@ nonisolated enum MoveInterpreter {
         }
 
         moves.append(contentsOf: extractCompactPawnPromotions(from: compact))
+
+        if let coordinateMove = extractCompactCoordinateMove(from: compact) {
+            moves.append(coordinateMove)
+        }
         
         if allowBareSquares {
             let compactPatterns = [
@@ -804,6 +842,17 @@ nonisolated enum MoveInterpreter {
         }
         
         return moves
+    }
+
+    private static func extractCompactCoordinateMove(from compact: String) -> String? {
+        guard let match = compact.firstMatch(of: /([a-h][1-8])(?:auf|nach|to|too|two|2)([a-h][1-8])/) else {
+            return nil
+        }
+
+        let from = String(match.output.1)
+        let to = String(match.output.2)
+        guard from != to else { return nil }
+        return from + to
     }
     
     private static func pieceToSquareNotation(compact: String, prefix: String, markers: [String]) -> String? {
@@ -1059,6 +1108,27 @@ nonisolated enum MoveInterpreter {
         }
         
         return String(fileChar) + normalizedRank
+    }
+
+    /// Repairs split mis-hearings like "f 3 six" → f6, but not "e 2 d4" or "e 2 nach".
+    private static func mergedMisheardRankSquare(
+        file: Character,
+        middleToken: String,
+        thirdToken: String,
+        language: RecognitionLanguage
+    ) -> String? {
+        if sanitizeSquare(thirdToken) != nil || isMovePreposition(thirdToken) {
+            return nil
+        }
+
+        let middleRank = ChessTranscriptNormalizer.normalizeSpokenRankToken(middleToken, language: language)
+        guard middleRank.count == 1, "12345678".contains(middleRank),
+              let trailingRank = ChessTranscriptNormalizer.spokenRankDigit(for: thirdToken, language: language),
+              middleRank != trailingRank else {
+            return nil
+        }
+
+        return String(file) + trailingRank
     }
     
     private static func sanitizeSquare(_ token: String) -> String? {

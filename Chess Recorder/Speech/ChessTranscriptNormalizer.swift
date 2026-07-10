@@ -133,6 +133,13 @@ enum ChessTranscriptNormalizer {
             with: "d ",
             options: .regularExpression
         )
+
+        // ASR hears d-file captures as "die schlägt" (confused with article "die")
+        result = result.replacingOccurrences(
+            of: #"\bdie\s+(schlagt|schlaegt|schagt|schaegt|nimmt)\b"#,
+            with: "d $1",
+            options: .regularExpression
+        )
         
         // ASR merges "e schlägt" into "e4 schlägt"
         result = result.replacingOccurrences(
@@ -331,7 +338,11 @@ enum ChessTranscriptNormalizer {
     }
 
     private static func applyGermanFileMishearings(_ text: String) -> String {
-        applyRegexReplacements(text, patterns: [
+        let pieces = "springer|laufer|laeufer|lauferin|turm|dame|konig|bauer"
+        return applyRegexReplacements(text, patterns: [
+            (#"\b(\#(pieces))haar\b"#, "$1 h"),
+            (#"\b(\#(pieces))hache\b"#, "$1 h"),
+            (#"\b(\#(pieces))ha\s+(?=auf|nach|schlagt|schlaegt|schagt|schaegt|nimmt)\b"#, "$1 h "),
             (#"\bhaar\s+(?=\#(germanRankPattern))\b"#, "h "),
             (#"\bhaar\s+auf\b"#, "h auf"),
             (#"\bhaar\s+(schlagt|schlaegt|schagt|schaegt|nimmt)\b"#, "h $1"),
@@ -371,6 +382,11 @@ enum ChessTranscriptNormalizer {
             ? ["takes", "take", "captures", "capture"]
             : ["schlagt", "schlaegt", "schagt", "nimmt"]
         if captureVerbs.contains(where: { lowered.contains($0) }) {
+            return text
+        }
+
+        let movePrepositions = ["nach", "auf", "to", "too", "two"]
+        if movePrepositions.contains(where: { lowered.contains($0) }) {
             return text
         }
 

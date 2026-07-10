@@ -49,7 +49,7 @@ struct EngineAnalysisDisplay: Equatable {
 @MainActor
 final class EngineAnalysisService {
     private static let maxDepth = 100
-    private static let defaultDepth = 10
+    private static let defaultDepth = 18
 
     private(set) var isActive = false
     private(set) var isAnalyzing = false
@@ -59,7 +59,7 @@ final class EngineAnalysisService {
     private let engine: LucidEngine
     private var analysisTask: Task<Void, Never>?
     private var isPrepared = false
-    private var configuredDepth = 10
+    private var configuredDepth = 18
     private var isDepthUnlimited = false
     
     init() {

@@ -15,7 +15,7 @@
   },
   "defaultLanguage" : "en-US",
   "dictationPauseSeconds" : 0.9,
-  "engineAnalysisDepth" : 10,
+  "engineAnalysisDepth" : 18,
   "engineAnalysisShowEvaluationBar" : false,
   "engineAnalysisShowBoardArrow" : true,
   "engineAnalysisArrowColor" : {

@@ -95,7 +95,7 @@ struct AppSettings: Codable, Equatable {
         dictationPauseSeconds: Double = 0.9,
         touchInputEnabled: Bool = true,
         engineAnalysisVisible: Bool = true,
-        engineAnalysisDepth: Double = 10,
+        engineAnalysisDepth: Double = 18,
         engineAnalysisShowEvaluationBar: Bool = false,
         engineAnalysisUseAlgebraicNotation: Bool = false,
         engineAnalysisShowBoardArrow: Bool = false,
@@ -142,7 +142,7 @@ struct AppSettings: Codable, Equatable {
         dictationPauseSeconds = try container.decodeIfPresent(Double.self, forKey: .dictationPauseSeconds) ?? 0.9
         touchInputEnabled = try container.decodeIfPresent(Bool.self, forKey: .touchInputEnabled) ?? true
         engineAnalysisVisible = try container.decodeIfPresent(Bool.self, forKey: .engineAnalysisVisible) ?? true
-        engineAnalysisDepth = try container.decodeIfPresent(Double.self, forKey: .engineAnalysisDepth) ?? 10
+        engineAnalysisDepth = try container.decodeIfPresent(Double.self, forKey: .engineAnalysisDepth) ?? 18
         if let legacyContainer = try? decoder.container(keyedBy: LegacyCodingKeys.self),
            (try? legacyContainer.decodeIfPresent(Bool.self, forKey: .engineAnalysisUnlimitedDepth)) == true {
             engineAnalysisDepth = Self.uncappedEngineAnalysisDepth
@@ -183,7 +183,7 @@ struct AppSettings: Codable, Equatable {
         dictationPauseSeconds: 0.9,
         touchInputEnabled: true,
         engineAnalysisVisible: true,
-        engineAnalysisDepth: 10,
+        engineAnalysisDepth: 18,
         engineAnalysisShowEvaluationBar: false,
         engineAnalysisUseAlgebraicNotation: true,
         engineAnalysisShowBoardArrow: true,

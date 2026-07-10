@@ -58,9 +58,11 @@ struct ContentView: View {
                     
                     VStack(spacing: 0) {
                         controlToolbar(compact: false)
-                        notationPanel
+                        ScrollView {
+                            notationPanel
+                        }
                     }
-                    .frame(maxWidth: .infinity)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             } else {
                 VStack(spacing: 0) {

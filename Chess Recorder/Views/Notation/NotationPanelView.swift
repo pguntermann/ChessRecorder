@@ -138,12 +138,10 @@ struct NotationPanelView: View {
                     .disabled(pgnNotation.isEmpty)
                 }
                 
-                ScrollView {
-                    Text(pgnNotation.isEmpty ? "No games yet" : pgnNotation)
-                        .font(.system(.caption, design: .monospaced))
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
+                Text(pgnNotation.isEmpty ? "No games yet" : pgnNotation)
+                    .font(.system(.caption, design: .monospaced))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
             .padding()
             .background(Color.secondary.opacity(0.1))

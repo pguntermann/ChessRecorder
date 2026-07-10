@@ -71,6 +71,7 @@ enum ChessTranscriptNormalizer {
             (#"\b(hey|ay)\s+(?=\#(englishRankToken))\b"#, "a "),
             (#"\b(bee|be)\s+(?=\#(englishRankToken))\b"#, "b "),
             (#"\bdee\s+(?=\#(englishRankToken))\b"#, "d "),
+            (#"\b(he|ee)\s+(?=\#(englishRankToken))\b"#, "e "),
             (#"\bgee\s+(?=\#(englishRankToken))\b"#, "g "),
             (#"\b(aitch|each)\s+(?=\#(englishRankToken))\b"#, "h "),
             (#"\b(eff|ef)\s+(?=\#(englishRankToken))\b"#, "f ")
@@ -173,7 +174,7 @@ enum ChessTranscriptNormalizer {
         "see": "c", "sea": "c", "cee": "c", "she": "c",
         "bee": "b", "be": "b",
         "de": "d", "dee": "d",
-        "ee": "e",
+        "ee": "e", "he": "e",
         "gee": "g",
         "aitch": "h", "each": "h",
         "eff": "f", "ef": "f",
@@ -545,6 +546,7 @@ enum ChessTranscriptNormalizer {
             ("bee ", "b "), (" bee ", " b "),
             ("dee ", "d "), (" dee ", " d "),
             ("ee ", "e "), (" ee ", " e "),
+            ("he ", "e "), (" he ", " e "),
             ("gee ", "g "), (" gee ", " g "),
             ("aitch ", "h "), (" aitch ", " h ")
         ]

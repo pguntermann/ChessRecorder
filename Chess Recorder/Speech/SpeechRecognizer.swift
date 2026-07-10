@@ -276,6 +276,7 @@ class SpeechRecognizer {
         isMicrophoneAuthorized = granted
     }
     
+    @MainActor
     func startRecording() throws {
         stopRecognitionTask()
         
@@ -297,21 +298,27 @@ class SpeechRecognizer {
         audioEngine.prepare()
         try audioEngine.start()
         
-        Task { @MainActor in
-            isRecording = true
-        }
+        isRecording = true
     }
     
+    @MainActor
     func stopRecording() {
+        guard isRecording else { return }
+        isRecording = false
+        
+        stableTranscriptTask?.cancel()
+        stableTranscriptTask = nil
+        
+        recognitionRequest?.endAudio()
+        recognitionTask?.finish()
+        recognitionTask = nil
+        recognitionRequest = nil
+        
         audioEngine?.stop()
         audioEngine?.inputNode.removeTap(onBus: 0)
-        stopRecognitionTask()
         audioEngine = nil
         
-        Task { @MainActor in
-            isRecording = false
-            clearSessionState()
-        }
+        clearSessionState()
     }
     
     @MainActor
@@ -338,6 +345,7 @@ class SpeechRecognizer {
     
     @MainActor
     private func restartRecognitionSession() {
+        guard isRecording else { return }
         guard audioEngine != nil else {
             try? startRecording()
             return
@@ -400,6 +408,7 @@ class SpeechRecognizer {
                 guard !Self.isBenignRecognitionError(error) else { return }
                 Task { @MainActor in
                     guard generation == self.recognitionGeneration else { return }
+                    guard self.isRecording else { return }
                     print("Recognition error: \(error.localizedDescription)")
                     self.restartRecognitionSession()
                 }
@@ -420,7 +429,9 @@ class SpeechRecognizer {
     
     private static func isBenignRecognitionError(_ error: Error) -> Bool {
         let nsError = error as NSError
-        return nsError.code == 301 || nsError.code == 1110
+        // 216 = session cancelled/ended; 203 = no speech; 301/1110 = end-of-utterance variants
+        return nsError.domain == "kAFAssistantErrorDomain"
+            && [203, 216, 301, 1110].contains(nsError.code)
     }
     
     @MainActor
@@ -577,6 +588,7 @@ class SpeechRecognizer {
                 "hey", "ay", "a3",
                 "takes", "take", "captures", "capture", "castle",
                 "d takes", "d takes c4", "d takes e4", "detects", "detects c4",
+                "e takes", "e takes d5", "e takes f5", "he takes", "he takes f5",
                 "knight b to d7", "night to be 7", "knight bd7",
                 "e4", "d4", "exd5", "nf3", "nf6", "nc3", "nc6", "nxd4", "qxb4", "O-O"
             ]

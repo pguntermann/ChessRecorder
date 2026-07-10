@@ -18,6 +18,12 @@
   "engineAnalysisDepth" : 10,
   "engineAnalysisShowEvaluationBar" : false,
   "engineAnalysisShowBoardArrow" : true,
+  "engineAnalysisArrowColor" : {
+    "alpha" : 1,
+    "blue" : 1,
+    "green" : 0.478,
+    "red" : 0
+  },
   "engineAnalysisUseAlgebraicNotation" : true,
   "engineAnalysisVisible" : true,
   "openingNameVisible" : true,

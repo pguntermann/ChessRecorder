@@ -53,7 +53,8 @@ struct ChessBoardView: View {
                     AnalysisArrowOverlay(
                         move: analysisArrow,
                         squareSize: squareSize,
-                        orientation: orientation
+                        orientation: orientation,
+                        color: settings.engineAnalysisArrowColor.color
                     )
                 }
                 
@@ -193,6 +194,7 @@ private struct AnalysisArrowOverlay: View {
     let move: AnalysisArrowMove
     let squareSize: CGFloat
     let orientation: BoardOrientation
+    let color: Color
 
     var body: some View {
         Canvas { context, size in
@@ -211,7 +213,7 @@ private struct AnalysisArrowOverlay: View {
 
             context.stroke(
                 path,
-                with: .color(Color.blue.opacity(0.75)),
+                with: .color(color),
                 style: StrokeStyle(lineWidth: max(6, squareSize * 0.12), lineCap: .round)
             )
 
@@ -232,7 +234,7 @@ private struct AnalysisArrowOverlay: View {
             head.addLine(to: left)
             head.addLine(to: right)
             head.closeSubpath()
-            context.fill(head, with: .color(Color.blue.opacity(0.85)))
+            context.fill(head, with: .color(color))
         }
         .allowsHitTesting(false)
     }

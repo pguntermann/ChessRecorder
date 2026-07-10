@@ -51,14 +51,14 @@ struct ContentView: View {
                     Divider()
                     
                     VStack(spacing: 0) {
-                        controlToolbar
+                        controlToolbar(compact: false)
                         notationPanel
                     }
                     .frame(maxWidth: .infinity)
                 }
             } else {
                 VStack(spacing: 0) {
-                    controlToolbar
+                    controlToolbar(compact: true)
                     
                     ScrollView {
                         VStack(spacing: 16) {
@@ -249,19 +249,26 @@ struct ContentView: View {
         )
     }
     
-    private var controlToolbar: some View {
+    private func controlToolbar(compact: Bool) -> some View {
         HStack(spacing: 8) {
-            Image("logo_sr")
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-                .frame(width: 28, height: 28)
-                .accessibilityHidden(true)
+            if compact {
+                Image("logo_sr")
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 24, height: 24)
+                    .accessibilityHidden(true)
 
-            Text("Chess Recorder")
-                .font(.title2)
-                .bold()
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
+                Text("Chess Recorder")
+                    .font(.headline)
+                    .bold()
+                    .lineLimit(1)
+            } else {
+                Image("logo_sr")
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 28, height: 28)
+                    .accessibilityLabel("Chess Recorder")
+            }
             
             Spacer(minLength: 4)
             
@@ -277,6 +284,7 @@ struct ContentView: View {
                     Text(speechRecognizer.isRecording ? "Stop" : "Record")
                         .font(.subheadline)
                 }
+                .frame(minWidth: 76)
                 .foregroundColor(speechRecognizer.isRecording ? .red : .blue)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 6)

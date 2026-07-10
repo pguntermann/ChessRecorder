@@ -52,6 +52,7 @@ struct AppSettings: Codable, Equatable {
     var engineAnalysisShowEvaluationBar: Bool
     var engineAnalysisUseAlgebraicNotation: Bool
     var engineAnalysisShowBoardArrow: Bool
+    var engineAnalysisArrowColor: CodableColor
     var openingNameVisible: Bool
     var pgnSite: String
     var pgnWhite: String
@@ -73,6 +74,7 @@ struct AppSettings: Codable, Equatable {
         case engineAnalysisShowEvaluationBar
         case engineAnalysisUseAlgebraicNotation
         case engineAnalysisShowBoardArrow
+        case engineAnalysisArrowColor
         case openingNameVisible
         case pgnSite
         case pgnWhite
@@ -95,6 +97,7 @@ struct AppSettings: Codable, Equatable {
         engineAnalysisShowEvaluationBar: Bool = false,
         engineAnalysisUseAlgebraicNotation: Bool = false,
         engineAnalysisShowBoardArrow: Bool = false,
+        engineAnalysisArrowColor: CodableColor = CodableColor(red: 0, green: 0.478, blue: 1),
         openingNameVisible: Bool = true,
         pgnSite: String = "?",
         pgnWhite: String = "?",
@@ -115,6 +118,7 @@ struct AppSettings: Codable, Equatable {
         self.engineAnalysisShowEvaluationBar = engineAnalysisShowEvaluationBar
         self.engineAnalysisUseAlgebraicNotation = engineAnalysisUseAlgebraicNotation
         self.engineAnalysisShowBoardArrow = engineAnalysisShowBoardArrow
+        self.engineAnalysisArrowColor = engineAnalysisArrowColor
         self.openingNameVisible = openingNameVisible
         self.pgnSite = pgnSite
         self.pgnWhite = pgnWhite
@@ -142,6 +146,8 @@ struct AppSettings: Codable, Equatable {
         engineAnalysisShowEvaluationBar = try container.decodeIfPresent(Bool.self, forKey: .engineAnalysisShowEvaluationBar) ?? false
         engineAnalysisUseAlgebraicNotation = try container.decodeIfPresent(Bool.self, forKey: .engineAnalysisUseAlgebraicNotation) ?? false
         engineAnalysisShowBoardArrow = try container.decodeIfPresent(Bool.self, forKey: .engineAnalysisShowBoardArrow) ?? false
+        engineAnalysisArrowColor = try container.decodeIfPresent(CodableColor.self, forKey: .engineAnalysisArrowColor)
+            ?? CodableColor(red: 0, green: 0.478, blue: 1)
         openingNameVisible = try container.decodeIfPresent(Bool.self, forKey: .openingNameVisible) ?? true
         pgnSite = try container.decodeIfPresent(String.self, forKey: .pgnSite) ?? "?"
         pgnWhite = try container.decodeIfPresent(String.self, forKey: .pgnWhite) ?? "?"
@@ -176,6 +182,7 @@ struct AppSettings: Codable, Equatable {
         engineAnalysisShowEvaluationBar: false,
         engineAnalysisUseAlgebraicNotation: true,
         engineAnalysisShowBoardArrow: true,
+        engineAnalysisArrowColor: CodableColor(red: 0, green: 0.478, blue: 1),
         openingNameVisible: true,
         pgnSite: "?",
         pgnWhite: "?",

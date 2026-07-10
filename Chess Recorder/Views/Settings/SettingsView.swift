@@ -14,6 +14,7 @@ struct SettingsView: View {
     @State private var lightColor: Color
     @State private var darkColor: Color
     @State private var coordinateColor: Color
+    @State private var analysisArrowColor: Color
     @State private var selectedLanguage: RecognitionLanguage
     @State private var showingAddPhrase = false
     @State private var showingAddCorrection = false
@@ -31,6 +32,7 @@ struct SettingsView: View {
         _lightColor = State(initialValue: settings.lightSquareColor.color)
         _darkColor = State(initialValue: settings.darkSquareColor.color)
         _coordinateColor = State(initialValue: settings.coordinateColor.color)
+        _analysisArrowColor = State(initialValue: settings.engineAnalysisArrowColor.color)
         _selectedLanguage = State(initialValue: settings.defaultRecognitionLanguage)
         _phraseListLanguage = State(initialValue: settings.defaultRecognitionLanguage)
     }
@@ -106,6 +108,12 @@ struct SettingsView: View {
                             settingsStore.update { $0.engineAnalysisShowBoardArrow = newValue }
                         }
                     ))
+
+                    ColorPicker("Best-move arrow color", selection: $analysisArrowColor, supportsOpacity: false)
+                        .disabled(!settingsStore.settings.engineAnalysisShowBoardArrow)
+                        .onChange(of: analysisArrowColor) { _, color in
+                            settingsStore.update { $0.engineAnalysisArrowColor = CodableColor(color) }
+                        }
 
                     Toggle("Show evaluation bar", isOn: Binding(
                         get: { settingsStore.settings.engineAnalysisShowEvaluationBar },
@@ -398,6 +406,7 @@ struct SettingsView: View {
         lightColor = settings.lightSquareColor.color
         darkColor = settings.darkSquareColor.color
         coordinateColor = settings.coordinateColor.color
+        analysisArrowColor = settings.engineAnalysisArrowColor.color
         selectedLanguage = settings.defaultRecognitionLanguage
         phraseListLanguage = settings.defaultRecognitionLanguage
     }

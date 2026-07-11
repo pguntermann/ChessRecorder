@@ -290,55 +290,19 @@ struct ContentView: View {
                 .frame(maxWidth: .infinity)
                 .frame(height: boardDimensions.side)
 
-            HStack(spacing: 8) {
-                Circle()
-                    .fill(game.currentTurn == .white ? Color.white : Color.black)
-                    .frame(width: 14, height: 14)
-                    .overlay(Circle().stroke(Color.secondary, lineWidth: 1))
-                
-                if !game.isAtLatestMove {
-                    Button {
-                        _ = game.goToLatestPosition()
-                    } label: {
-                        Text("Viewing move \(game.activePlyIndex) of \(game.moves.count) — tap to go to latest")
-                            .font(.subheadline)
-                            .foregroundStyle(.orange)
-                            .multilineTextAlignment(.leading)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.85)
-                            .layoutPriority(1)
-                    }
-                    .buttonStyle(.plain)
-                } else if pgnArchive.activeGameIsReviewOnly, let activeGame = pgnArchive.activeGame {
-                    Text("Round \(activeGame.round) · \(activeGame.result.rawValue) — review only")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                } else {
-                    Text(game.gameStatusMessage ?? (game.currentTurn == .white ? "White to move" : "Black to move"))
-                        .font(.subheadline)
-                        .foregroundStyle(game.isGameOver ? .primary : .secondary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.85)
-                        .layoutPriority(1)
-                }
-                
-                Spacer(minLength: 0)
-                
-                Button {
+            MoveNavigationBar(
+                game: game,
+                onGoToFirst: navigateToFirst,
+                onGoToPrevious: navigateBack,
+                onGoToNext: navigateForward,
+                onGoToLatest: navigateToLatest,
+                onGoToPly: navigateToPly,
+                onFlipBoard: {
                     withAnimation(.easeInOut(duration: 0.25)) {
                         boardOrientation.toggle()
                     }
-                } label: {
-                    Label("Turn board", systemImage: "arrow.up.arrow.down")
-                        .labelStyle(.iconOnly)
-                        .imageScale(.medium)
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
                 }
-                .accessibilityLabel("Turn board")
-                .layoutPriority(2)
-            }
-            .padding(.horizontal, 4)
+            )
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -384,9 +348,9 @@ struct ContentView: View {
     private func controlToolbar(compact: Bool, availableWidth: CGFloat) -> some View {
         let isNarrowPortrait = compact && availableWidth < 500
         let isNarrowSidebar = !compact && availableWidth < 400
-        let useIconOnlyRecord = isNarrowPortrait || isNarrowSidebar
+        let useIconOnlyRecord = isNarrowSidebar
         let iconHitSize: CGFloat = (isNarrowPortrait || isNarrowSidebar) ? 36 : (compact ? 40 : 44)
-        let iconSpacing: CGFloat = compact ? (isNarrowPortrait ? 0 : 4) : (isNarrowSidebar ? 0 : 2)
+        let iconSpacing: CGFloat = compact ? 4 : (isNarrowSidebar ? 0 : 2)
         let recordButtonWidth: CGFloat = 82
 
         return HStack(spacing: iconSpacing) {
@@ -450,22 +414,6 @@ struct ContentView: View {
                 }
                 .disabled(!speechRecognizer.isReadyForUse || !canAcceptNewMoves)
             }
-            
-            Button {
-                navigateBack()
-            } label: {
-                ToolbarIconLabel("chevron.left", hitSize: iconHitSize)
-            }
-            .disabled(!game.canGoBack)
-            .accessibilityLabel("Previous move")
-            
-            Button {
-                navigateForward()
-            } label: {
-                ToolbarIconLabel("chevron.right", hitSize: iconHitSize)
-            }
-            .disabled(!game.canGoForward)
-            .accessibilityLabel("Next move")
             
             Button {
                 undoLastMove()
@@ -678,13 +626,33 @@ struct ContentView: View {
 
     private func navigateBack() {
         guard game.goToPreviousPosition() else { return }
-        if speechRecognizer.isRecording {
-            speechRecognizer.stopRecording()
-        }
+        stopRecordingIfNeeded()
     }
 
     private func navigateForward() {
         _ = game.goToNextPosition()
+    }
+
+    private func navigateToFirst() {
+        guard game.goToFirstPosition() else { return }
+        stopRecordingIfNeeded()
+    }
+
+    private func navigateToLatest() {
+        _ = game.goToLatestPosition()
+    }
+
+    private func navigateToPly(_ plyIndex: Int) {
+        guard game.goToPlyIndex(plyIndex) else { return }
+        if plyIndex < game.moves.count {
+            stopRecordingIfNeeded()
+        }
+    }
+
+    private func stopRecordingIfNeeded() {
+        if speechRecognizer.isRecording {
+            speechRecognizer.stopRecording()
+        }
     }
 }
 

@@ -252,6 +252,14 @@ class ChessGame {
         kitGame.moves.hasIndex(after: currentIndex)
     }
 
+    var canGoToFirst: Bool {
+        currentIndex != kitGame.startingIndex
+    }
+
+    var canGoToLatest: Bool {
+        !isAtLatestMove
+    }
+
     var canUndo: Bool {
         isAtLatestMove && !moves.isEmpty
     }
@@ -274,6 +282,28 @@ class ChessGame {
     func goToLatestPosition() -> Bool {
         guard !isAtLatestMove else { return false }
         navigateTo(index: kitGame.moves.endIndex)
+        return true
+    }
+
+    @discardableResult
+    func goToFirstPosition() -> Bool {
+        guard canGoToFirst else { return false }
+        navigateTo(index: kitGame.startingIndex)
+        return true
+    }
+
+    @discardableResult
+    func goToPlyIndex(_ plyIndex: Int) -> Bool {
+        guard plyIndex >= 0, plyIndex <= moves.count else { return false }
+
+        var index = kitGame.startingIndex
+        for _ in 0..<plyIndex {
+            guard kitGame.moves.hasIndex(after: index) else { return false }
+            index = kitGame.moves.index(after: index)
+        }
+
+        guard index != currentIndex else { return false }
+        navigateTo(index: index)
         return true
     }
 

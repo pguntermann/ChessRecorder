@@ -87,8 +87,12 @@ struct ChessBoardView: View {
                 .strokeBorder(Color.secondary, lineWidth: 2)
         }
         .overlay {
-            if !game.isAtLatestMove {
-                HistoryBrowsingOverlay(squareSize: squareSize)
+            if let status = boardStatusOverlay {
+                BoardGlassStatusOverlay(
+                    squareSize: squareSize,
+                    systemImage: status.icon,
+                    title: status.title
+                )
             }
         }
         .onChange(of: game.activePlyIndex) { _, _ in
@@ -210,22 +214,35 @@ struct ChessBoardView: View {
         if let secondary = animation.secondary, position == secondary.to { return true }
         return false
     }
+    private var boardStatusOverlay: (icon: String, title: String)? {
+        if !game.isAtLatestMove {
+            return ("clock.arrow.circlepath", "Reviewing history")
+        }
+        if let message = game.gameStatusMessage {
+            return (game.isGameOver ? "flag.checkered" : "info.circle", message)
+        }
+        return nil
+    }
 }
 
-private struct HistoryBrowsingOverlay: View {
+private struct BoardGlassStatusOverlay: View {
     let squareSize: CGFloat
+    let systemImage: String
+    let title: String
 
     private var iconSize: CGFloat { max(14, squareSize * 0.24) }
     private var labelSize: CGFloat { max(12, squareSize * 0.21) }
 
     var body: some View {
         HStack(spacing: max(5, squareSize * 0.1)) {
-            Image(systemName: "clock.arrow.circlepath")
+            Image(systemName: systemImage)
                 .font(.system(size: iconSize, weight: .semibold))
                 .symbolRenderingMode(.hierarchical)
 
-            Text("Reviewing history")
+            Text(title)
                 .font(.system(size: labelSize, weight: .semibold))
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
         }
         .foregroundStyle(.primary)
         .padding(.horizontal, max(10, squareSize * 0.22))

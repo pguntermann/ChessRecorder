@@ -38,6 +38,7 @@
   "pgnHideHeaderTags" : true,
   "pgnSite" : "?",
   "pgnWhite" : "?",
+  "boardSizePercent" : 1,
   "pieceSizePercent" : 0.9,
   "touchInputEnabled" : true
 }

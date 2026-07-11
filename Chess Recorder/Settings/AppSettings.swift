@@ -37,6 +37,7 @@ struct CodableColor: Codable, Equatable {
 }
 
 struct AppSettings: Codable, Equatable {
+    var boardSizePercent: Double
     var pieceSizePercent: Double
     var lightSquareColor: CodableColor
     var darkSquareColor: CodableColor
@@ -60,6 +61,7 @@ struct AppSettings: Codable, Equatable {
     var pgnHideHeaderTags: Bool
     
     enum CodingKeys: String, CodingKey {
+        case boardSizePercent
         case pieceSizePercent
         case lightSquareColor
         case darkSquareColor
@@ -84,6 +86,7 @@ struct AppSettings: Codable, Equatable {
     }
     
     init(
+        boardSizePercent: Double = 1.0,
         pieceSizePercent: Double,
         lightSquareColor: CodableColor,
         darkSquareColor: CodableColor,
@@ -106,6 +109,7 @@ struct AppSettings: Codable, Equatable {
         pgnBlack: String = "?",
         pgnHideHeaderTags: Bool = true
     ) {
+        self.boardSizePercent = boardSizePercent
         self.pieceSizePercent = pieceSizePercent
         self.lightSquareColor = lightSquareColor
         self.darkSquareColor = darkSquareColor
@@ -131,6 +135,7 @@ struct AppSettings: Codable, Equatable {
     
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        boardSizePercent = try container.decodeIfPresent(Double.self, forKey: .boardSizePercent) ?? 1.0
         pieceSizePercent = try container.decode(Double.self, forKey: .pieceSizePercent)
         lightSquareColor = try container.decode(CodableColor.self, forKey: .lightSquareColor)
         darkSquareColor = try container.decode(CodableColor.self, forKey: .darkSquareColor)
@@ -281,10 +286,11 @@ extension AppSettings {
         Int(min(max(engineAnalysisDepth, 1), 30))
     }
 
-    func coordinateFont() -> Font {
+    func coordinateFont(boardScale: Double = 1) -> Font {
+        let size = coordinateFontSize * boardScale
         if coordinateFontName.isEmpty {
-            return .system(size: coordinateFontSize)
+            return .system(size: size)
         }
-        return .custom(coordinateFontName, size: coordinateFontSize)
+        return .custom(coordinateFontName, size: size)
     }
 }

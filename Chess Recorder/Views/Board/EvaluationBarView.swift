@@ -89,7 +89,7 @@ struct EvaluationBarView: View {
                 }
 
                 if isEnabled {
-                    tickOverlay(totalHeight: totalHeight)
+                    tickOverlay(totalHeight: totalHeight, barWidth: geometry.size.width)
                 }
 
                 RoundedRectangle(cornerRadius: 10)
@@ -112,22 +112,26 @@ struct EvaluationBarView: View {
         return isTop ? topColor : bottomColor
     }
 
-    private func tickOverlay(totalHeight: CGFloat) -> some View {
-        ZStack(alignment: .topTrailing) {
+    private func tickOverlay(totalHeight: CGFloat, barWidth: CGFloat) -> some View {
+        let tickWidth = max(4, barWidth * (8 / 38))
+        let tickInset = barWidth * (16 / 38)
+        let labelSize = max(7, barWidth * (9 / 38))
+
+        return ZStack(alignment: .topTrailing) {
             ForEach(tickMarks) { tick in
                 let y = tickYPosition(for: tick.pawns, totalHeight: totalHeight)
                 let tickColor = tickForegroundColor(for: tick.pawns)
 
                 Rectangle()
                     .fill(tickColor.opacity(0.9))
-                    .frame(width: 8, height: 1)
-                    .offset(x: -16, y: y)
+                    .frame(width: tickWidth, height: 1)
+                    .offset(x: -tickInset, y: y)
 
                 if let label = tick.label {
                     Text(label)
-                        .font(.system(size: 9, weight: .medium, design: .monospaced))
+                        .font(.system(size: labelSize, weight: .medium, design: .monospaced))
                         .foregroundStyle(tickColor)
-                        .offset(x: 0, y: y - 6)
+                        .offset(x: 0, y: y - labelSize * 0.65)
                 }
             }
         }

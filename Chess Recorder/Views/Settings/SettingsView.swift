@@ -209,6 +209,16 @@ struct SettingsView: View {
                     ))
                     
                     VStack(alignment: .leading) {
+                        Text("Board size: \(Int(settingsStore.settings.boardSizePercent * 100))%")
+                        Slider(value: Binding(
+                            get: { settingsStore.settings.boardSizePercent },
+                            set: { newValue in
+                                settingsStore.update { $0.boardSizePercent = newValue }
+                            }
+                        ), in: 0.5...1.0, step: 0.05)
+                    }
+
+                    VStack(alignment: .leading) {
                         Text("Piece size: \(Int(settingsStore.settings.pieceSizePercent * 100))%")
                         Slider(value: Binding(
                             get: { settingsStore.settings.pieceSizePercent },
@@ -240,7 +250,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Board")
                 } footer: {
-                    Text("When Touch input is enabled, tap a piece and then a destination square to make moves on the board. The opening name appears above the board when moves are played.")
+                    Text("Board size scales the chessboard relative to the largest size that fits on screen. At 100%, the board uses all available space; reducing it leaves more room for the notation panels in portrait or landscape. When Touch input is enabled, tap a piece and then a destination square to make moves on the board. The opening name appears above the board when moves are played.")
                 }
                 
                 Section {

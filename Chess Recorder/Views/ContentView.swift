@@ -193,7 +193,11 @@ struct ContentView: View {
         let sidebarWidth = max(0, geometry.size.width - boardColumnWidth - 1)
 
         HStack(alignment: .top, spacing: 0) {
-            boardSection(compactOpening: true, boardAreaHeight: boardAreaHeight)
+            boardSection(
+                compactOpening: true,
+                boardAreaHeight: boardAreaHeight,
+                availableWidth: boardColumnWidth - 16
+            )
                 .padding(8)
                 .frame(width: boardColumnWidth, height: geometry.size.height, alignment: .topLeading)
                 .clipped()
@@ -230,7 +234,11 @@ struct ContentView: View {
         let evalOverhead: CGFloat = showEvalBar ? 48 : 0
         let columnPadding: CGFloat = 16
         let boardAreaHeight = landscapeBoardAreaHeight(in: geometry)
-        let boardSide = floor(max(0, boardAreaHeight) / 8) * 8
+        let naturalBoardSide = floor(max(0, boardAreaHeight) / 8) * 8
+        let boardSide = BoardLayoutMetrics.scaledBoardSide(
+            naturalSide: naturalBoardSide,
+            sizePercent: settingsStore.settings.boardSizePercent
+        )
 
         return boardSide + evalOverhead + columnPadding
     }
@@ -242,7 +250,7 @@ struct ContentView: View {
 
             ScrollView {
                 VStack(spacing: 16) {
-                    boardSection()
+                    boardSection(availableWidth: geometry.size.width - 32)
                         .padding()
 
                     Divider()
@@ -255,24 +263,30 @@ struct ContentView: View {
     
     private func boardSection(
         compactOpening: Bool = false,
-        boardAreaHeight: CGFloat? = nil
+        boardAreaHeight: CGFloat? = nil,
+        availableWidth: CGFloat
     ) -> some View {
-        VStack(alignment: .leading, spacing: compactOpening ? 6 : 10) {
+        let settings = settingsStore.settings
+        let boardSide = BoardLayoutMetrics.computedBoardSide(
+            availableWidth: availableWidth,
+            maxBoardHeight: boardAreaHeight,
+            showEvaluationBar: settings.engineAnalysisShowEvaluationBar,
+            boardSizePercent: settings.boardSizePercent
+        )
+        let boardDimensions = BoardLayoutMetrics.Dimensions(boardSide: boardSide)
+
+        return VStack(alignment: .leading, spacing: compactOpening ? 6 : 10) {
             OpeningNameView(
                 display: openingService.display,
-                isVisible: settingsStore.settings.openingNameVisible,
+                isVisible: settings.openingNameVisible,
                 isLoaded: openingService.isLoaded,
                 hasMoves: !game.moves.isEmpty,
                 compact: compactOpening
             )
 
-            if let boardAreaHeight {
-                boardLayout
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .frame(height: max(0, boardAreaHeight), alignment: .topLeading)
-            } else {
-                boardLayout
-            }
+            boardLayout(boardSide: boardDimensions.side)
+                .frame(maxWidth: .infinity)
+                .frame(height: boardDimensions.side)
 
             HStack(spacing: 8) {
                 Circle()
@@ -327,7 +341,7 @@ struct ContentView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var boardLayout: some View {
+    private func boardLayout(boardSide: CGFloat) -> some View {
         BoardWithEvaluationLayout(
             game: game,
             settings: settingsStore.settings,
@@ -337,7 +351,8 @@ struct ContentView: View {
             showEvaluationBar: settingsStore.settings.engineAnalysisShowEvaluationBar,
             showBoardArrow: settingsStore.settings.engineAnalysisShowBoardArrow,
             engineAnalysisVisible: settingsStore.settings.engineAnalysisVisible,
-            canAcceptNewMoves: canAcceptNewMoves
+            canAcceptNewMoves: canAcceptNewMoves,
+            boardSide: boardSide
         )
     }
     
@@ -695,12 +710,16 @@ private struct BoardWithEvaluationLayout: View {
     let showBoardArrow: Bool
     let engineAnalysisVisible: Bool
     let canAcceptNewMoves: Bool
+    let boardSide: CGFloat
 
     var body: some View {
-        BoardEvalRowLayout(showEvaluationBar: showEvaluationBar) {
+        let dimensions = BoardLayoutMetrics.Dimensions(boardSide: boardSide)
+
+        HStack(spacing: BoardLayoutMetrics.evalBarSpacing) {
             ChessBoardView(
                 game: game,
                 settings: settings,
+                boardSide: dimensions.side,
                 orientation: orientation,
                 touchInputEnabled: settings.touchInputEnabled && canAcceptNewMoves,
                 analysisArrow: showBoardArrow ? engineAnalysis.display.nextMoveArrow : nil,
@@ -715,62 +734,10 @@ private struct BoardWithEvaluationLayout: View {
                     isEngineActive: engineAnalysisVisible && engineAnalysis.isActive,
                     isEngineReady: engineAnalysis.isEngineReady
                 )
+                .frame(width: BoardLayoutMetrics.evalBarWidth, height: dimensions.side)
             }
         }
-    }
-}
-
-private struct BoardEvalRowLayout: Layout {
-    let showEvaluationBar: Bool
-
-    private let evalBarWidth: CGFloat = 38
-    private let spacing: CGFloat = 10
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let availableWidth = proposal.width ?? .infinity
-        let availableHeight = proposal.height ?? .infinity
-        let boardSide = boardSideLength(
-            availableWidth: availableWidth,
-            availableHeight: availableHeight
-        )
-        let horizontalOverhead = showEvaluationBar ? evalBarWidth + spacing : 0
-        let contentWidth = boardSide + horizontalOverhead
-        let width = proposal.width.map { min($0, contentWidth) } ?? contentWidth
-        return CGSize(width: width, height: max(boardSide, 0))
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        let boardSide = boardSideLength(
-            availableWidth: bounds.width,
-            availableHeight: bounds.height
-        )
-        guard boardSide > 0, !subviews.isEmpty else { return }
-
-        let boardSize = ProposedViewSize(width: boardSide, height: boardSide)
-        subviews[0].place(
-            at: CGPoint(x: bounds.minX + boardSide / 2, y: bounds.minY + boardSide / 2),
-            anchor: .center,
-            proposal: boardSize
-        )
-
-        guard showEvaluationBar, subviews.count > 1 else { return }
-
-        let barSize = ProposedViewSize(width: evalBarWidth, height: boardSide)
-        subviews[1].place(
-            at: CGPoint(
-                x: bounds.minX + boardSide + spacing + evalBarWidth / 2,
-                y: bounds.minY + boardSide / 2
-            ),
-            anchor: .center,
-            proposal: barSize
-        )
-    }
-
-    private func boardSideLength(availableWidth: CGFloat, availableHeight: CGFloat) -> CGFloat {
-        let horizontalOverhead = showEvaluationBar ? evalBarWidth + spacing : 0
-        return floor(
-            min(max(0, availableWidth - horizontalOverhead), availableHeight) / 8
-        ) * 8
+        .frame(maxWidth: .infinity)
     }
 }
 

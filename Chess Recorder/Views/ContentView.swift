@@ -382,11 +382,12 @@ struct ContentView: View {
     }
     
     private func controlToolbar(compact: Bool, availableWidth: CGFloat) -> some View {
-        let isNarrowPortrait = compact && availableWidth < 420
+        let isNarrowPortrait = compact && availableWidth < 500
         let isNarrowSidebar = !compact && availableWidth < 400
         let useIconOnlyRecord = isNarrowPortrait || isNarrowSidebar
         let iconHitSize: CGFloat = (isNarrowPortrait || isNarrowSidebar) ? 36 : (compact ? 40 : 44)
         let iconSpacing: CGFloat = compact ? (isNarrowPortrait ? 0 : 4) : (isNarrowSidebar ? 0 : 2)
+        let recordButtonWidth: CGFloat = 82
 
         return HStack(spacing: iconSpacing) {
             if compact {
@@ -430,11 +431,13 @@ struct ContentView: View {
                     HStack(spacing: 4) {
                         Image(systemName: speechRecognizer.isRecording ? "mic.fill" : "mic")
                             .imageScale(.medium)
+                            .frame(width: 20)
                         Text(speechRecognizer.isRecording ? "Stop" : "Record")
                             .font(.subheadline)
                             .lineLimit(1)
+                            .frame(width: 54, alignment: .leading)
                     }
-                    .fixedSize(horizontal: true, vertical: false)
+                    .frame(width: recordButtonWidth, alignment: .center)
                     .foregroundColor(speechRecognizer.isRecording ? .red : (canAcceptNewMoves ? .blue : .secondary))
                     .padding(.horizontal, compact ? 8 : 6)
                     .padding(.vertical, 6)

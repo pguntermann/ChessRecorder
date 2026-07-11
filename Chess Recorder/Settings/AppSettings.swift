@@ -199,6 +199,14 @@ struct AppSettings: Codable, Equatable {
         pgnBlack: "?",
         pgnHideHeaderTags: true
     )
+
+    static var bundled: AppSettings? {
+        guard let url = Bundle.main.url(forResource: "DefaultSettings", withExtension: "json"),
+              let data = try? Data(contentsOf: url) else {
+            return nil
+        }
+        return try? JSONDecoder().decode(AppSettings.self, from: data)
+    }
 }
 
 private enum LegacyCodingKeys: String, CodingKey {
@@ -218,7 +226,7 @@ final class SettingsStore {
         
         if let loaded = Self.load(from: settingsURL) {
             settings = loaded
-        } else if let bundled = Self.loadBundledDefaults() {
+        } else if let bundled = AppSettings.bundled {
             settings = bundled
             save()
         } else {
@@ -233,7 +241,7 @@ final class SettingsStore {
     }
     
     func resetToDefaults() {
-        if let bundled = Self.loadBundledDefaults() {
+        if let bundled = AppSettings.bundled {
             settings = bundled
         } else {
             settings = .default
@@ -252,14 +260,6 @@ final class SettingsStore {
     
     private static func load(from url: URL) -> AppSettings? {
         guard FileManager.default.fileExists(atPath: url.path),
-              let data = try? Data(contentsOf: url) else {
-            return nil
-        }
-        return try? JSONDecoder().decode(AppSettings.self, from: data)
-    }
-    
-    private static func loadBundledDefaults() -> AppSettings? {
-        guard let url = Bundle.main.url(forResource: "DefaultSettings", withExtension: "json"),
               let data = try? Data(contentsOf: url) else {
             return nil
         }

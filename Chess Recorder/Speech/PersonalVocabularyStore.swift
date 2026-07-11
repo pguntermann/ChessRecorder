@@ -240,13 +240,15 @@ final class PersonalVocabularyStore {
     func reset(language: RecognitionLanguage) {
         phrases.removeAll { $0.languageCode == language.rawValue && $0.source == .user }
         corrections.removeAll { $0.languageCode == language.rawValue }
+        corrections.append(contentsOf: Self.defaultCorrections(for: language))
         bumpRevision(for: language)
         save()
     }
     
     func resetAll() {
         phrases.removeAll()
-        corrections.removeAll()
+        corrections = Self.bundledVocabulary()?.corrections ?? []
+        revisions = Self.bundledVocabulary()?.revisions ?? [:]
         for language in RecognitionLanguage.allCases {
             bumpRevision(for: language)
         }
@@ -778,17 +780,44 @@ final class PersonalVocabularyStore {
     private func bumpRevision(for language: RecognitionLanguage) {
         revisions[language.rawValue] = revision(for: language) + 1
     }
-    
-    private func load() {
-        guard FileManager.default.fileExists(atPath: storageURL.path),
-              let data = try? Data(contentsOf: storageURL) else {
-            return
+
+    private static func bundledVocabulary() -> PersonalVocabularyFile? {
+        guard let url = Bundle.main.url(forResource: "DefaultVocabulary", withExtension: "json"),
+              let data = try? Data(contentsOf: url) else {
+            return nil
         }
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601
-        guard let file = try? decoder.decode(PersonalVocabularyFile.self, from: data) else {
+        return try? decoder.decode(PersonalVocabularyFile.self, from: data)
+    }
+
+    private static func defaultCorrections(for language: RecognitionLanguage) -> [LearnedCorrection] {
+        bundledVocabulary()?.corrections.filter { $0.languageCode == language.rawValue } ?? []
+    }
+    
+    private func load() {
+        if let file = Self.loadVocabulary(from: storageURL) {
+            apply(file)
             return
         }
+
+        if let bundled = Self.bundledVocabulary() {
+            apply(bundled)
+            save()
+        }
+    }
+
+    private static func loadVocabulary(from url: URL) -> PersonalVocabularyFile? {
+        guard FileManager.default.fileExists(atPath: url.path),
+              let data = try? Data(contentsOf: url) else {
+            return nil
+        }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try? decoder.decode(PersonalVocabularyFile.self, from: data)
+    }
+
+    private func apply(_ file: PersonalVocabularyFile) {
         phrases = file.phrases
         corrections = file.corrections
         revisions = file.revisions

@@ -13,14 +13,20 @@ struct SwipeToDeleteRowCornerRadii: Equatable {
 
     static let none = SwipeToDeleteRowCornerRadii()
 
-    static func insetGroupedListRow(index: Int, count: Int, radius: CGFloat = 10) -> SwipeToDeleteRowCornerRadii {
-        let isFirst = index == 0
-        let isLast = index == count - 1
+    static func insetGroupedListRow(
+        index: Int,
+        count: Int,
+        roundsTop: Bool = true,
+        roundsBottom: Bool = true,
+        radius: CGFloat = 10
+    ) -> SwipeToDeleteRowCornerRadii {
+        let roundTop = roundsTop && index == 0
+        let roundBottom = roundsBottom && index == count - 1
         return SwipeToDeleteRowCornerRadii(
-            topLeading: isFirst ? radius : 0,
-            topTrailing: isFirst ? radius : 0,
-            bottomTrailing: isLast ? radius : 0,
-            bottomLeading: isLast ? radius : 0
+            topLeading: roundTop ? radius : 0,
+            topTrailing: roundTop ? radius : 0,
+            bottomTrailing: roundBottom ? radius : 0,
+            bottomLeading: roundBottom ? radius : 0
         )
     }
 
@@ -32,12 +38,14 @@ struct SwipeToDeleteRowCornerRadii: Equatable {
 struct SwipeToDeleteRow<Content: View>: View {
     let onDelete: () -> Void
     var cornerRadii: SwipeToDeleteRowCornerRadii = .none
+    var showsSeparatorBelow: Bool = false
     @ViewBuilder let content: () -> Content
 
     @State private var offset: CGFloat = 0
 
     private let revealWidth: CGFloat = 88
     private let rowBackgroundColor = Color(uiColor: .secondarySystemGroupedBackground)
+    private let separatorColor = Color(uiColor: .separator)
 
     var body: some View {
         ZStack(alignment: .trailing) {
@@ -49,6 +57,15 @@ struct SwipeToDeleteRow<Content: View>: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background { rowSurface }
                 .offset(x: offset)
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(alignment: .bottom) {
+            if showsSeparatorBelow {
+                separatorColor
+                    .frame(height: 1 / UIScreen.main.scale)
+                    .padding(.leading, 16)
+            }
         }
         .modifier(RowClipModifier(cornerRadii: cornerRadii))
         .contentShape(Rectangle())
@@ -76,40 +93,21 @@ struct SwipeToDeleteRow<Content: View>: View {
 
     @ViewBuilder
     private var deleteBackground: some View {
-        if cornerRadii.hasRounding {
-            rowClipShape
-                .fill(Color(uiColor: .systemRed))
-                .mask(alignment: .trailing) {
-                    HStack(spacing: 0) {
-                        Spacer(minLength: 0)
-                        Rectangle().frame(width: revealWidth)
-                    }
-                }
-                .overlay(alignment: .trailing) {
-                    deleteButton
-                }
-        } else {
-            HStack(spacing: 0) {
-                Spacer(minLength: 0)
-                deleteButton
-                    .frame(width: revealWidth)
-                    .frame(maxHeight: .infinity)
-                    .background(Color(uiColor: .systemRed))
+        HStack(spacing: 0) {
+            Spacer(minLength: 0)
+            Button {
+                performDelete(animated: true)
+            } label: {
+                Image(systemName: "trash.fill")
+                    .font(.body.weight(.medium))
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+            .buttonStyle(.plain)
+            .frame(width: revealWidth)
+            .background(Color(uiColor: .systemRed))
+            .accessibilityLabel("Delete")
         }
-    }
-
-    private var deleteButton: some View {
-        Button {
-            performDelete(animated: true)
-        } label: {
-            Image(systemName: "trash.fill")
-                .font(.body.weight(.medium))
-                .foregroundStyle(.white)
-                .frame(width: revealWidth)
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Delete")
     }
 
     private var dragGesture: some Gesture {

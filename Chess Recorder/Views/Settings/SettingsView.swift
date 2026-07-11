@@ -270,8 +270,11 @@ struct SettingsView: View {
                                 onDelete: { deleteLearnedPhrase(entry) },
                                 cornerRadii: .insetGroupedListRow(
                                     index: index,
-                                    count: learnedEntries.count
-                                )
+                                    count: learnedEntries.count,
+                                    roundsTop: false,
+                                    roundsBottom: false
+                                ),
+                                showsSeparatorBelow: index < learnedEntries.count - 1
                             ) {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(entry.phrase)
@@ -285,7 +288,9 @@ struct SettingsView: View {
                                 .frame(maxWidth: .infinity, alignment: .leading)
                             }
                             .listRowInsets(EdgeInsets())
+                            .listRowSeparator(.hidden)
                             .listRowBackground(Color.clear)
+                            .environment(\.defaultMinListRowHeight, 0)
                         }
                     }
                     
@@ -318,8 +323,10 @@ struct SettingsView: View {
                                 onDelete: { deleteCorrection(entry) },
                                 cornerRadii: .insetGroupedListRow(
                                     index: index,
-                                    count: correctionEntries.count
-                                )
+                                    count: correctionEntries.count,
+                                    roundsTop: false
+                                ),
+                                showsSeparatorBelow: index < correctionEntries.count - 1
                             ) {
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(entry.heard)
@@ -333,7 +340,9 @@ struct SettingsView: View {
                                 .frame(maxWidth: .infinity, alignment: .leading)
                             }
                             .listRowInsets(EdgeInsets())
+                            .listRowSeparator(.hidden)
                             .listRowBackground(Color.clear)
+                            .environment(\.defaultMinListRowHeight, 0)
                         }
                     }
                 } header: {

@@ -27,13 +27,15 @@ struct HelpView: View {
                     )
 
                     helpSection(
-                        title: "Supported phrases (English)",
+                        title: "Example phrases (English)",
                         cardStyle: true,
                         examples: [
                             "\"e4\" — pawn to e4",
                             "\"Knight f3\" — knight to f3",
                             "\"Knight g1 to f3\" — knight from g1 to f3",
+                            "\"g1 f3\" or \"g1 to f3\" — knight from g1 to f3 (coordinates)",
                             "\"Rook f to d1\" — rook on the f-file to d1",
+                            "\"Rook d takes c8\" — rook on the d-file captures on c8",
                             "\"e takes d5\" or \"exd5\" — pawn capture",
                             "\"Bishop c4\" — bishop to c4",
                             "\"Castle kingside\" — O-O",
@@ -42,13 +44,15 @@ struct HelpView: View {
                     )
 
                     helpSection(
-                        title: "Supported phrases (German)",
+                        title: "Example phrases (German)",
                         cardStyle: true,
                         examples: [
                             "\"e4\" — Bauer nach e4",
                             "\"Springer f3\" — Springer nach f3",
                             "\"Springer g1 auf f3\" — Springer von g1 nach f3",
+                            "\"g1 f3\" or \"g1 nach f3\" — Springer von g1 nach f3 (Koordinaten)",
                             "\"Turm f auf d1\" — Turm von der f-Linie nach d1",
+                            "\"Turm d schlägt c8\" — Turm von der d-Linie schlägt auf c8",
                             "\"e schlägt d5\" — Bauer schlägt auf d5",
                             "\"Läufer c4\" — Läufer nach c4",
                             "\"Kurz rochiert\" — O-O",

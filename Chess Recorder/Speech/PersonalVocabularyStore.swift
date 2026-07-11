@@ -795,9 +795,12 @@ final class PersonalVocabularyStore {
         bundledVocabulary()?.corrections.filter { $0.languageCode == language.rawValue } ?? []
     }
     
+    private static let bundledDefaultsMigrationKey = "PersonalVocabularyDidMigrateBundledDefaults"
+
     private func load() {
         if let file = Self.loadVocabulary(from: storageURL) {
             apply(file)
+            migrateBundledDefaultsIfNeeded()
             return
         }
 
@@ -805,6 +808,23 @@ final class PersonalVocabularyStore {
             apply(bundled)
             save()
         }
+
+        UserDefaults.standard.set(true, forKey: Self.bundledDefaultsMigrationKey)
+    }
+
+    /// One-time upgrade path for installs that predated bundled default corrections.
+    private func migrateBundledDefaultsIfNeeded() {
+        guard !UserDefaults.standard.bool(forKey: Self.bundledDefaultsMigrationKey) else { return }
+        defer { UserDefaults.standard.set(true, forKey: Self.bundledDefaultsMigrationKey) }
+
+        guard corrections.isEmpty,
+              let bundled = Self.bundledVocabulary(),
+              !bundled.corrections.isEmpty else {
+            return
+        }
+
+        corrections = bundled.corrections
+        save()
     }
 
     private static func loadVocabulary(from url: URL) -> PersonalVocabularyFile? {

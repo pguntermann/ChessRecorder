@@ -365,9 +365,15 @@ struct SettingsView: View {
                 Section {
                     Button("Reset to defaults", role: .destructive) {
                         settingsStore.resetToDefaults()
+                        vocabularyStore.resetAll()
                         applyLocalStateFromStore()
                         requestLanguageChange(settingsStore.settings.defaultRecognitionLanguage)
+                        for language in RecognitionLanguage.allCases {
+                            scheduleSpeechModelUpdate(for: language)
+                        }
                     }
+                } footer: {
+                    Text("Restores app settings and the default speech correction examples.")
                 }
 
                 if developerModeStore.showsDeveloperSettings {

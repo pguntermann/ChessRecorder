@@ -399,9 +399,9 @@ struct ContentView: View {
                         Text(speechRecognizer.isRecording ? "Stop" : "Record")
                             .font(.subheadline)
                             .lineLimit(1)
-                            .frame(width: 54, alignment: .leading)
                     }
-                    .frame(width: recordButtonWidth, alignment: .center)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .frame(minWidth: recordButtonWidth)
                     .foregroundColor(speechRecognizer.isRecording ? .red : (canAcceptNewMoves ? .blue : .secondary))
                     .padding(.horizontal, compact ? 8 : 6)
                     .padding(.vertical, 6)
@@ -412,6 +412,7 @@ struct ContentView: View {
                                 : (canAcceptNewMoves ? Color.blue.opacity(0.1) : Color.secondary.opacity(0.1)))
                     )
                 }
+                .layoutPriority(1)
                 .disabled(!speechRecognizer.isReadyForUse || !canAcceptNewMoves)
             }
             

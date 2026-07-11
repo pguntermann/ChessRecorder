@@ -23,24 +23,25 @@ px = img.load()
 def opaque_frac(y, thresh=200):
     return sum(1 for x in range(w) if px[x, y][3] > thresh) / w
 
-toolbar_last = 0
-for y in range(0, 280):
-    r, g, b, a = px[w // 2, y]
-    if a > 240 and 25 <= r <= 45 and abs(r - g) <= 3 and abs(g - b) <= 3 and opaque_frac(y) > 0.85:
-        toolbar_last = y
+# Simulator window captures have a transparent canvas: find the toolbar, the shadow
+# gap beneath it, then the device frame (works when the window does not span full width).
+window_start = next((y for y in range(h) if opaque_frac(y) > 0.5), 0)
 
-# Device frame begins after the post-toolbar shadow gap (includes top metal bezel).
+gap_start = None
+for y in range(window_start, min(window_start + 250, h)):
+    if opaque_frac(y) < 0.1:
+        if all(opaque_frac(y + i) < 0.15 for i in range(8)):
+            gap_start = y
+            break
+
 crop_top = None
-seen_gap = False
-for y in range(toolbar_last + 1, toolbar_last + 100):
-    of = opaque_frac(y, 200)
-    if of < 0.1:
-        seen_gap = True
-    if seen_gap and of > 0.65:
-        crop_top = y
-        break
+if gap_start is not None:
+    for y in range(gap_start, min(gap_start + 40, h)):
+        if opaque_frac(y) > 0.5:
+            crop_top = y
+            break
 if crop_top is None:
-    crop_top = toolbar_last + 29
+    crop_top = window_start + 29
 
 col_score = [0] * w
 row_score = [0] * h
@@ -50,11 +51,12 @@ for y in range(crop_top, h):
             col_score[x] += 1
             row_score[y] += 1
 
-threshold = int((h - crop_top) * 0.55)
-left = next(x for x in range(w) if col_score[x] > threshold)
-right = next(x for x in range(w - 1, -1, -1) if col_score[x] > threshold)
-top = next(y for y in range(crop_top, h) if row_score[y] > threshold)
-bottom = next(y for y in range(h - 1, crop_top - 1, -1) if row_score[y] > threshold)
+col_threshold = int((h - crop_top) * 0.55)
+left = next(x for x in range(w) if col_score[x] > col_threshold)
+right = next(x for x in range(w - 1, -1, -1) if col_score[x] > col_threshold)
+row_threshold = int((right - left + 1) * 0.55)
+top = next(y for y in range(crop_top, h) if row_score[y] > row_threshold)
+bottom = next(y for y in range(h - 1, crop_top - 1, -1) if row_score[y] > row_threshold)
 
 pad_x = 8
 pad_top = 4

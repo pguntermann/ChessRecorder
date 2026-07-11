@@ -45,6 +45,9 @@ enum ChessTranscriptNormalizer {
         // ASR occasionally turns "knight" into "9".
         result = applyRegexReplacements(result, patterns: [
             (#"\b9\b"#, "knight"),
+            // Redundant second "shop" after a bishop mishearing (fish shop shop → fish shop).
+            (#"\b(pet|bee|bit|fish|dish|this)\s+shop\s+shop\b"#, "$1 shop"),
+            (#"\b(\w+shop)\s+shop\b"#, "$1"),
             (#"\bpet\s*shop\b"#, "bishop"),
             (#"\bbee\s*shop\b"#, "bishop"),
             (#"\bbit\s*shop\b"#, "bishop"),
@@ -54,7 +57,6 @@ enum ChessTranscriptNormalizer {
             (#"\bbishopp\b"#, "bishop"),
             (#"\bbishop\s+shop\b"#, "bishop"),
             (#"\b(bishop|knight|night|rook|queen|king)\s+shop\b"#, "$1"),
-            (#"\bshop\s+(?=takes|take|to|captures|capture)\b"#, ""),
             (#"\bbrooke\b"#, "rook"),
             (#"\brock\b"#, "rook"),
             // "rook a to d1" is often heard as "look at d1"

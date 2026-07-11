@@ -161,6 +161,16 @@ final class PersonalVocabularyStore {
             if phrases.count != before { changes += 1 }
         }
 
+        for retired in Self.retiredRecognitionPhrases(for: language) {
+            let before = phrases.count
+            phrases.removeAll {
+                $0.source == .recognitionOnly &&
+                $0.languageCode == language.rawValue &&
+                Self.normalizePhrase($0.phrase, language: language) == retired
+            }
+            if phrases.count != before { changes += 1 }
+        }
+
         for item in Self.commonTrainingPhrases(for: language) {
             let changed = upsert(
                 phrase: item.phrase,
@@ -663,6 +673,15 @@ final class PersonalVocabularyStore {
         }
     }
 
+    private static func retiredRecognitionPhrases(for language: RecognitionLanguage) -> [String] {
+        switch language {
+        case .english:
+            return ["bishop shop takes d7"]
+        case .german:
+            return []
+        }
+    }
+
     private static func commonTrainingPhrases(for language: RecognitionLanguage) -> [(phrase: String, moveNotation: String, count: Int)] {
         switch language {
         case .english:
@@ -772,7 +791,7 @@ final class PersonalVocabularyStore {
                 "a3", "a 3", "hey three", "hey 3", "ay three", "ay 3",
                 "a6", "a 6", "hey six", "ay six", "hey 6",
                 "bishop b5 check", "knight f3 check", "rook d1 check",
-                "bishop takes d7", "bishop shop takes d7", "bishop takes 7",
+                "bishop takes d7", "bishop takes 7",
                 "bishop e4 to e5", "bishop f1 to c4", "bishop takes e5",
                 "bishop to e5", "bishop e5", "knight to f3", "knight f3",
                 "knight g1 to f3", "knight f3 to e5", "knight takes d4",

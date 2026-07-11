@@ -8,6 +8,27 @@
       "updatedAt" : "2026-01-01T00:00:00Z"
     },
     {
+      "heard" : "dish shop",
+      "id" : "C1D2E3F4-A5B6-7890-CDEF-123456789001",
+      "languageCode" : "en-US",
+      "replacement" : "bishop",
+      "updatedAt" : "2026-01-01T00:00:00Z"
+    },
+    {
+      "heard" : "this shop",
+      "id" : "D2E3F4A5-B6C7-8901-DEF0-234567890012",
+      "languageCode" : "en-US",
+      "replacement" : "bishop",
+      "updatedAt" : "2026-01-01T00:00:00Z"
+    },
+    {
+      "heard" : "fish shop",
+      "id" : "E3F4A5B6-C7D8-9012-EF01-345678901023",
+      "languageCode" : "en-US",
+      "replacement" : "bishop",
+      "updatedAt" : "2026-01-01T00:00:00Z"
+    },
+    {
       "heard" : "geh",
       "id" : "A1B2C3D4-E5F6-7890-ABCD-EF1234567890",
       "languageCode" : "de-DE",

@@ -36,7 +36,7 @@ for y in range(toolbar_last + 1, toolbar_last + 100):
     of = opaque_frac(y, 200)
     if of < 0.1:
         seen_gap = True
-    if seen_gap and of > 0.75:
+    if seen_gap and of > 0.65:
         crop_top = y
         break
 if crop_top is None:

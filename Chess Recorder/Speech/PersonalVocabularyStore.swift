@@ -135,6 +135,13 @@ final class PersonalVocabularyStore {
             .filter { $0.languageCode == language.rawValue }
             .sorted { $0.updatedAt > $1.updatedAt }
     }
+
+    /// Phrases the user explicitly taught — used for move shortcuts in speech parsing.
+    private func userMoveMappingEntries(for language: RecognitionLanguage) -> [LearnedPhrase] {
+        phrases
+            .filter { $0.languageCode == language.rawValue && $0.source == .user }
+            .sorted { $0.updatedAt > $1.updatedAt }
+    }
     
     func revision(for language: RecognitionLanguage) -> Int {
         revisions[language.rawValue] ?? 0
@@ -143,6 +150,16 @@ final class PersonalVocabularyStore {
     @discardableResult
     func seedCommonPhrasesIfNeeded(for language: RecognitionLanguage) -> Int {
         var changes = 0
+
+        for retired in Self.retiredBuiltInMovePhrases(for: language) {
+            let before = phrases.count
+            phrases.removeAll {
+                $0.source == .builtIn &&
+                $0.languageCode == language.rawValue &&
+                Self.normalizePhrase($0.phrase, language: language) == retired
+            }
+            if phrases.count != before { changes += 1 }
+        }
 
         for item in Self.commonTrainingPhrases(for: language) {
             let changed = upsert(
@@ -263,12 +280,17 @@ final class PersonalVocabularyStore {
         recognitionEntries(for: language).map(\.phrase) + correctionEntries(for: language).map(\.heard)
     }
     
-    /// Move candidates from learned phrase → move mappings (trailing phrase match).
+    /// Move candidates from user-taught phrase → move mappings (trailing phrase match).
     func candidateMoves(for text: String, language: RecognitionLanguage) -> [String] {
         let normalized = Self.normalizePhrase(text, language: language)
         let compact = Self.compactLearningKey(normalized, language: language)
         let words = normalized.split(separator: " ").map(String.init)
         guard !words.isEmpty else { return [] }
+
+        // "hey 3" must disambiguate via legal moves — not a taught "hey 3" → a3 shortcut.
+        if language == .english, ChessTranscriptNormalizer.isAmbiguousEnglishFileRankUtterance(words) {
+            return []
+        }
         
         var results: [String] = []
         var seen = Set<String>()
@@ -282,11 +304,7 @@ final class PersonalVocabularyStore {
             ].contains(lowered)
         })
 
-        for entry in recognitionEntries(for: language) {
-            if entry.source == .recognitionOnly {
-                continue
-            }
-
+        for entry in userMoveMappingEntries(for: language) {
             let learnedPhrase = Self.normalizePhrase(entry.phrase, language: language)
             let learnedWords = learnedPhrase
                 .split(separator: " ")
@@ -319,6 +337,18 @@ final class PersonalVocabularyStore {
                 ))
 
             guard (matchesExactTail || matchesCompact) else { continue }
+
+            if matchesExactTail,
+               learnedWords.count == 1,
+               Self.isSpokenRankOnly(learnedWords[0], language: language),
+               words.count >= 2 {
+                let prefix = words[words.count - learnedWords.count - 1]
+                if ChessTranscriptNormalizer.isAmbiguousEnglishFileToken(prefix)
+                    || ChessTranscriptNormalizer.spokenFileLetter(for: prefix, language: language) != nil {
+                    continue
+                }
+            }
+
             matches.append((entry.moveNotation, learnedWords.count, entry.count))
         }
 
@@ -367,8 +397,17 @@ final class PersonalVocabularyStore {
         return ChessTranscriptNormalizer.spokenRankDigit(for: remainder, language: language)
     }
 
-    func applyCorrections(to text: String, language: RecognitionLanguage) -> String {
+    private static func isSpokenRankOnly(_ token: String, language: RecognitionLanguage) -> Bool {
+        ChessTranscriptNormalizer.spokenRankDigit(for: token, language: language) != nil
+    }
+
+    func applyCorrections(
+        to text: String,
+        language: RecognitionLanguage,
+        tracer: SpeechPipelineTracer? = nil
+    ) -> String {
         var normalized = Self.normalizePhrase(text, language: language)
+        tracer?.record("Corrections", "Before personal corrections", normalized)
         let entries = correctionEntries(for: language).sorted {
             Self.normalizePhrase($0.heard, language: language).count > Self.normalizePhrase($1.heard, language: language).count
         }
@@ -378,6 +417,7 @@ final class PersonalVocabularyStore {
             let replacement = Self.normalizePhrase(entry.replacement, language: language)
             guard !heard.isEmpty, !replacement.isEmpty else { continue }
 
+            let before = normalized
             let escaped = NSRegularExpression.escapedPattern(for: heard)
                 .replacingOccurrences(of: "\\ ", with: "\\s+")
             let boundaryPattern = "\\b\(escaped)\\b"
@@ -395,11 +435,17 @@ final class PersonalVocabularyStore {
                 with: " \(replacement) ",
                 options: []
             )
+
+            if normalized != before {
+                tracer?.record("Corrections", "\(entry.heard) → \(entry.replacement)", normalized)
+            }
         }
 
-        return normalized
+        normalized = normalized
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+        tracer?.record("Corrections", "Final corrected transcript", normalized)
+        return normalized
     }
 
     private static func compactLearningKey(_ phrase: String, language: RecognitionLanguage) -> String {
@@ -608,12 +654,22 @@ final class PersonalVocabularyStore {
         return entry
     }
 
+    private static func retiredBuiltInMovePhrases(for language: RecognitionLanguage) -> [String] {
+        switch language {
+        case .english:
+            return ["hey 3", "hey three", "ay 3", "ay three"]
+        case .german:
+            return ["hey 3", "hey three"]
+        }
+    }
+
     private static func commonTrainingPhrases(for language: RecognitionLanguage) -> [(phrase: String, moveNotation: String, count: Int)] {
         switch language {
         case .english:
             return [
                 ("d4", "d4", 350), ("d 4", "d4", 300),
                 ("e4", "e4", 350), ("e 4", "e4", 300),
+                ("e3", "e3", 340), ("e 3", "e3", 320),
                 ("c4", "c4", 300), ("c 4", "c4", 250),
                 ("e5", "e5", 350), ("e 5", "e5", 300),
                 ("d5", "d5", 300), ("d 5", "d5", 250),
@@ -630,9 +686,8 @@ final class PersonalVocabularyStore {
                 ("c6", "c6", 280), ("c 6", "c6", 260),
                 ("g1", "g1", 220), ("g 1", "g1", 200), ("c3", "c3", 240), ("c 3", "c3", 220),
                 ("h5", "h5", 200), ("h 5", "h5", 180),
-                ("a3", "a3", 420), ("a 3", "a3", 400), ("hey three", "a3", 450),
-                ("hey 3", "a3", 440), ("ay three", "a3", 430), ("hey siri", "a3", 500),
-                ("ay siri", "a3", 480), ("hey sir", "a3", 460),
+                ("a3", "a3", 420), ("a 3", "a3", 400),
+                ("hey siri", "a3", 500), ("ay siri", "a3", 480), ("hey sir", "a3", 460),
                 ("castle", "o-o", 240), ("castle kingside", "o-o", 260),
                 ("castle queenside", "o-o-o", 220)
             ]
@@ -663,7 +718,7 @@ final class PersonalVocabularyStore {
                 ("c drei", "c3", 250),
                 ("h5", "h5", 200), ("h 5", "h5", 180), ("h funf", "h5", 210), ("h fünf", "h5", 210),
                 ("a3", "a3", 420), ("a 3", "a3", 400), ("a drei", "a3", 410),
-                ("hey three", "a3", 450), ("hey siri", "a3", 500), ("hey sir", "a3", 460),
+                ("hey siri", "a3", 500), ("hey sir", "a3", 460),
                 ("kurz rochiert", "o-o", 240), ("kleine rochade", "o-o", 240), ("kurz rochade", "o-o", 240),
                 ("kurze rochade", "o-o", 240), ("rochade", "o-o", 180),
                 ("lang rochiert", "o-o-o", 240), ("lange rochade", "o-o-o", 260),
@@ -728,6 +783,7 @@ final class PersonalVocabularyStore {
                 "knight b to d7", "night b to d7", "knight be to d7", "night to be 7",
                 "knight bd7", "night bd7",
                 "rook f to d1", "rook g1 to f3", "rook e1 to e8", "rook to d1",
+                "rook a to d1", "rook a d1", "look at d1", "look at d 1",
                 "queen d1 to h5", "queen to h5", "king e1 to e2", "pawn to e4",
                 "g8 rook", "e8 queen", "f8 knight", "e8 bishop",
                 "rook g8", "queen e8", "f takes e8 rook"

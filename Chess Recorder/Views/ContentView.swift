@@ -100,6 +100,10 @@ struct ContentView: View {
         .onChange(of: settingsStore.settings.dictationPauseSeconds) { _, newValue in
             speechRecognizer.dictationPauseSeconds = newValue
         }
+        .onChange(of: developerModeStore.isSpeechPipelineTracingEnabled) { _, enabled in
+            speechRecognizer.isSpeechPipelineTracingEnabled =
+                DeveloperModeStore.isAvailable && enabled
+        }
         .onChange(of: settingsStore.settings.engineAnalysisVisible) { _, isVisible in
             if !isVisible {
                 engineAnalysis.stop()
@@ -497,6 +501,8 @@ struct ContentView: View {
     }
     
     private func setupSpeechRecognizer() {
+        speechRecognizer.isSpeechPipelineTracingEnabled =
+            DeveloperModeStore.isAvailable && developerModeStore.isSpeechPipelineTracingEnabled
         speechRecognizer.onMoveCandidatesDetected = { candidates in
             self.processVoiceMoveCandidates(candidates)
         }
@@ -553,14 +559,14 @@ struct ContentView: View {
     }
     
     @discardableResult
-    private func processVoiceMoveCandidates(_ candidates: [String]) -> Bool {
-        guard canAcceptNewMoves else { return false }
+    private func processVoiceMoveCandidates(_ candidates: [String]) -> String? {
+        guard canAcceptNewMoves else { return nil }
         print("Processing move candidates: \(candidates.joined(separator: ", "))")
-        guard chessEngine.executeVoiceCandidates(candidates) else {
+        guard let matched = chessEngine.executeVoiceCandidates(candidates) else {
             print("Could not find valid move for \(candidates.joined(separator: ", "))")
-            return false
+            return nil
         }
-        return true
+        return matched
     }
 
     @discardableResult

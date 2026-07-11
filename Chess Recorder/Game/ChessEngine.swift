@@ -23,12 +23,12 @@ class ChessEngine {
     }
 
     @discardableResult
-    func executeVoiceCandidates(_ candidates: [String]) -> Bool {
-        let success = game.executeVoiceCandidates(candidates)
-        if !success {
+    func executeVoiceCandidates(_ candidates: [String]) -> String? {
+        guard let matched = game.executeVoiceCandidates(candidates) else {
             print("Could not execute voice candidates: \(candidates.joined(separator: ", "))")
+            return nil
         }
-        return success
+        return matched
     }
 
     func legalDestinations(from: ChessPosition) -> [ChessPosition] {

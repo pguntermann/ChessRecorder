@@ -379,8 +379,9 @@ struct SettingsView: View {
                 if developerModeStore.showsDeveloperSettings {
                     Section {
                         Toggle("Screenshot mode", isOn: $developerModeStore.isScreenshotModeEnabled)
+                        Toggle("Speech pipeline trace", isOn: $developerModeStore.isSpeechPipelineTracingEnabled)
                     } footer: {
-                        Text("Hides the system status bar for clean App Store screenshots.")
+                        Text("Screenshot mode hides the system status bar. Speech pipeline trace logs each ASR and normalization step to the Xcode console when a move is processed.")
                     }
                 }
             }

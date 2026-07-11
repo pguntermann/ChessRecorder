@@ -74,13 +74,15 @@ class SpeechRecognizer {
     private var recognitionRecoveryTask: Task<Void, Never>?
     private var recordingSessionStartedAt: Date?
     private var lastPartialLoggedGeneration = 0
+    private var lastASRTranscriptBeforeMerge = ""
+    var isSpeechPipelineTracingEnabled = false
     
     private let undoCooldown: TimeInterval = 1.0
     private let finalPauseNanoseconds: UInt64 = 150_000_000
     var dictationPauseSeconds: Double = 0.9
     
     var onMoveDetected: ((String) -> Bool)?
-    var onMoveCandidatesDetected: (([String]) -> Bool)?
+    var onMoveCandidatesDetected: (([String]) -> String?)?
     var onUndoDetected: (() -> Void)?
     
     var isReadyForUse: Bool {
@@ -604,7 +606,9 @@ class SpeechRecognizer {
             }
             
             guard let result else { return }
-            let newTranscript = self.mergeDroppedCaptureFile(in: result.bestTranscription.formattedString)
+            let rawASR = result.bestTranscription.formattedString
+            self.lastASRTranscriptBeforeMerge = rawASR
+            let newTranscript = self.mergeDroppedCaptureFile(in: rawASR)
             
             Task { @MainActor in
                 guard generation == self.recognitionGeneration else { return }
@@ -684,27 +688,45 @@ class SpeechRecognizer {
     
     @MainActor
     private func processTranscript(_ text: String) {
+        let tracer = isSpeechPipelineTracingEnabled ? SpeechPipelineTracer(enabled: true) : nil
+        if let tracer {
+            tracer.record("ASR", "Raw hypothesis", lastASRTranscriptBeforeMerge.isEmpty ? text : lastASRTranscriptBeforeMerge)
+            if !lastASRTranscriptBeforeMerge.isEmpty, lastASRTranscriptBeforeMerge != text {
+                tracer.record("ASR", "After capture-file merge", text)
+            }
+        }
+
         let correctedText = correctedTranscript(for: text)
 
         if correctedText == lastAcceptedTranscript {
+            tracer?.printReport(
+                language: currentLanguage,
+                failureReason: "Duplicate transcript — skipped"
+            )
             return
         }
         
         let candidates = MoveInterpreter.candidates(
-            from: correctedText,
+            from: text,
             language: currentLanguage,
-            personalVocabulary: vocabularyStore
+            personalVocabulary: vocabularyStore,
+            tracer: tracer
         )
         guard !candidates.isEmpty else {
+            tracer?.printReport(
+                language: currentLanguage,
+                failureReason: "No move candidates parsed"
+            )
             noteProcessingFailure(correctedText, attemptedMoves: [])
             return
         }
         
         print("Move candidates: \(candidates.joined(separator: ", "))")
 
-        if onMoveCandidatesDetected?(candidates) == true {
-            print("Accepted move from candidates: \(candidates.first ?? "")")
-            lastProcessedMove = candidates.first
+        if let acceptedMove = onMoveCandidatesDetected?(candidates) {
+            print("Accepted move from candidates: \(acceptedMove)")
+            tracer?.printReport(language: currentLanguage, acceptedMove: acceptedMove)
+            lastProcessedMove = acceptedMove
             lastAcceptedTranscript = correctedText
             pendingFailure = nil
             prepareForNextMove()
@@ -721,6 +743,7 @@ class SpeechRecognizer {
             print("Trying move: \(move)")
             if onMoveDetected?(move) == true {
                 print("Accepted move: \(move)")
+                tracer?.printReport(language: currentLanguage, acceptedMove: move)
                 lastProcessedMove = move
                 lastAcceptedTranscript = correctedText
                 pendingFailure = nil
@@ -732,6 +755,11 @@ class SpeechRecognizer {
             rejectedMoves.append(move)
         }
         
+        tracer?.printReport(
+            language: currentLanguage,
+            rejectedMoves: rejectedMoves,
+            failureReason: "No legal move matched"
+        )
         noteProcessingFailure(correctedText, attemptedMoves: rejectedMoves)
     }
     
@@ -746,8 +774,14 @@ class SpeechRecognizer {
 
     @MainActor
     private func correctedTranscript(for text: String) -> String {
-        let normalized = ChessTranscriptNormalizer.normalizeForPhraseMatching(text, language: currentLanguage)
-        return vocabularyStore?.applyCorrections(to: normalized, language: currentLanguage) ?? normalized
+        let normalized = ChessTranscriptNormalizer.normalizeForPhraseMatching(
+            text,
+            language: currentLanguage
+        )
+        return vocabularyStore?.applyCorrections(
+            to: normalized,
+            language: currentLanguage
+        ) ?? normalized
     }
 
     /// Restores a pawn file letter when ASR revises a partial like "d takes c4" into "takes c4".
@@ -797,6 +831,7 @@ class SpeechRecognizer {
                 "d takes", "d takes c4", "d takes e4", "detects", "detects c4",
                 "e takes", "e takes d5", "e takes f5", "he takes", "he takes f5",
                 "knight b to d7", "night to be 7", "knight bd7",
+                "rook a to d1", "rook a d1", "look at d1",
                 "e4", "d4", "exd5", "nf3", "nf6", "nc3", "nc6", "nxd4", "qxb4", "O-O"
             ]
         case .german:

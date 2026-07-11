@@ -13,13 +13,23 @@ nonisolated enum MoveInterpreter {
     static func candidates(
         from text: String,
         language: RecognitionLanguage,
-        personalVocabulary: PersonalVocabularyStore? = nil
+        personalVocabulary: PersonalVocabularyStore? = nil,
+        tracer: SpeechPipelineTracer? = nil
     ) -> [String] {
-        let normalized = normalizeTranscript(text, language: language, personalVocabulary: personalVocabulary)
-        let allTokens = coalesceTokens(tokenize(normalized), language: language)
+        let normalized = normalizeTranscript(
+            text,
+            language: language,
+            personalVocabulary: personalVocabulary,
+            tracer: tracer
+        )
+        let rawTokens = tokenize(normalized)
+        tracer?.record("Move parsing", "Tokenized", rawTokens.joined(separator: " "))
+        let allTokens = coalesceTokens(rawTokens, language: language)
+        tracer?.record("Move parsing", "Coalesced tokens", allTokens.joined(separator: " "))
 
         // Specific castling phrases must win over generic personal phrases like "rochade" -> O-O.
         if let specificCastle = extractSpecificCastling(from: normalized, language: language) {
+            tracer?.record("Move parsing", "Specific castling phrase", specificCastle)
             return [specificCastle]
         }
 
@@ -34,8 +44,15 @@ nonisolated enum MoveInterpreter {
             }
         }
 
-        if let personalVocabulary {
-            append(personalVocabulary.candidateMoves(for: normalized, language: language))
+        if let personalVocabulary,
+           !isAmbiguousEnglishFileRankUtterance(allTokens, language: language) {
+            let personalMoves = personalVocabulary.candidateMoves(for: normalized, language: language)
+            if !personalMoves.isEmpty {
+                tracer?.record("Move parsing", "User phrase matches", personalMoves.joined(separator: ", "))
+            }
+            append(personalMoves)
+        } else if isAmbiguousEnglishFileRankUtterance(allTokens, language: language) {
+            tracer?.record("Move parsing", "User phrase matches", "(skipped — ambiguous file+rank)")
         }
 
         var interpreted: [String] = []
@@ -53,20 +70,55 @@ nonisolated enum MoveInterpreter {
             )
             if !tokenResults.isEmpty {
                 interpreted = tokenResults
+                tracer?.record("Move parsing", "Parsed from window (\(size) tokens): \"\(phrase)\"", tokenResults.joined(separator: ", "))
                 break
             }
         }
 
+        if interpreted.isEmpty {
+            tracer?.record("Move parsing", "Parsed from tokens", "(none)")
+        }
+
         // Prefer parsed moves over learned shortcuts when both are available.
         let combined = deduplicatedMoves([interpreted, results].flatMap { $0 })
-        if language == .german {
-            return expandGermanFileConfusionCandidates(combined)
+        let ranked = prioritizeCandidates(
+            combined,
+            hasCaptureIntent: allTokens.contains(where: isCaptureVerb)
+        )
+        tracer?.record("Move parsing", "Before file-confusion expansion", ranked.joined(separator: ", "))
+        let expanded = expandFileConfusionCandidates(ranked)
+        if expanded.count > ranked.count {
+            let added = expanded.filter { move in
+                !ranked.contains { $0.caseInsensitiveCompare(move) == .orderedSame }
+            }
+            tracer?.record("Move parsing", "File-confusion variants added", added.joined(separator: ", "))
         }
-        return combined
+        tracer?.record("Move parsing", "Final candidates", expanded.joined(separator: ", "))
+        return expanded
     }
 
-    /// Adds e/g/a file variants — German ASR often confuses the short "e" sound.
-    private static func expandGermanFileConfusionCandidates(_ moves: [String]) -> [String] {
+    private static func prioritizeCandidates(_ moves: [String], hasCaptureIntent: Bool) -> [String] {
+        guard !hasCaptureIntent else { return moves }
+
+        var squares: [String] = []
+        var others: [String] = []
+        var seen = Set<String>()
+
+        for move in moves {
+            let key = move.lowercased()
+            guard seen.insert(key).inserted else { continue }
+            if move.count == 2, sanitizeSquare(move) != nil {
+                squares.append(move)
+            } else {
+                others.append(move)
+            }
+        }
+
+        return squares + others
+    }
+
+    /// Adds nearby file variants when ASR confuses short vowels (e/g/a, c/e, b/d).
+    private static func expandFileConfusionCandidates(_ moves: [String]) -> [String] {
         var expanded = moves
         var seen = Set(moves.map { $0.lowercased() })
 
@@ -142,10 +194,10 @@ nonisolated enum MoveInterpreter {
             for move in extractPieceSourceTarget(from: tokens, piecePrefix: englishPiecePrefix) { add(move) }
             for move in extractPieceCaptures(from: tokens, piecePrefix: englishPiecePrefix, language: language) { add(move) }
             for move in extractPawnCaptures(from: pawnCaptureTokens, language: language) { add(move) }
+            for move in extractSpacedSquares(from: tokens, language: language) { add(move) }
             for move in extractImplicitPawnCaptures(from: tokens, language: language) { add(move) }
             for move in extractSquareToSquareMoves(from: tokens, language: language) { add(move) }
             for move in extractPieceToSquare(from: tokens, piecePrefix: englishPiecePrefix) { add(move) }
-            for move in extractSpacedSquares(from: tokens) { add(move) }
             if !hasCaptureVerb && !hasPieceName {
                 add(latestSquare(from: tokens, normalize: normalizeEnglishToken))
                 add(normalizeEnglishToken(tokens.last ?? ""))
@@ -157,10 +209,10 @@ nonisolated enum MoveInterpreter {
             for move in extractPieceSourceTarget(from: tokens, piecePrefix: germanPiecePrefix) { add(move) }
             for move in extractPieceCaptures(from: tokens, piecePrefix: germanPiecePrefix, language: language) { add(move) }
             for move in extractPawnCaptures(from: pawnCaptureTokens, language: language) { add(move) }
+            for move in extractSpacedSquares(from: tokens, language: language) { add(move) }
             for move in extractImplicitPawnCaptures(from: tokens, language: language) { add(move) }
             for move in extractSquareToSquareMoves(from: tokens, language: language) { add(move) }
             for move in extractPieceToSquare(from: tokens, piecePrefix: germanPiecePrefix) { add(move) }
-            for move in extractSpacedSquares(from: tokens) { add(move) }
             if !hasCaptureVerb && !hasPieceName {
                 add(latestSquare(from: tokens, normalize: normalizeGermanToken))
                 add(normalizeGermanToken(tokens.last ?? ""))
@@ -181,10 +233,19 @@ nonisolated enum MoveInterpreter {
     private static func normalizeTranscript(
         _ text: String,
         language: RecognitionLanguage,
-        personalVocabulary: PersonalVocabularyStore?
+        personalVocabulary: PersonalVocabularyStore?,
+        tracer: SpeechPipelineTracer? = nil
     ) -> String {
-        let normalized = ChessTranscriptNormalizer.normalizeForPhraseMatching(text, language: language)
-        return personalVocabulary?.applyCorrections(to: normalized, language: language) ?? normalized
+        let normalized = ChessTranscriptNormalizer.normalizeForPhraseMatching(
+            text,
+            language: language,
+            tracer: tracer
+        )
+        return personalVocabulary?.applyCorrections(
+            to: normalized,
+            language: language,
+            tracer: tracer
+        ) ?? normalized
     }
     
     private static func tokenize(_ text: String) -> [String] {
@@ -229,11 +290,13 @@ nonisolated enum MoveInterpreter {
                !isCaptureVerb(words[index + 1]),
                !isCaptureVerb(words[index]),
                !(index > 0 && isCaptureVerb(words[index - 1])) {
-                let fileToken = ChessTranscriptNormalizer
-                    .spokenFileLetter(for: words[index], language: language)
-                    .map(String.init) ?? words[index]
-                if let square = combineSquare(file: fileToken, rank: words[index + 1]) {
-                    result.append(square)
+                let candidates = fileRankSquareCandidates(
+                    fileToken: words[index],
+                    rankToken: words[index + 1],
+                    language: language
+                )
+                if candidates.count == 1 {
+                    result.append(candidates[0])
                     index += 2
                     continue
                 }
@@ -537,21 +600,29 @@ nonisolated enum MoveInterpreter {
             let piece = piecePrefix(words[index - 1])
             guard !piece.isEmpty else { continue }
 
-            if let square = sanitizeSquare(words[index]) {
-                if !isPromotionRank(square) {
-                    moves.append(piece + square)
-                }
+            var target = index
+            while target < words.count && isPieceMoveFiller(words[target]) {
+                target += 1
+            }
+            guard target < words.count else { continue }
+
+            if let square = sanitizeSquare(words[target]), !isPromotionRank(square) {
+                moves.append(piece + square)
                 continue
             }
 
-            if index + 1 < words.count,
-               isMovePreposition(words[index]),
-               let square = sanitizeSquare(words[index + 1]),
+            if target + 1 < words.count,
+               isMovePreposition(words[target]),
+               let square = sanitizeSquare(words[target + 1]),
                !isPromotionRank(square) {
                 moves.append(piece + square)
             }
         }
         return moves
+    }
+
+    private static func isPieceMoveFiller(_ word: String) -> Bool {
+        ["at"].contains(word.lowercased()) || isMovePreposition(word)
     }
 
     private static func extractPieceSourceTarget(
@@ -682,11 +753,13 @@ nonisolated enum MoveInterpreter {
             guard !targets.isEmpty else { continue }
 
             let source = words[verbIndex - 1]
+            let sourceFiles = sourceFileLetters(from: source, language: language)
 
             for target in targets {
-                if source.count == 1, let file = source.first, "abcdefgh".contains(file) {
+                for file in sourceFiles {
                     moves.append(String(file) + "x" + target)
-                } else if let fromSquare = sanitizeSquare(source) {
+                }
+                if let fromSquare = sanitizeSquare(source) {
                     moves.append(fromSquare + target)
                     moves.append(String(fromSquare.first!) + "x" + target)
                     if source.count == 2 {
@@ -711,18 +784,22 @@ nonisolated enum MoveInterpreter {
 
         for index in 1..<words.count {
             let sourceToken = words[index - 1]
-            let targets = squareCandidates(from: words[index], language: language)
-            guard !targets.isEmpty else { continue }
+            if fileRankSquareCandidates(
+                fileToken: sourceToken,
+                rankToken: words[index],
+                language: language
+            ).count > 1 {
+                // "hey 3" is a square utterance, not an implicit capture onto every rank-3 square.
+                continue
+            }
 
-            let sourceFile: Character? = {
-                if sourceToken.count == 1, let file = sourceToken.first, "abcdefgh".contains(file) {
-                    return file
-                }
-                return ChessTranscriptNormalizer.spokenFileLetter(for: sourceToken, language: language)
-            }()
+            let targets = squareCandidates(from: words[index], language: language)
+            guard targets.count == 1 else { continue }
+
+            let sourceFiles = sourceFileLetters(from: sourceToken, language: language)
 
             for target in targets {
-                if let sourceFile {
+                for sourceFile in sourceFiles {
                     moves.append(String(sourceFile) + "x" + target)
                 }
                 if let fromSquare = sanitizeSquare(sourceToken), let file = fromSquare.first {
@@ -753,9 +830,12 @@ nonisolated enum MoveInterpreter {
 
             var destinations = squareCandidates(from: words[cursor], language: language)
             if destinations.isEmpty,
-               cursor + 1 < words.count,
-               let square = combineSquare(file: words[cursor], rank: words[cursor + 1]) {
-                destinations = [square]
+               cursor + 1 < words.count {
+                destinations = fileRankSquareCandidates(
+                    fileToken: words[cursor],
+                    rankToken: words[cursor + 1],
+                    language: language
+                )
             }
 
             for to in destinations where to != from {
@@ -766,13 +846,14 @@ nonisolated enum MoveInterpreter {
         return moves
     }
 
-    private static func extractSpacedSquares(from words: [String]) -> [String] {
+    private static func extractSpacedSquares(from words: [String], language: RecognitionLanguage) -> [String] {
         guard words.count >= 2 else { return [] }
-        
-        if let square = combineSquare(file: words[words.count - 2], rank: words[words.count - 1]) {
-            return [square]
-        }
-        return []
+
+        return fileRankSquareCandidates(
+            fileToken: words[words.count - 2],
+            rankToken: words[words.count - 1],
+            language: language
+        )
     }
     
     private static func extractPatterns(from text: String, language: RecognitionLanguage, allowBareSquares: Bool) -> [String] {
@@ -1133,12 +1214,56 @@ nonisolated enum MoveInterpreter {
             return candidates
         }
 
-        if targetIndex + 1 < words.count,
-           let square = combineSquare(file: words[targetIndex], rank: words[targetIndex + 1]) {
-            return [square]
+        if targetIndex + 1 < words.count {
+            let candidates = fileRankSquareCandidates(
+                fileToken: words[targetIndex],
+                rankToken: words[targetIndex + 1],
+                language: language
+            )
+            if !candidates.isEmpty {
+                return candidates
+            }
         }
 
         return []
+    }
+
+    private static func isAmbiguousEnglishFileRankUtterance(_ words: [String], language: RecognitionLanguage) -> Bool {
+        language == .english && ChessTranscriptNormalizer.isAmbiguousEnglishFileRankUtterance(words)
+    }
+
+    private static let ambiguousEnglishFileLetters: [Character] = ["e", "g", "a"]
+
+    private static func sourceFileLetters(from token: String, language: RecognitionLanguage) -> [Character] {
+        if token.count == 1, let file = token.first, "abcdefgh".contains(file) {
+            return [file]
+        }
+        if let file = ChessTranscriptNormalizer.spokenFileLetter(for: token, language: language) {
+            return [file]
+        }
+        if language == .english, ChessTranscriptNormalizer.isAmbiguousEnglishFileToken(token) {
+            return ambiguousEnglishFileLetters
+        }
+        return []
+    }
+
+    private static func fileRankSquareCandidates(
+        fileToken: String,
+        rankToken: String,
+        language: RecognitionLanguage
+    ) -> [String] {
+        if let square = combineSquare(file: fileToken, rank: rankToken) {
+            return [square]
+        }
+        guard language == .english,
+              ChessTranscriptNormalizer.isAmbiguousEnglishFileToken(fileToken) else {
+            return []
+        }
+        let normalizedRank = ChessTranscriptNormalizer.normalizeSpokenRankToken(rankToken, language: language)
+        guard normalizedRank.count == 1, "12345678".contains(normalizedRank) else {
+            return []
+        }
+        return ambiguousEnglishFileLetters.map { String($0) + normalizedRank }
     }
     
     private static func combineSquare(file: String, rank: String) -> String? {

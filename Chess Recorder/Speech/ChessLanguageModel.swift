@@ -373,6 +373,7 @@ enum ChessLanguageModel {
                 "a6", "a 6", "hey six", "ay six",
                 "a3", "a 3", "hey three", "hey 3",
                 "rook e1 to e8", "rook f to d1", "rook g1 to f3", "rook to d1",
+                "rook a to d1", "rook a d1", "look at d1",
                 "queen d1 to h5", "queen to h5", "king e1 to e2", "pawn e4", "pawn to e4",
                 "e2 to d4", "g1 to f3", "e2 nach d4"
             ] {

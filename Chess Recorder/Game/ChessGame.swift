@@ -166,22 +166,24 @@ class ChessGame {
     }
 
     /// Tries spoken move candidates against the current legal moves (same path as touch input).
+    /// Returns the notation that matched, if any.
     @discardableResult
-    func executeVoiceCandidates(_ candidates: [String]) -> Bool {
-        guard isAtLatestMove else { return false }
+    func executeVoiceCandidates(_ candidates: [String]) -> String? {
+        guard isAtLatestMove else { return nil }
 
         for notation in candidates {
             if executeSAN(notation) {
-                return true
+                return notation
             }
         }
 
         let legalMoves = enumerateLegalKitMoves()
         guard let matched = LegalMoveResolver.matchBest(candidates: candidates, among: legalMoves) else {
-            return false
+            return nil
         }
 
-        return applyLegalMove(matched)
+        guard applyLegalMove(matched) else { return nil }
+        return matched.san
     }
 
     @discardableResult

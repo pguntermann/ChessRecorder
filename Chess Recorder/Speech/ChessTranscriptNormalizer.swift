@@ -11,18 +11,21 @@ import Foundation
 enum ChessTranscriptNormalizer {
     
     /// Applies locale-aware ASR corrections before move parsing.
-    static func normalize(_ text: String, language: RecognitionLanguage) -> String {
+    static func normalize(_ text: String, language: RecognitionLanguage, tracer: SpeechPipelineTracer? = nil) -> String {
         var result = text
             .precomposedStringWithCanonicalMapping
             .lowercased()
         
         result = normalizeUnicode(result)
+        tracer?.record("Normalization", "Unicode fold", result)
         
         switch language {
         case .english:
             result = normalizeEnglish(result)
+            tracer?.record("Normalization", "English locale rules", result)
         case .german:
             result = normalizeGerman(result)
+            tracer?.record("Normalization", "German locale rules", result)
         }
         
         return result
@@ -54,6 +57,9 @@ enum ChessTranscriptNormalizer {
             (#"\bshop\s+(?=takes|take|to|captures|capture)\b"#, ""),
             (#"\bbrooke\b"#, "rook"),
             (#"\brock\b"#, "rook"),
+            // "rook a to d1" is often heard as "look at d1"
+            (#"\b(look|rock)\s+at\s+([a-h][1-8])\b"#, "rook $2"),
+            (#"\b(look|rock)\s+at\s+([a-h])\s+(one|two|three|four|five|six|seven|eight|[1-8])\b"#, "rook $2 $3"),
             (#"\blook\s+(takes|take|captures|capture|to)\b"#, "rook $1"),
             (#"\blook\s+([a-h][1-8])\b"#, "rook $1"),
             (#"\blook\s+([a-h])\s+(to|takes|take|captures|capture)\b"#, "rook $1 $2"),
@@ -68,7 +74,6 @@ enum ChessTranscriptNormalizer {
         
         result = applyRegexReplacements(result, patterns: [
             (#"\b(see|sea|cee|she)\s+(?=\#(englishRankToken))\b"#, "c "),
-            (#"\b(hey|ay)\s+(?=\#(englishRankToken))\b"#, "a "),
             (#"\b(bee|be)\s+(?=\#(englishRankToken))\b"#, "b "),
             (#"\bdee\s+(?=\#(englishRankToken))\b"#, "d "),
             (#"\b(he|ee)\s+(?=\#(englishRankToken))\b"#, "e "),
@@ -90,15 +95,10 @@ enum ChessTranscriptNormalizer {
             (#"\b(hey|ay)\s+seri\b"#, "a3"),
             (#"\b(hey|ay)\s+sery\b"#, "a3"),
             (#"\b(hey|ay)\s+cery\b"#, "a3"),
-            (#"\b(hey|ay)\s+three\b"#, "a3"),
-            (#"\b(hey|ay)\s+tree\b"#, "a3"),
-            (#"\b(hey|ay)\s+free\b"#, "a3"),
             (#"\ba\s+siri\b"#, "a3"),
             (#"\ba\s+sir\b"#, "a3"),
             (#"\b8\s+3\b"#, "a3"),
-            (#"\b83\b"#, "a3"),
-            (#"^\s*hey\s*$"#, "a"),
-            (#"^\s*ay\s*$"#, "a")
+            (#"\b83\b"#, "a3")
         ])
     }
 
@@ -170,6 +170,22 @@ enum ChessTranscriptNormalizer {
     private static let germanRankPattern =
         "[1-8]|eins|zwei|drei|vier|funf|fünf|sechs|sieben|acht"
 
+    /// "hey" and "ay" sound like both a-file and e-file — leave them ambiguous for move parsing.
+    static let ambiguousEnglishFileTokens: Set<String> = ["hey", "ay"]
+
+    static func isAmbiguousEnglishFileToken(_ token: String) -> Bool {
+        ambiguousEnglishFileTokens.contains(token.lowercased())
+    }
+
+    /// Trailing tokens like "hey 3" where the file homophone is vowel-ambiguous.
+    static func isAmbiguousEnglishFileRankUtterance(_ words: [String]) -> Bool {
+        guard words.count >= 2 else { return false }
+        let fileToken = words[words.count - 2]
+        let rankToken = words[words.count - 1]
+        guard isAmbiguousEnglishFileToken(fileToken) else { return false }
+        return spokenRankDigit(for: rankToken, language: .english) != nil
+    }
+
     private static let englishSpokenFileLetters: [String: Character] = [
         "see": "c", "sea": "c", "cee": "c", "she": "c",
         "bee": "b", "be": "b",
@@ -178,7 +194,7 @@ enum ChessTranscriptNormalizer {
         "gee": "g",
         "aitch": "h", "each": "h",
         "eff": "f", "ef": "f",
-        "hey": "a", "ay": "a"
+        "a": "a"
     ]
 
     private static let germanSpokenFileLetters: [String: Character] = [
@@ -266,12 +282,15 @@ enum ChessTranscriptNormalizer {
             // "night to be 7" — ASR dropped the b-file disambiguator before "to"
             (#"\b(\#(pieces))\s+to\s+(bee|be)\s+"#, "$1 b to "),
             // "knight be to d7" — homophone "be" used as the b-file disambiguator
-            (#"\b(\#(pieces))\s+(bee|be)\s+(?=to\b)"#, "$1 b ")
+            (#"\b(\#(pieces))\s+(bee|be)\s+(?=to\b)"#, "$1 b "),
+            // "rook a to d1" → "look at d1"
+            (#"\b(look|rock)\s+at\s+([a-h][1-8])\b"#, "rook $2"),
+            (#"\b(look|rock)\s+at\s+([a-h])\s+(one|two|three|four|five|six|seven|eight|[1-8])\b"#, "rook $2 $3")
         ]
     }
 
     static func englishDetectsMishearingPatterns() -> [(String, String)] {
-        let homophones = englishSpokenFileLetters.keys
+        let homophones = (Array(englishSpokenFileLetters.keys) + Array(ambiguousEnglishFileTokens))
             .sorted { $0.count > $1.count }
             .joined(separator: "|")
         let captureTarget = "(?:\(homophones)|[a-h])(?:[1-8]|\\s+(?:\(englishRankToken)))"
@@ -527,22 +546,29 @@ enum ChessTranscriptNormalizer {
     }
     
     /// Shared normalization for learned-phrase matching and move parsing.
-    static func normalizeForPhraseMatching(_ text: String, language: RecognitionLanguage) -> String {
-        var result = normalize(text, language: language)
+    static func normalizeForPhraseMatching(
+        _ text: String,
+        language: RecognitionLanguage,
+        tracer: SpeechPipelineTracer? = nil
+    ) -> String {
+        tracer?.record("Normalization", "Input", text)
+        var result = normalize(text, language: language, tracer: tracer)
 
         if language == .english {
-            result = fixEnglishDetectsMishearing(in: result)
-            result = fixEnglishPieceMoveMishearings(in: result)
+            result = tracer?.recordTransform("Normalization", "English detects fix", result, transform: fixEnglishDetectsMishearing)
+                ?? fixEnglishDetectsMishearing(in: result)
+            result = tracer?.recordTransform("Normalization", "English piece-move fix", result, transform: fixEnglishPieceMoveMishearings)
+                ?? fixEnglishPieceMoveMishearings(in: result)
         }
         
         result = result
             .replacingOccurrences(of: "0-0-0", with: "o-o-o")
             .replacingOccurrences(of: "0-0", with: "o-o")
+        tracer?.record("Normalization", "Castling digit fix", result)
         
         let spokenLetters: [(String, String)] = [
             ("see ", "c "), (" see ", " c "), ("sea ", "c "), (" sea ", " c "),
             ("she ", "c "), (" she ", " c "),
-            ("hey ", "a "), (" hey ", " a "), ("ay ", "a "), (" ay ", " a "),
             ("bee ", "b "), (" bee ", " b "),
             ("dee ", "d "), (" dee ", " d "),
             ("ee ", "e "), (" ee ", " e "),
@@ -553,18 +579,34 @@ enum ChessTranscriptNormalizer {
         for (wrong, right) in spokenLetters {
             result = result.replacingOccurrences(of: wrong, with: right)
         }
+        tracer?.record("Normalization", "Spoken file homophones", result)
 
-        result = resolveSpokenFileBeforeDestinationSquare(in: result, language: language)
-        result = fixSpokenFileRankPhrases(in: result, language: language)
-        result = inferArticleAsCaptureVerb(in: result, language: language)
-        result = stripSpokenArticles(from: result, language: language)
+        result = tracer?.recordTransform("Normalization", "File before destination square", result) {
+            resolveSpokenFileBeforeDestinationSquare(in: $0, language: language)
+        } ?? resolveSpokenFileBeforeDestinationSquare(in: result, language: language)
+        result = tracer?.recordTransform("Normalization", "Spoken file + rank phrases", result) {
+            fixSpokenFileRankPhrases(in: $0, language: language)
+        } ?? fixSpokenFileRankPhrases(in: result, language: language)
+        result = tracer?.recordTransform("Normalization", "Article as capture verb", result) {
+            inferArticleAsCaptureVerb(in: $0, language: language)
+        } ?? inferArticleAsCaptureVerb(in: result, language: language)
+        result = tracer?.recordTransform("Normalization", "Strip spoken articles", result) {
+            stripSpokenArticles(from: $0, language: language)
+        } ?? stripSpokenArticles(from: result, language: language)
         if language == .english {
-            result = fixEnglishSquareGarbage(in: result)
-            result = fixEnglishAFileMishearings(in: result)
-            result = fixEnglishPawnCaptureMishearings(in: result)
+            result = tracer?.recordTransform("Normalization", "English square garbage fix", result, transform: fixEnglishSquareGarbage)
+                ?? fixEnglishSquareGarbage(in: result)
+            result = tracer?.recordTransform("Normalization", "English a-file mishearings", result, transform: fixEnglishAFileMishearings)
+                ?? fixEnglishAFileMishearings(in: result)
+            result = tracer?.recordTransform("Normalization", "English pawn capture fix", result, transform: fixEnglishPawnCaptureMishearings)
+                ?? fixEnglishPawnCaptureMishearings(in: result)
         }
-        result = fixMisheardSplitSquares(in: result, language: language)
-        result = stripSpokenCheckAnnotations(from: result, language: language)
+        result = tracer?.recordTransform("Normalization", "Split square repair", result) {
+            fixMisheardSplitSquares(in: $0, language: language)
+        } ?? fixMisheardSplitSquares(in: result, language: language)
+        result = tracer?.recordTransform("Normalization", "Strip check annotations", result) {
+            stripSpokenCheckAnnotations(from: $0, language: language)
+        } ?? stripSpokenCheckAnnotations(from: result, language: language)
         
         if language == .german {
             let germanNumbers: [(String, String)] = [
@@ -574,6 +616,7 @@ enum ChessTranscriptNormalizer {
             for (spoken, digit) in germanNumbers {
                 result = result.replacingOccurrences(of: spoken, with: digit)
             }
+            tracer?.record("Normalization", "German spoken numbers", result)
         } else {
             let englishNumbers: [(String, String)] = [
                 ("one", "1"), ("two", "2"), ("three", "3"), ("four", "4"),
@@ -582,15 +625,22 @@ enum ChessTranscriptNormalizer {
             for (spoken, digit) in englishNumbers {
                 result = result.replacingOccurrences(of: spoken, with: digit)
             }
-            result = fixEnglishCompactMoveBlobs(in: result)
-            result = fixInvalidDigitFileSquares(in: result)
+            tracer?.record("Normalization", "English spoken numbers", result)
+            result = tracer?.recordTransform("Normalization", "English compact move blobs", result, transform: fixEnglishCompactMoveBlobs)
+                ?? fixEnglishCompactMoveBlobs(in: result)
+            result = tracer?.recordTransform("Normalization", "Invalid digit file squares", result, transform: fixInvalidDigitFileSquares)
+                ?? fixInvalidDigitFileSquares(in: result)
         }
 
-        result = inferDroppedPawnCapture(in: result, language: language)
+        result = tracer?.recordTransform("Normalization", "Dropped pawn capture inference", result) {
+            inferDroppedPawnCapture(in: $0, language: language)
+        } ?? inferDroppedPawnCapture(in: result, language: language)
         
-        return result
+        result = result
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
+        tracer?.record("Normalization", "Final normalized transcript", result)
+        return result
     }
 
     /// ASR often mishears ranks like "f6" as "f3 six" (f-three-six).

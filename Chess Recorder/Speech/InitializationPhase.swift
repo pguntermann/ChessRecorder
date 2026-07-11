@@ -15,7 +15,7 @@ enum InitializationContext: Equatable {
             return InitializationPhase.orderedSteps
         case .speechModelRebuild:
             return [
-                .loadingPersonalVocabulary,
+                .preparingSpeechVocabulary,
                 .buildingTrainingData,
                 .exportingTrainingData,
                 .compilingSpeechModel
@@ -28,7 +28,7 @@ enum InitializationContext: Equatable {
 
 enum InitializationPhase: Equatable, CaseIterable {
     case requestingPermissions
-    case loadingPersonalVocabulary
+    case preparingSpeechVocabulary
     case buildingTrainingData
     case exportingTrainingData
     case compilingSpeechModel
@@ -37,7 +37,7 @@ enum InitializationPhase: Equatable, CaseIterable {
 
     static let orderedSteps: [InitializationPhase] = [
         .requestingPermissions,
-        .loadingPersonalVocabulary,
+        .preparingSpeechVocabulary,
         .buildingTrainingData,
         .exportingTrainingData,
         .compilingSpeechModel,
@@ -49,8 +49,8 @@ enum InitializationPhase: Equatable, CaseIterable {
         switch self {
         case .requestingPermissions:
             return "Checking permissions"
-        case .loadingPersonalVocabulary:
-            return "Loading personal vocabulary"
+        case .preparingSpeechVocabulary:
+            return "Preparing speech vocabulary"
         case .buildingTrainingData:
             return "Building chess vocabulary"
         case .exportingTrainingData:
@@ -68,8 +68,8 @@ enum InitializationPhase: Equatable, CaseIterable {
         switch self {
         case .requestingPermissions:
             return "Verifying microphone and speech recognition access."
-        case .loadingPersonalVocabulary:
-            return "Loading your taught phrases and corrections."
+        case .preparingSpeechVocabulary:
+            return "Setting up built-in chess phrases, speech recognition, and any phrases you taught."
         case .buildingTrainingData:
             return "Assembling move phrases, squares, and piece names."
         case .exportingTrainingData:

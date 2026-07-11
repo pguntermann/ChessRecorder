@@ -62,18 +62,24 @@ struct ContentView: View {
             if !isAppReady {
                 InitializationOverlay(
                     phase: speechRecognizer.initializationPhase,
-                    context: .startup
+                    context: .startup,
+                    statusDetail: speechRecognizer.initializationStatusDetail
                 )
                 .transition(.opacity)
             } else if showSpeechModelRebuildOverlay || speechRecognizer.isRebuildingLanguageModel {
                 InitializationOverlay(
                     phase: speechRecognizer.initializationPhase,
-                    context: .speechModelRebuild
+                    context: .speechModelRebuild,
+                    statusDetail: speechRecognizer.initializationStatusDetail
                 )
             }
         }
         .animation(.easeInOut(duration: 0.25), value: isAppReady)
         .task {
+            // Allow the initialization overlay to render before startup work blocks the main actor.
+            await Task.yield()
+            try? await Task.sleep(for: .milliseconds(50))
+
             setupSpeechRecognizer()
             speechRecognizer.dictationPauseSeconds = settingsStore.settings.dictationPauseSeconds
             engineAnalysis.configure(
@@ -552,7 +558,7 @@ struct ContentView: View {
             do {
                 try speechRecognizer.startRecording()
             } catch {
-                print("Failed to start recording: \(error)")
+                print("SpeechRecognizer: failed to start recording from UI — \(error.localizedDescription)")
             }
         }
     }

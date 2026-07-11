@@ -8,6 +8,7 @@ import SwiftUI
 struct InitializationOverlay: View {
     let phase: InitializationPhase
     let context: InitializationContext
+    var statusDetail: String = ""
     var presentation: Presentation = .fullscreen
 
     enum Presentation {
@@ -43,6 +44,14 @@ struct InitializationOverlay: View {
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                         .multilineTextAlignment(.center)
+
+                    if !statusDetail.isEmpty {
+                        Text(statusDetail)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.top, 2)
+                    }
                 }
 
                 VStack(alignment: .leading, spacing: 10) {
@@ -65,7 +74,14 @@ struct InitializationOverlay: View {
         }
         .ignoresSafeArea()
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(activePhase.title). \(activePhase.detail)")
+        .accessibilityLabel(accessibilitySummary)
+    }
+
+    private var accessibilitySummary: String {
+        if statusDetail.isEmpty {
+            return "\(activePhase.title). \(activePhase.detail)"
+        }
+        return "\(activePhase.title). \(activePhase.detail) \(statusDetail)"
     }
 }
 

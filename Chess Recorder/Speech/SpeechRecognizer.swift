@@ -49,6 +49,7 @@ class SpeechRecognizer {
     var isInitializing = true
     var isRebuildingLanguageModel = false
     var initializationPhase: InitializationPhase = .requestingPermissions
+    var initializationStatusDetail: String = ""
     var currentLanguage: RecognitionLanguage = .english
     var pendingFailure: RecognitionFailureContext?
     var dictationPauseDeadline: Date?
@@ -71,6 +72,8 @@ class SpeechRecognizer {
     private var lastSeenCaptureFile: Character?
     private var audioSessionObserverTokens: [NSObjectProtocol] = []
     private var recognitionRecoveryTask: Task<Void, Never>?
+    private var recordingSessionStartedAt: Date?
+    private var lastPartialLoggedGeneration = 0
     
     private let undoCooldown: TimeInterval = 1.0
     private let finalPauseNanoseconds: UInt64 = 150_000_000
@@ -126,7 +129,7 @@ class SpeechRecognizer {
         if language == currentLanguage {
             await prepareLanguageModel(for: currentLanguage)
             if isRecording {
-                restartRecognitionSession()
+                restartRecognitionSession(reason: "reloadLanguageModel")
             }
         }
     }
@@ -138,29 +141,49 @@ class SpeechRecognizer {
     
     @MainActor
     func startup(with language: RecognitionLanguage) async {
+        logSpeechDiagnostic("startup() began for \(language.rawValue)")
         isInitializing = true
         defer {
             isInitializing = false
             hasCompletedStartup = true
+            logSpeechDiagnostic("startup() finished (isLanguageModelReady=\(isLanguageModelReady))")
         }
         
         setInitializationPhase(.requestingPermissions)
         await requestAuthorization()
+
+        setInitializationPhase(.preparingSpeechVocabulary)
+        setInitializationStatusDetail("Initializing speech recognizer… Usually 5–15 seconds on first launch.")
+        await yieldForSpeechModelUI()
+
         currentLanguage = language
         speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: language.rawValue))
+
         await prepareLanguageModel(for: language)
+        setInitializationStatusDetail("")
     }
 
     @MainActor
     func setInitializationPhase(_ phase: InitializationPhase) {
         initializationPhase = phase
+        if phase != .preparingSpeechVocabulary {
+            initializationStatusDetail = ""
+        }
+    }
+
+    @MainActor
+    func setInitializationStatusDetail(_ detail: String) {
+        initializationStatusDetail = detail
+        if !detail.isEmpty {
+            logSpeechDiagnostic("initialization status: \(detail)")
+        }
     }
     
     @MainActor
     func changeLanguage(_ language: RecognitionLanguage) async {
         guard language != currentLanguage || !isLanguageModelReady else {
             if isRecording {
-                restartRecognitionSession()
+                restartRecognitionSession(reason: "reloadLanguageModel")
             }
             if isRebuildingLanguageModel {
                 endLanguageModelRebuild()
@@ -181,7 +204,7 @@ class SpeechRecognizer {
         await prepareLanguageModel(for: language)
 
         if isRecording {
-            restartRecognitionSession()
+            restartRecognitionSession(reason: "changeLanguage")
         }
     }
 
@@ -193,7 +216,7 @@ class SpeechRecognizer {
     @MainActor
     func beginLanguageModelRebuild() {
         isRebuildingLanguageModel = true
-        setInitializationPhase(.loadingPersonalVocabulary)
+        setInitializationPhase(.preparingSpeechVocabulary)
     }
 
     @MainActor
@@ -212,13 +235,35 @@ class SpeechRecognizer {
     private func prepareLanguageModel(for language: RecognitionLanguage) async {
         isLanguageModelReady = false
         guard let vocabularyStore else { return }
-        _ = vocabularyStore.seedCommonPhrasesIfNeeded(for: language)
+
+        setInitializationPhase(.preparingSpeechVocabulary)
+        setInitializationStatusDetail("Loading built-in chess move phrases…")
         await yieldForSpeechModelUI()
+
+        _ = vocabularyStore.seedCommonPhrasesIfNeeded(for: language)
+
+        let userPhraseCount = vocabularyStore.entries(for: language).count
+        let correctionCount = vocabularyStore.correctionEntries(for: language).count
+        if userPhraseCount > 0 || correctionCount > 0 {
+            setInitializationStatusDetail(
+                "Applying \(userPhraseCount) taught phrase\(userPhraseCount == 1 ? "" : "s") and \(correctionCount) correction\(correctionCount == 1 ? "" : "s")…"
+            )
+        } else {
+            setInitializationStatusDetail("No taught phrases yet — using built-in chess vocabulary.")
+        }
+        await yieldForSpeechModelUI()
+
         if await ChessLanguageModel.prepare(
             for: language,
             vocabulary: vocabularyStore,
             onPhaseChange: { [weak self] phase in
                 self?.initializationPhase = phase
+                if phase != .preparingSpeechVocabulary {
+                    self?.initializationStatusDetail = ""
+                }
+            },
+            onStatusChange: { [weak self] detail in
+                self?.setInitializationStatusDetail(detail)
             }
         ) != nil {
             isLanguageModelReady = true
@@ -253,8 +298,22 @@ class SpeechRecognizer {
 
     @MainActor
     func requestAuthorization() async {
-        await requestSpeechAuthorization()
-        await requestMicrophoneAuthorization()
+        refreshAuthorizationStatus()
+
+        if SFSpeechRecognizer.authorizationStatus() == .notDetermined {
+            logSpeechDiagnostic("requesting speech recognition authorization")
+            await requestSpeechAuthorization()
+        } else {
+            logSpeechDiagnostic("speech recognition authorization already determined (\(Self.speechAuthorizationDescription()))")
+        }
+
+        if AVAudioApplication.shared.recordPermission == .undetermined {
+            logSpeechDiagnostic("requesting microphone authorization")
+            await requestMicrophoneAuthorization()
+        } else {
+            logSpeechDiagnostic("microphone authorization already determined (\(Self.microphonePermissionDescription()))")
+        }
+
         refreshAuthorizationStatus()
     }
 
@@ -280,6 +339,7 @@ class SpeechRecognizer {
     
     @MainActor
     func startRecording() throws {
+        logSpeechDiagnostic("startRecording() called")
         recognitionRecoveryTask?.cancel()
         recognitionRecoveryTask = nil
         stopRecognitionTask()
@@ -287,29 +347,38 @@ class SpeechRecognizer {
         let audioSession = AVAudioSession.sharedInstance()
         try audioSession.setCategory(.record, mode: .measurement, options: .duckOthers)
         try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+        logSpeechDiagnostic("audio session activated (category=record, mode=measurement)")
         
         let audioEngine = AVAudioEngine()
         self.audioEngine = audioEngine
         let inputNode = audioEngine.inputNode
         
-        try beginRecognitionTask()
+        try beginRecognitionTask(context: "startRecording")
         
         let recordingFormat = inputNode.outputFormat(forBus: 0)
+        logSpeechDiagnostic(
+            "installing input tap (sampleRate=\(recordingFormat.sampleRate), channels=\(recordingFormat.channelCount))"
+        )
         inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
             self?.recognitionRequest?.append(buffer)
         }
         
         audioEngine.prepare()
         try audioEngine.start()
+        logSpeechDiagnostic("audio engine started")
         
         installAudioSessionObservers()
         isRecording = true
+        recordingSessionStartedAt = Date()
+        logSpeechDiagnostic("recording session ready")
     }
     
     @MainActor
     func stopRecording() {
         guard isRecording else { return }
+        logSpeechDiagnostic("stopRecording() called")
         isRecording = false
+        recordingSessionStartedAt = nil
         
         recognitionRecoveryTask?.cancel()
         recognitionRecoveryTask = nil
@@ -353,25 +422,44 @@ class SpeechRecognizer {
     }
     
     @MainActor
-    private func restartRecognitionSession() {
-        guard isRecording else { return }
+    private func restartRecognitionSession(reason: String) {
+        guard isRecording else {
+            logSpeechDiagnostic("restartRecognitionSession skipped — not recording (reason=\(reason))")
+            return
+        }
         guard audioEngine != nil else {
+            logSpeechDiagnostic("restartRecognitionSession falling back to full startRecording (reason=\(reason))")
             try? startRecording()
             return
         }
         
+        logSpeechDiagnostic("restartRecognitionSession (reason=\(reason))")
         stopRecognitionTask(endAudio: false)
-        try? beginRecognitionTask()
+        do {
+            try beginRecognitionTask(context: "restart(\(reason))")
+        } catch {
+            logSpeechDiagnostic("restartRecognitionSession failed to begin task: \(error.localizedDescription)")
+        }
     }
     
     @MainActor
-    private func scheduleRecognitionRecovery() {
+    private func scheduleRecognitionRecovery(reason: String) {
+        let elapsed = recordingSessionStartedAt.map { Date().timeIntervalSince($0) } ?? -1
+        logSpeechDiagnostic(
+            "scheduling recognition recovery in 200ms (reason=\(reason), elapsedSinceStart=\(String(format: "%.2f", elapsed))s)"
+        )
         recognitionRecoveryTask?.cancel()
         recognitionRecoveryTask = Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(200))
-            guard !Task.isCancelled else { return }
-            guard self.isRecording else { return }
-            self.restartRecognitionSession()
+            guard !Task.isCancelled else {
+                self.logSpeechDiagnostic("recognition recovery cancelled (reason=\(reason))")
+                return
+            }
+            guard self.isRecording else {
+                self.logSpeechDiagnostic("recognition recovery skipped — not recording (reason=\(reason))")
+                return
+            }
+            self.restartRecognitionSession(reason: reason)
         }
     }
     
@@ -384,10 +472,16 @@ class SpeechRecognizer {
             forName: AVAudioSession.routeChangeNotification,
             object: AVAudioSession.sharedInstance(),
             queue: .main
-        ) { [weak self] _ in
+        ) { [weak self] notification in
             Task { @MainActor in
                 guard let self, self.isRecording else { return }
-                self.scheduleRecognitionRecovery()
+                let reason = Self.routeChangeReasonDescription(from: notification)
+                guard Self.shouldRecoverFromRouteChange(from: notification) else {
+                    self.logSpeechDiagnostic("audio route changed while recording (\(reason)) — ignoring")
+                    return
+                }
+                self.logSpeechDiagnostic("audio route changed while recording (\(reason))")
+                self.scheduleRecognitionRecovery(reason: "routeChange:\(reason)")
             }
         }
         
@@ -400,9 +494,10 @@ class SpeechRecognizer {
                 guard let self, self.isRecording else { return }
                 guard let info = notification.userInfo,
                       let typeValue = info[AVAudioSessionInterruptionTypeKey] as? UInt,
-                      let type = AVAudioSession.InterruptionType(rawValue: typeValue),
-                      type == .ended else { return }
-                self.scheduleRecognitionRecovery()
+                      let type = AVAudioSession.InterruptionType(rawValue: typeValue) else { return }
+                self.logSpeechDiagnostic("audio interruption while recording (type=\(type.rawValue))")
+                guard type == .ended else { return }
+                self.scheduleRecognitionRecovery(reason: "interruptionEnded")
             }
         }
         
@@ -428,7 +523,7 @@ class SpeechRecognizer {
         clearFailureState()
         stableTranscriptTask?.cancel()
         stableTranscriptTask = nil
-        restartRecognitionSession()
+        restartRecognitionSession(reason: "prepareForNextMove")
     }
     
     @MainActor
@@ -441,13 +536,24 @@ class SpeechRecognizer {
         clearDictationPauseIndicator()
         stableTranscriptTask?.cancel()
         stableTranscriptTask = nil
-        restartRecognitionSession()
+        restartRecognitionSession(reason: "flushRecognitionBuffer")
     }
     
     @MainActor
-    private func beginRecognitionTask() throws {
+    private func beginRecognitionTask(context: String) throws {
         recognitionGeneration += 1
         let generation = recognitionGeneration
+        
+        guard let speechRecognizer else {
+            logSpeechDiagnostic("beginRecognitionTask(\(context)) failed — speechRecognizer is nil")
+            throw NSError(domain: "SpeechRecognizer", code: 2, userInfo: [NSLocalizedDescriptionKey: "Speech recognizer unavailable"])
+        }
+        
+        let isAvailable = speechRecognizer.isAvailable
+        let supportsOnDevice = speechRecognizer.supportsOnDeviceRecognition
+        logSpeechDiagnostic(
+            "beginRecognitionTask(\(context)) generation=\(generation) isAvailable=\(isAvailable) supportsOnDevice=\(supportsOnDevice)"
+        )
         
         recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
         guard let recognitionRequest else {
@@ -460,11 +566,13 @@ class SpeechRecognizer {
         if let config = ChessLanguageModel.configuration(for: currentLanguage) {
             recognitionRequest.requiresOnDeviceRecognition = true
             recognitionRequest.customizedLanguageModel = config
+            logSpeechDiagnostic("beginRecognitionTask(\(context)) using customized on-device language model")
         } else if #available(iOS 13, *) {
             recognitionRequest.requiresOnDeviceRecognition = false
+            logSpeechDiagnostic("beginRecognitionTask(\(context)) using cloud recognition (no custom language model)")
         }
         
-        recognitionTask = speechRecognizer?.recognitionTask(with: recognitionRequest) { [weak self] result, error in
+        recognitionTask = speechRecognizer.recognitionTask(with: recognitionRequest) { [weak self] result, error in
             guard let self else { return }
             
             if let error {
@@ -472,17 +580,25 @@ class SpeechRecognizer {
                     guard self.isRecording else { return }
                     
                     if Self.isBenignCancellationError(error) {
+                        self.logSpeechDiagnostic(
+                            "benign recognition error ignored: \(Self.errorDescription(error)) (generation=\(generation))"
+                        )
                         return
                     }
                     
-                    guard generation == self.recognitionGeneration else { return }
+                    guard generation == self.recognitionGeneration else {
+                        self.logSpeechDiagnostic(
+                            "stale recognition error ignored: \(Self.errorDescription(error)) (generation=\(generation))"
+                        )
+                        return
+                    }
                     
                     if Self.isRetryRecognitionError(error) {
-                        print("Recognition session ended (203 Retry) — recovering")
+                        self.logSpeechDiagnostic("recognition session ended (203 Retry) — recovering (generation=\(generation))")
                     } else {
-                        print("Recognition error: \(error.localizedDescription)")
+                        self.logSpeechDiagnostic("recognition error: \(Self.errorDescription(error)) (generation=\(generation))")
                     }
-                    self.scheduleRecognitionRecovery()
+                    self.scheduleRecognitionRecovery(reason: "recognitionError:\(Self.errorDescription(error))")
                 }
                 return
             }
@@ -492,11 +608,24 @@ class SpeechRecognizer {
             
             Task { @MainActor in
                 guard generation == self.recognitionGeneration else { return }
+                if self.lastPartialLoggedGeneration != generation, !newTranscript.isEmpty {
+                    self.lastPartialLoggedGeneration = generation
+                    self.logSpeechDiagnostic(
+                        "first partial transcript (generation=\(generation), isFinal=\(result.isFinal)): \"\(newTranscript)\""
+                    )
+                }
                 self.rawTranscript = newTranscript
                 self.transcript = self.correctedTranscript(for: newTranscript)
                 self.handleTranscript(newTranscript, isFinal: result.isFinal)
             }
         }
+        
+        if recognitionTask == nil {
+            logSpeechDiagnostic("beginRecognitionTask(\(context)) failed — recognitionTask is nil despite isAvailable=\(isAvailable)")
+            throw NSError(domain: "SpeechRecognizer", code: 3, userInfo: [NSLocalizedDescriptionKey: "Unable to start recognition task"])
+        }
+        
+        logSpeechDiagnostic("beginRecognitionTask(\(context)) started recognition task (generation=\(generation))")
     }
     
     private static func isBenignCancellationError(_ error: Error) -> Bool {
@@ -759,5 +888,84 @@ class SpeechRecognizer {
             recognitionRequest?.endAudio()
         }
         recognitionRequest = nil
+    }
+    
+    private func logSpeechDiagnostic(_ message: String) {
+        print("SpeechRecognizer: \(message)")
+    }
+    
+    private static func errorDescription(_ error: Error) -> String {
+        let nsError = error as NSError
+        return "\(nsError.domain) \(nsError.code) \"\(nsError.localizedDescription)\""
+    }
+    
+    private static func speechAuthorizationDescription() -> String {
+        switch SFSpeechRecognizer.authorizationStatus() {
+        case .notDetermined:
+            return "notDetermined"
+        case .denied:
+            return "denied"
+        case .restricted:
+            return "restricted"
+        case .authorized:
+            return "authorized"
+        @unknown default:
+            return "unknown"
+        }
+    }
+
+    private static func microphonePermissionDescription() -> String {
+        switch AVAudioApplication.shared.recordPermission {
+        case .undetermined:
+            return "undetermined"
+        case .denied:
+            return "denied"
+        case .granted:
+            return "granted"
+        @unknown default:
+            return "unknown"
+        }
+    }
+
+    private static func shouldRecoverFromRouteChange(from notification: Notification) -> Bool {
+        guard let reasonValue = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt,
+              let reason = AVAudioSession.RouteChangeReason(rawValue: reasonValue) else {
+            return false
+        }
+
+        switch reason {
+        case .categoryChange, .routeConfigurationChange:
+            return false
+        default:
+            return true
+        }
+    }
+    
+    private static func routeChangeReasonDescription(from notification: Notification) -> String {
+        guard let reasonValue = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt,
+              let reason = AVAudioSession.RouteChangeReason(rawValue: reasonValue) else {
+            return "unknown"
+        }
+        
+        switch reason {
+        case .unknown:
+            return "unknown"
+        case .newDeviceAvailable:
+            return "newDeviceAvailable"
+        case .oldDeviceUnavailable:
+            return "oldDeviceUnavailable"
+        case .categoryChange:
+            return "categoryChange"
+        case .override:
+            return "override"
+        case .wakeFromSleep:
+            return "wakeFromSleep"
+        case .noSuitableRouteForCategory:
+            return "noSuitableRouteForCategory"
+        case .routeConfigurationChange:
+            return "routeConfigurationChange"
+        @unknown default:
+            return "unknown(\(reasonValue))"
+        }
     }
 }

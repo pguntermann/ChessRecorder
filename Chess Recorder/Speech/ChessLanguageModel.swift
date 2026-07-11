@@ -22,28 +22,37 @@ enum ChessLanguageModel {
     static func prepare(
         for language: RecognitionLanguage,
         vocabulary: PersonalVocabularyStore,
-        onPhaseChange: (@MainActor (InitializationPhase) -> Void)? = nil
+        onPhaseChange: (@MainActor (InitializationPhase) -> Void)? = nil,
+        onStatusChange: (@MainActor (String) -> Void)? = nil
     ) async -> SFSpeechLanguageModel.Configuration? {
         let revision = vocabulary.revision(for: language)
         if let existing = preparedConfigurations[language],
            lastPreparedRevision[language] == revision,
            lastPreparedBaseVersion[language] == baseModelVersion {
+            await reportStatus("Using prepared speech model from the last launch.", onStatusChange: onStatusChange)
             return existing
         }
         
         if let task = preparationTasks[language] {
+            await reportStatus("Waiting for speech model preparation to finish…", onStatusChange: onStatusChange)
             return await task.value
         }
 
-        await reportPhase(.loadingPersonalVocabulary, onPhaseChange: onPhaseChange)
+        await reportPhase(.preparingSpeechVocabulary, onPhaseChange: onPhaseChange)
+        await reportStatus("Collecting phrases for on-device recognition…", onStatusChange: onStatusChange)
         let personalPhrases = vocabulary.speechPhraseCounts(for: language)
+        await reportStatus(
+            "Loaded \(personalPhrases.count) phrase\(personalPhrases.count == 1 ? "" : "s") for speech recognition.",
+            onStatusChange: onStatusChange
+        )
 
         let task = Task.detached(priority: .userInitiated) {
             await buildAndPrepare(
                 for: language,
                 revision: revision,
                 personalPhrases: personalPhrases,
-                onPhaseChange: onPhaseChange
+                onPhaseChange: onPhaseChange,
+                onStatusChange: onStatusChange
             )
         }
         preparationTasks[language] = task
@@ -75,10 +84,13 @@ enum ChessLanguageModel {
         for language: RecognitionLanguage,
         revision: Int,
         personalPhrases: [(phrase: String, count: Int)],
-        onPhaseChange: (@MainActor (InitializationPhase) -> Void)?
+        onPhaseChange: (@MainActor (InitializationPhase) -> Void)?,
+        onStatusChange: (@MainActor (String) -> Void)?
     ) async -> SFSpeechLanguageModel.Configuration? {
+        await reportStatus("Verifying on-device speech recognition…", onStatusChange: onStatusChange)
         guard SFSpeechRecognizer(locale: Locale(identifier: language.rawValue))?.supportsOnDeviceRecognition == true else {
             print("ChessLanguageModel: on-device recognition unavailable for \(language.rawValue)")
+            await reportStatus("On-device speech recognition is unavailable on this device.", onStatusChange: onStatusChange)
             return nil
         }
         
@@ -88,6 +100,7 @@ enum ChessLanguageModel {
             let preparedURL = modelPreparedURL(for: language)
 
             await reportPhase(.buildingTrainingData, onPhaseChange: onPhaseChange)
+            await reportStatus("Assembling chess phrases, squares, and piece names… Usually a few seconds.", onStatusChange: onStatusChange)
             let data = buildTrainingData(
                 for: language,
                 locale: locale,
@@ -96,12 +109,14 @@ enum ChessLanguageModel {
             )
 
             await reportPhase(.exportingTrainingData, onPhaseChange: onPhaseChange)
+            await reportStatus("Writing speech training data to disk…", onStatusChange: onStatusChange)
             try await data.export(to: exportURL)
             print("ChessLanguageModel: exported training data to \(exportURL.lastPathComponent)")
             
             let config = SFSpeechLanguageModel.Configuration(languageModel: preparedURL)
 
             await reportPhase(.compilingSpeechModel, onPhaseChange: onPhaseChange)
+            await reportStatus("Compiling on-device speech model… Can take up to a minute on first launch.", onStatusChange: onStatusChange)
             try await SFSpeechLanguageModel.prepareCustomLanguageModel(
                 for: exportURL,
                 configuration: config
@@ -125,6 +140,16 @@ enum ChessLanguageModel {
         guard let onPhaseChange else { return }
         await MainActor.run {
             onPhaseChange(phase)
+        }
+    }
+
+    private static func reportStatus(
+        _ detail: String,
+        onStatusChange: (@MainActor (String) -> Void)?
+    ) async {
+        guard let onStatusChange else { return }
+        await MainActor.run {
+            onStatusChange(detail)
         }
     }
 

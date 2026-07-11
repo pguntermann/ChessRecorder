@@ -4,11 +4,13 @@
 [![Swift](https://img.shields.io/badge/Swift-5.0-orange.svg)](https://swift.org)
 [![Platform](https://img.shields.io/badge/Platform-iOS-lightgrey.svg)]()
 
-**Version 1.0** · [GitHub repository](https://github.com/pguntermann/ChessRecorder)
+**Version 1.0**
 
 Chess Recorder is an iOS app for recording chess games by voice. Speak your moves in plain language — square names, piece names, captures, castling, and undo — and the app updates the board, builds the move list, and can export the game as PGN. Optional on-device engine analysis shows evaluation, a principal variation, and a best-move arrow while you record.
 
 ![Chess Recorder on iPad — landscape view with board, live transcript, engine analysis, and PGN notation](Chess%20Recorder/Resources/Screenshots/ipad_mini_ls1.PNG)
+
+> **Related project:** Also check out [CARA](https://pguntermann.github.io/CARA/) — Chess Analysis and Review Application for Windows, macOS, and Linux.
 
 **Contents:** [Features](#features) · [Requirements](#requirements) · [Building](#building) · [Usage](#usage) · [Project layout](#project-layout) · [License](#license) · [Contributing](#contributing) · [Contact](#contact) · [Acknowledgments](#acknowledgments)
 

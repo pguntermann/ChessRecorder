@@ -265,16 +265,28 @@ struct SettingsView: View {
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     } else {
-                        ForEach(learnedEntries) { entry in
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(entry.phrase)
-                                    .font(.subheadline)
-                                Text("→ \(entry.moveNotation)")
-                                    .font(.system(.caption, design: .monospaced))
-                                    .foregroundStyle(.secondary)
+                        ForEach(Array(learnedEntries.enumerated()), id: \.element.id) { index, entry in
+                            SwipeToDeleteRow(
+                                onDelete: { deleteLearnedPhrase(entry) },
+                                cornerRadii: .insetGroupedListRow(
+                                    index: index,
+                                    count: learnedEntries.count
+                                )
+                            ) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(entry.phrase)
+                                        .font(.subheadline)
+                                    Text("→ \(entry.moveNotation)")
+                                        .font(.system(.caption, design: .monospaced))
+                                        .foregroundStyle(.secondary)
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 8)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                             }
+                            .listRowInsets(EdgeInsets())
+                            .listRowBackground(Color.clear)
                         }
-                        .onDelete(perform: deleteLearnedPhrases)
                     }
                     
                     if !learnedEntries.isEmpty {
@@ -301,16 +313,28 @@ struct SettingsView: View {
                             .font(.footnote)
                             .foregroundStyle(.secondary)
                     } else {
-                        ForEach(correctionEntries) { entry in
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(entry.heard)
-                                    .font(.subheadline)
-                                Text("→ \(entry.replacement)")
-                                    .font(.system(.caption, design: .monospaced))
-                                    .foregroundStyle(.secondary)
+                        ForEach(Array(correctionEntries.enumerated()), id: \.element.id) { index, entry in
+                            SwipeToDeleteRow(
+                                onDelete: { deleteCorrection(entry) },
+                                cornerRadii: .insetGroupedListRow(
+                                    index: index,
+                                    count: correctionEntries.count
+                                )
+                            ) {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(entry.heard)
+                                        .font(.subheadline)
+                                    Text("→ \(entry.replacement)")
+                                        .font(.system(.caption, design: .monospaced))
+                                        .foregroundStyle(.secondary)
+                                }
+                                .padding(.horizontal, 16)
+                                .padding(.vertical, 8)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                             }
+                            .listRowInsets(EdgeInsets())
+                            .listRowBackground(Color.clear)
                         }
-                        .onDelete(perform: deleteCorrections)
                     }
                 } header: {
                     Text("Speech Corrections")
@@ -415,17 +439,13 @@ struct SettingsView: View {
         }
     }
     
-    private func deleteLearnedPhrases(at indexSet: IndexSet) {
-        for index in indexSet {
-            vocabularyStore.remove(id: learnedEntries[index].id)
-        }
+    private func deleteLearnedPhrase(_ entry: LearnedPhrase) {
+        vocabularyStore.remove(id: entry.id)
         scheduleSpeechModelUpdate(for: phraseListLanguage)
     }
 
-    private func deleteCorrections(at indexSet: IndexSet) {
-        for index in indexSet {
-            vocabularyStore.remove(id: correctionEntries[index].id)
-        }
+    private func deleteCorrection(_ entry: LearnedCorrection) {
+        vocabularyStore.remove(id: entry.id)
         scheduleSpeechModelUpdate(for: phraseListLanguage)
     }
 

@@ -45,21 +45,23 @@ struct SwipeToDeleteRow<Content: View>: View {
                 deleteBackground
             }
 
-            slidingRow
+            content()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background { rowSurface }
+                .offset(x: offset)
         }
-        .clipShape(rowClipShape)
+        .modifier(RowClipModifier(cornerRadii: cornerRadii))
         .contentShape(Rectangle())
         .gesture(dragGesture)
     }
 
-    private var slidingRow: some View {
-        rowClipShape
-            .fill(rowBackgroundColor)
-            .overlay(alignment: .leading) {
-                content()
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .offset(x: offset)
+    @ViewBuilder
+    private var rowSurface: some View {
+        if cornerRadii.hasRounding {
+            rowClipShape.fill(rowBackgroundColor)
+        } else {
+            Rectangle().fill(rowBackgroundColor)
+        }
     }
 
     private var rowClipShape: UnevenRoundedRectangle {
@@ -72,27 +74,42 @@ struct SwipeToDeleteRow<Content: View>: View {
         )
     }
 
+    @ViewBuilder
     private var deleteBackground: some View {
-        rowClipShape
-            .fill(Color(uiColor: .systemRed))
-            .mask(alignment: .trailing) {
-                HStack(spacing: 0) {
-                    Spacer(minLength: 0)
-                    Rectangle().frame(width: revealWidth)
+        if cornerRadii.hasRounding {
+            rowClipShape
+                .fill(Color(uiColor: .systemRed))
+                .mask(alignment: .trailing) {
+                    HStack(spacing: 0) {
+                        Spacer(minLength: 0)
+                        Rectangle().frame(width: revealWidth)
+                    }
                 }
-            }
-            .overlay(alignment: .trailing) {
-                Button {
-                    performDelete(animated: true)
-                } label: {
-                    Image(systemName: "trash.fill")
-                        .font(.body.weight(.medium))
-                        .foregroundStyle(.white)
-                        .frame(width: revealWidth)
+                .overlay(alignment: .trailing) {
+                    deleteButton
                 }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Delete")
+        } else {
+            HStack(spacing: 0) {
+                Spacer(minLength: 0)
+                deleteButton
+                    .frame(width: revealWidth)
+                    .frame(maxHeight: .infinity)
+                    .background(Color(uiColor: .systemRed))
             }
+        }
+    }
+
+    private var deleteButton: some View {
+        Button {
+            performDelete(animated: true)
+        } label: {
+            Image(systemName: "trash.fill")
+                .font(.body.weight(.medium))
+                .foregroundStyle(.white)
+                .frame(width: revealWidth)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Delete")
     }
 
     private var dragGesture: some Gesture {
@@ -147,6 +164,26 @@ struct SwipeToDeleteRow<Content: View>: View {
         } else {
             onDelete()
             offset = 0
+        }
+    }
+}
+
+private struct RowClipModifier: ViewModifier {
+    let cornerRadii: SwipeToDeleteRowCornerRadii
+
+    func body(content: Content) -> some View {
+        if cornerRadii.hasRounding {
+            content.clipShape(
+                UnevenRoundedRectangle(
+                    topLeadingRadius: cornerRadii.topLeading,
+                    bottomLeadingRadius: cornerRadii.bottomLeading,
+                    bottomTrailingRadius: cornerRadii.bottomTrailing,
+                    topTrailingRadius: cornerRadii.topTrailing,
+                    style: .continuous
+                )
+            )
+        } else {
+            content
         }
     }
 }

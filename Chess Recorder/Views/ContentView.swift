@@ -231,7 +231,9 @@ struct ContentView: View {
 
     private func landscapeBoardColumnWidth(in geometry: GeometryProxy) -> CGFloat {
         let showEvalBar = settingsStore.settings.engineAnalysisShowEvaluationBar
-        let evalOverhead: CGFloat = showEvalBar ? 48 : 0
+        let evalOverhead: CGFloat = showEvalBar
+            ? BoardLayoutMetrics.evalBarWidth + BoardLayoutMetrics.evalBarSpacing
+            : 0
         let columnPadding: CGFloat = 16
         let boardAreaHeight = landscapeBoardAreaHeight(in: geometry)
         let naturalBoardSide = floor(max(0, boardAreaHeight) / 8) * 8

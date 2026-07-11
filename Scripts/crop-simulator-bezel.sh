@@ -13,6 +13,7 @@ fi
 
 python3 - "$INPUT" "$OUTPUT" <<'PY'
 import sys
+from collections import deque
 from PIL import Image, ImageDraw
 
 src, out = sys.argv[1], sys.argv[2]
@@ -70,11 +71,92 @@ mask = Image.new("L", (ww, wh), 0)
 ImageDraw.Draw(mask).rounded_rectangle((0, 0, ww - 1, wh - 1), radius=radius, fill=255)
 
 def keep_pixel(r, g, b, a):
-    if a < 200:
+    # Keep metal frame (colored) and sufficiently opaque dark bezel; drop shadow fringe.
+    if a < 128:
         return False
-    if a > 240:
+    if r + g + b >= 80:
         return True
-    return r + g + b > 60
+    return a >= 200
+
+def is_significant(r, g, b, a):
+    if a < 128:
+        return False
+    if r + g + b >= 80:
+        return True
+    return a >= 200
+
+def finalize_pixel(r, g, b, a):
+    if r + g + b < 40:
+        return (0, 0, 0, a)
+    if a >= 240:
+        return (r, g, b, 255)
+    return (r, g, b, a)
+
+def solidify_interior_blacks(image, mask, source, min_dist=4):
+    px = image.load()
+    src = source.load()
+    dist = [[10**9] * ww for _ in range(wh)]
+    q = deque()
+    for y in range(wh):
+        for x in range(ww):
+            if not mask.getpixel((x, y)) or px[x, y][3] == 0:
+                dist[y][x] = 0
+                q.append((x, y))
+    while q:
+        x, y = q.popleft()
+        d = dist[y][x]
+        for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+            nx, ny = x + dx, y + dy
+            if 0 <= nx < ww and 0 <= ny < wh and dist[ny][nx] > d + 1:
+                dist[ny][nx] = d + 1
+                q.append((nx, ny))
+    for y in range(wh):
+        for x in range(ww):
+            r, g, b, a = px[x, y]
+            if a and r + g + b < 40 and dist[y][x] >= min_dist and src[x, y][3] >= 200:
+                px[x, y] = (0, 0, 0, 255)
+
+def clear_boundary_dark(image, mask, source, max_dist=6):
+    px = image.load()
+    src = source.load()
+    dist = [[10**9] * ww for _ in range(wh)]
+    q = deque()
+    for y in range(wh):
+        for x in range(ww):
+            if not mask.getpixel((x, y)) or px[x, y][3] == 0:
+                dist[y][x] = 0
+                q.append((x, y))
+    while q:
+        x, y = q.popleft()
+        d = dist[y][x]
+        for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+            nx, ny = x + dx, y + dy
+            if 0 <= nx < ww and 0 <= ny < wh and dist[ny][nx] > d + 1:
+                dist[ny][nx] = d + 1
+                q.append((nx, ny))
+    for y in range(wh):
+        for x in range(ww):
+            r, g, b, a = px[x, y]
+            if not a:
+                continue
+            sr, sg, sb, sa = src[x, y]
+            if sr + sg + sb < 80 and (dist[y][x] <= max_dist or sa < 200):
+                px[x, y] = (0, 0, 0, 0)
+
+def fill_interior_gaps(image, mask, passes=3):
+    px = image.load()
+    for _ in range(passes):
+        pending = []
+        for y in range(1, wh - 1):
+            for x in range(1, ww - 1):
+                if not mask.getpixel((x, y)) or px[x, y][3] > 0:
+                    continue
+                if all(px[x + dx, y + dy][3] > 200 for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1))):
+                    pending.append((x, y))
+        if not pending:
+            break
+        for x, y in pending:
+            px[x, y] = (0, 0, 0, 255)
 
 result = Image.new("RGBA", (ww, wh), (0, 0, 0, 0))
 for y in range(wh):
@@ -83,12 +165,17 @@ for y in range(wh):
             continue
         r, g, b, a = data[x, y]
         if keep_pixel(r, g, b, a):
-            result.putpixel((x, y), (r, g, b, 255 if a > 250 else a))
+            result.putpixel((x, y), finalize_pixel(r, g, b, a))
+
+solidify_interior_blacks(result, mask, work)
+fill_interior_gaps(result, mask)
+clear_boundary_dark(result, mask, work)
 
 min_x, min_y, max_x, max_y = ww, wh, 0, 0
 for y in range(wh):
     for x in range(ww):
-        if result.getpixel((x, y))[3] > 0:
+        r, g, b, a = result.getpixel((x, y))
+        if is_significant(r, g, b, a):
             min_x = min(min_x, x)
             max_x = max(max_x, x)
             min_y = min(min_y, y)

@@ -4,9 +4,11 @@
 //
 
 import SwiftUI
+import UIKit
 
 struct HelpView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
         NavigationStack {
@@ -18,6 +20,7 @@ struct HelpView: View {
 
                     helpSection(
                         title: "Getting started",
+                        cardStyle: true,
                         body: """
                         Tap Record and speak your move. Pause briefly when finished — the app waits a moment, then plays the move on the board. You can also enter moves by tapping pieces when Touch input is enabled in Settings.
                         """
@@ -25,6 +28,7 @@ struct HelpView: View {
 
                     helpSection(
                         title: "Supported phrases (English)",
+                        cardStyle: true,
                         examples: [
                             "\"e4\" — pawn to e4",
                             "\"Knight f3\" — knight to f3",
@@ -39,6 +43,7 @@ struct HelpView: View {
 
                     helpSection(
                         title: "Supported phrases (German)",
+                        cardStyle: true,
                         examples: [
                             "\"e4\" — Bauer nach e4",
                             "\"Springer f3\" — Springer nach f3",
@@ -53,6 +58,7 @@ struct HelpView: View {
 
                     helpSection(
                         title: "Tips",
+                        cardStyle: true,
                         body: """
                         If a phrase is not recognized, use Teach phrase after a failed attempt or add custom phrases in Settings. Corrections can fix recurring mis-hearings such as \"9\" → \"knight\".
                         """
@@ -86,6 +92,18 @@ struct HelpView: View {
                 Text(AppInfo.versionLabel)
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
+
+                VStack(spacing: 6) {
+                    Text(AppInfo.copyrightNotice)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+
+                    Button(AppInfo.contactEmail) {
+                        openContactEmail()
+                    }
+                    .font(.subheadline)
+                }
+                .multilineTextAlignment(.center)
             }
             .frame(maxWidth: .infinity)
 
@@ -130,10 +148,19 @@ struct HelpView: View {
                 bulletLink("Third-party licenses", destination: AppInfo.thirdPartyLicensesURL)
             }
         }
-        .padding()
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.secondary.opacity(0.1))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .helpSectionCard()
+    }
+
+    private func openContactEmail() {
+        #if targetEnvironment(simulator)
+        UIPasteboard.general.string = AppInfo.contactEmail
+        #else
+        openURL(AppInfo.contactEmailURL) { accepted in
+            if !accepted {
+                UIPasteboard.general.string = AppInfo.contactEmail
+            }
+        }
+        #endif
     }
 
     private func bulletLink(_ title: String, destination: URL) -> some View {
@@ -148,7 +175,18 @@ struct HelpView: View {
         }
     }
 
-    private func helpSection(title: String, body: String) -> some View {
+    private func helpSection(title: String, cardStyle: Bool = false, body: String) -> some View {
+        Group {
+            if cardStyle {
+                helpSectionContent(title: title, body: body)
+                    .helpSectionCard()
+            } else {
+                helpSectionContent(title: title, body: body)
+            }
+        }
+    }
+
+    private func helpSectionContent(title: String, body: String) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title)
                 .font(.headline)
@@ -158,9 +196,21 @@ struct HelpView: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func helpSection(title: String, examples: [String]) -> some View {
+    private func helpSection(title: String, cardStyle: Bool = false, examples: [String]) -> some View {
+        Group {
+            if cardStyle {
+                helpSectionContent(title: title, examples: examples)
+                    .helpSectionCard()
+            } else {
+                helpSectionContent(title: title, examples: examples)
+            }
+        }
+    }
+
+    private func helpSectionContent(title: String, examples: [String]) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title)
                 .font(.headline)
@@ -174,6 +224,16 @@ struct HelpView: View {
                 }
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private extension View {
+    func helpSectionCard() -> some View {
+        padding()
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Color.secondary.opacity(0.1))
+            .clipShape(RoundedRectangle(cornerRadius: 12))
     }
 }
 

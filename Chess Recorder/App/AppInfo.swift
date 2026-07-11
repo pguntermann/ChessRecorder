@@ -14,6 +14,17 @@ struct AppAcknowledgment: Identifiable {
 
 enum AppInfo {
     static let repositoryURL = URL(string: "https://github.com/pguntermann/ChessRecorder")!
+    static let authorName = "Philipp Guntermann"
+    static let copyrightYear = 2026
+    static let contactEmail = "pguntermann@me.com"
+
+    static var contactEmailURL: URL {
+        URL(string: "mailto:\(contactEmail)")!
+    }
+
+    static var copyrightNotice: String {
+        "Copyright © \(copyrightYear) \(authorName)"
+    }
 
     static var licenseURL: URL {
         repositoryURL.appending(path: "blob/main/LICENSE")

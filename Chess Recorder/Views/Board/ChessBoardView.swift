@@ -38,6 +38,8 @@ struct ChessBoardView: View {
     var analysisArrow: AnalysisArrowMove?
     var lastMoveArrow: AnalysisArrowMove?
     var chessEngine: ChessEngine?
+
+    @Environment(\.colorScheme) private var colorScheme
     
     @State private var selectedSquare: ChessPosition?
     @State private var legalDestinations: Set<ChessPosition> = []
@@ -53,6 +55,13 @@ struct ChessBoardView: View {
             fontSize: settings.coordinateFontSize,
             boardScale: settings.boardSizePercent
         )
+    }
+
+    /// Legible on light and dark system backgrounds when coordinates sit outside the board.
+    private var outsideCoordinateColor: Color {
+        colorScheme == .dark
+            ? Color(red: 0.76, green: 0.76, blue: 0.78)
+            : Color(red: 0.36, green: 0.36, blue: 0.38)
     }
 
     var body: some View {
@@ -145,7 +154,7 @@ struct ChessBoardView: View {
                 ForEach(orientation.displayFiles, id: \.self) { file in
                     Text(fileLabel(for: file))
                         .font(settings.coordinateFont(boardScale: settings.boardSizePercent))
-                        .foregroundStyle(settings.coordinateColor.color)
+                        .foregroundStyle(outsideCoordinateColor)
                         .frame(width: squareSize, height: coordinateGutter)
                 }
             }
@@ -163,7 +172,7 @@ struct ChessBoardView: View {
             ForEach(orientation.displayRanks, id: \.self) { rank in
                 Text("\(rank + 1)")
                     .font(settings.coordinateFont(boardScale: settings.boardSizePercent))
-                    .foregroundStyle(settings.coordinateColor.color)
+                    .foregroundStyle(outsideCoordinateColor)
                     .frame(width: coordinateGutter, height: squareSize)
             }
         }
@@ -453,6 +462,10 @@ struct ChessSquareView: View {
         settings.touchInputHighlightColor.color
     }
 
+    private var insideCoordinateColor: Color {
+        settings.coordinateColor.color
+    }
+
     var body: some View {
         ZStack {
             Rectangle()
@@ -487,7 +500,7 @@ struct ChessSquareView: View {
             if settings.showCoordinates, !settings.coordinatesOutsideBoard, showsRankLabel {
                 Text("\(position.rank + 1)")
                     .font(settings.coordinateFont(boardScale: coordinateScale))
-                    .foregroundStyle(settings.coordinateColor.color)
+                    .foregroundStyle(insideCoordinateColor)
                     .padding(coordinatePadding)
             }
         }
@@ -495,7 +508,7 @@ struct ChessSquareView: View {
             if settings.showCoordinates, !settings.coordinatesOutsideBoard, showsFileLabel {
                 Text(fileLabel(for: position.file))
                     .font(settings.coordinateFont(boardScale: coordinateScale))
-                    .foregroundStyle(settings.coordinateColor.color)
+                    .foregroundStyle(insideCoordinateColor)
                     .padding(coordinatePadding)
             }
         }

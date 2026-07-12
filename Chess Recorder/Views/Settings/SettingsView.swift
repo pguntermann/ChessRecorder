@@ -236,7 +236,8 @@ struct SettingsView: View {
                     .disabled(!settingsStore.settings.showCoordinates)
 
                     ColorPicker("Color", selection: $coordinateColor, supportsOpacity: false)
-                        .disabled(!settingsStore.settings.showCoordinates)
+                        .disabled(!coordinateColorPickerEnabled)
+                        .opacity(coordinateColorPickerEnabled ? 1 : 0.4)
                         .onChange(of: coordinateColor) { _, color in
                             settingsStore.update { $0.coordinateColor = CodableColor(color) }
                         }
@@ -468,6 +469,10 @@ struct SettingsView: View {
         pendingSpeechModelWork = work
     }
     
+    private var coordinateColorPickerEnabled: Bool {
+        settingsStore.settings.showCoordinates && !settingsStore.settings.coordinatesOutsideBoard
+    }
+
     private var moveAnimationLabel: String {
         let duration = settingsStore.settings.moveAnimationDuration
         if duration <= 0 {

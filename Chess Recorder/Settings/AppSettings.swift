@@ -208,7 +208,7 @@ struct AppSettings: Codable, Equatable {
         lightSquareColor: CodableColor(red: 0.86, green: 0.93, blue: 0.98),
         darkSquareColor: CodableColor(red: 0.36, green: 0.52, blue: 0.71),
         defaultLanguage: RecognitionLanguage.english.rawValue,
-        coordinateColor: CodableColor(red: 0.12, green: 0.22, blue: 0.35),
+        coordinateColor: CodableColor(red: 0.35, green: 0.38, blue: 0.42),
         coordinateFontName: "",
         coordinateFontSize: 14,
         showCoordinates: true,

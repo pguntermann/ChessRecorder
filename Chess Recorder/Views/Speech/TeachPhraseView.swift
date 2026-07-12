@@ -210,9 +210,7 @@ private final class PhraseRecorder {
 
         stop()
 
-        let audioSession = AVAudioSession.sharedInstance()
-        try audioSession.setCategory(.record, mode: .measurement, options: .duckOthers)
-        try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+        try RecordingAudioSession.activateForCapture()
 
         let engine = AVAudioEngine()
         let request = SFSpeechAudioBufferRecognitionRequest()

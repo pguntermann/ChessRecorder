@@ -346,10 +346,7 @@ class SpeechRecognizer {
         recognitionRecoveryTask = nil
         stopRecognitionTask()
         
-        let audioSession = AVAudioSession.sharedInstance()
-        try audioSession.setCategory(.record, mode: .measurement, options: .duckOthers)
-        try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
-        logSpeechDiagnostic("audio session activated (category=record, mode=measurement)")
+        try RecordingAudioSession.activateForCapture(log: logSpeechDiagnostic)
         logSpeechDiagnostic("audio route: \(Self.audioRouteDescription())")
         
         let audioEngine = AVAudioEngine()
@@ -444,12 +441,52 @@ class SpeechRecognizer {
             logSpeechDiagnostic("restartRecognitionSession failed to begin task: \(error.localizedDescription)")
         }
     }
+
+    @MainActor
+    private func restartAudioCapturePipeline(reason: String) {
+        guard isRecording else {
+            logSpeechDiagnostic("restartAudioCapturePipeline skipped — not recording (reason=\(reason))")
+            return
+        }
+
+        logSpeechDiagnostic("restartAudioCapturePipeline (reason=\(reason))")
+        stopRecognitionTask(endAudio: false)
+
+        audioEngine?.stop()
+        audioEngine?.inputNode.removeTap(onBus: 0)
+        audioEngine = nil
+
+        do {
+            try RecordingAudioSession.activateForCapture(log: logSpeechDiagnostic)
+            logSpeechDiagnostic("audio route: \(Self.audioRouteDescription())")
+
+            let audioEngine = AVAudioEngine()
+            self.audioEngine = audioEngine
+            let inputNode = audioEngine.inputNode
+
+            try beginRecognitionTask(context: "audioCaptureRestart(\(reason))")
+
+            let recordingFormat = inputNode.outputFormat(forBus: 0)
+            logSpeechDiagnostic(
+                "reinstalling input tap (sampleRate=\(recordingFormat.sampleRate), channels=\(recordingFormat.channelCount))"
+            )
+            inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
+                self?.recognitionRequest?.append(buffer)
+            }
+
+            audioEngine.prepare()
+            try audioEngine.start()
+            logSpeechDiagnostic("audio engine restarted after route change")
+        } catch {
+            logSpeechDiagnostic("restartAudioCapturePipeline failed: \(error.localizedDescription)")
+        }
+    }
     
     @MainActor
-    private func scheduleRecognitionRecovery(reason: String) {
+    private func scheduleRecognitionRecovery(reason: String, restartsAudioCapture: Bool = false) {
         let elapsed = recordingSessionStartedAt.map { Date().timeIntervalSince($0) } ?? -1
         logSpeechDiagnostic(
-            "scheduling recognition recovery in 200ms (reason=\(reason), elapsedSinceStart=\(String(format: "%.2f", elapsed))s)"
+            "scheduling recognition recovery in 200ms (reason=\(reason), restartAudioCapture=\(restartsAudioCapture), elapsedSinceStart=\(String(format: "%.2f", elapsed))s)"
         )
         recognitionRecoveryTask?.cancel()
         recognitionRecoveryTask = Task { @MainActor in
@@ -462,7 +499,11 @@ class SpeechRecognizer {
                 self.logSpeechDiagnostic("recognition recovery skipped — not recording (reason=\(reason))")
                 return
             }
-            self.restartRecognitionSession(reason: reason)
+            if restartsAudioCapture {
+                self.restartAudioCapturePipeline(reason: reason)
+            } else {
+                self.restartRecognitionSession(reason: reason)
+            }
         }
     }
     
@@ -485,7 +526,7 @@ class SpeechRecognizer {
                 }
                 self.logSpeechDiagnostic("audio route changed while recording (\(reason))")
                 self.logSpeechDiagnostic("audio route: \(Self.audioRouteDescription())")
-                self.scheduleRecognitionRecovery(reason: "routeChange:\(reason)")
+                self.scheduleRecognitionRecovery(reason: "routeChange:\(reason)", restartsAudioCapture: true)
             }
         }
         
@@ -501,7 +542,7 @@ class SpeechRecognizer {
                       let type = AVAudioSession.InterruptionType(rawValue: typeValue) else { return }
                 self.logSpeechDiagnostic("audio interruption while recording (type=\(type.rawValue))")
                 guard type == .ended else { return }
-                self.scheduleRecognitionRecovery(reason: "interruptionEnded")
+                self.scheduleRecognitionRecovery(reason: "interruptionEnded", restartsAudioCapture: true)
             }
         }
         

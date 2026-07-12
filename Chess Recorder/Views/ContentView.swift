@@ -200,7 +200,11 @@ struct ContentView: View {
             boardSection(
                 compactOpening: true,
                 boardAreaHeight: boardAreaHeight,
-                availableWidth: boardColumnWidth - 16
+                availableWidth: boardColumnWidth - 16,
+                iconHitSize: ToolbarMetrics.iconHitSize(
+                    compact: false,
+                    availableWidth: boardColumnWidth - 16
+                )
             )
                 .padding(8)
                 .frame(width: boardColumnWidth, height: geometry.size.height, alignment: .topLeading)
@@ -256,7 +260,13 @@ struct ContentView: View {
 
             ScrollView {
                 VStack(spacing: 16) {
-                    boardSection(availableWidth: geometry.size.width - 32)
+                    boardSection(
+                        availableWidth: geometry.size.width - 32,
+                        iconHitSize: ToolbarMetrics.iconHitSize(
+                            compact: true,
+                            availableWidth: geometry.size.width
+                        )
+                    )
                         .padding()
 
                     Divider()
@@ -270,7 +280,8 @@ struct ContentView: View {
     private func boardSection(
         compactOpening: Bool = false,
         boardAreaHeight: CGFloat? = nil,
-        availableWidth: CGFloat
+        availableWidth: CGFloat,
+        iconHitSize: CGFloat
     ) -> some View {
         let settings = settingsStore.settings
         let boardSide = BoardLayoutMetrics.computedBoardSide(
@@ -296,6 +307,7 @@ struct ContentView: View {
 
             MoveNavigationBar(
                 game: game,
+                iconHitSize: iconHitSize,
                 onGoToFirst: navigateToFirst,
                 onGoToPrevious: navigateBack,
                 onGoToNext: navigateForward,
@@ -353,7 +365,7 @@ struct ContentView: View {
         let isNarrowPortrait = compact && availableWidth < 500
         let isNarrowSidebar = !compact && availableWidth < 400
         let useIconOnlyRecord = isNarrowSidebar
-        let iconHitSize: CGFloat = (isNarrowPortrait || isNarrowSidebar) ? 36 : (compact ? 40 : 44)
+        let iconHitSize = ToolbarMetrics.iconHitSize(compact: compact, availableWidth: availableWidth)
         let iconSpacing: CGFloat = compact ? 4 : (isNarrowSidebar ? 0 : 2)
         let recordButtonWidth: CGFloat = 82
 
@@ -660,23 +672,6 @@ struct ContentView: View {
         if speechRecognizer.isRecording {
             speechRecognizer.stopRecording()
         }
-    }
-}
-
-private struct ToolbarIconLabel: View {
-    let systemName: String
-    var hitSize: CGFloat = 44
-
-    init(_ systemName: String, hitSize: CGFloat = 44) {
-        self.systemName = systemName
-        self.hitSize = hitSize
-    }
-
-    var body: some View {
-        Image(systemName: systemName)
-            .imageScale(.medium)
-            .frame(width: hitSize, height: hitSize)
-            .contentShape(Rectangle())
     }
 }
 

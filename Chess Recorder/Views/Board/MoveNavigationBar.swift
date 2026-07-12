@@ -7,14 +7,13 @@ import SwiftUI
 
 struct MoveNavigationBar: View {
     let game: ChessGame
+    var iconHitSize: CGFloat = 44
     var onGoToFirst: () -> Void
     var onGoToPrevious: () -> Void
     var onGoToNext: () -> Void
     var onGoToLatest: () -> Void
     var onGoToPly: (Int) -> Void
     var onFlipBoard: () -> Void
-
-    private let controlSize: CGFloat = 32
 
     var body: some View {
         HStack(spacing: 6) {
@@ -52,12 +51,10 @@ struct MoveNavigationBar: View {
             )
 
             Button(action: onFlipBoard) {
-                Label("Turn board", systemImage: "arrow.up.arrow.down")
-                    .labelStyle(.iconOnly)
-                    .imageScale(.medium)
-                    .frame(width: 44, height: 44)
-                    .contentShape(Rectangle())
+                ToolbarIconLabel("arrow.up.arrow.down", hitSize: iconHitSize)
             }
+            .buttonStyle(.plain)
+            .foregroundStyle(Color.accentColor)
             .accessibilityLabel("Turn board")
         }
         .padding(.horizontal, 4)
@@ -114,7 +111,7 @@ struct MoveNavigationBar: View {
                 scrollToActiveMove(using: proxy, animated: true)
             }
         }
-        .frame(height: controlSize)
+        .frame(height: iconHitSize)
     }
 
     private func moveToken(
@@ -187,10 +184,7 @@ struct MoveNavigationBar: View {
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            Image(systemName: systemName)
-                .font(.system(size: 13, weight: .semibold))
-                .frame(width: controlSize, height: controlSize)
-                .contentShape(Rectangle())
+            ToolbarIconLabel(systemName, hitSize: iconHitSize)
         }
         .buttonStyle(.plain)
         .foregroundStyle(isEnabled ? Color.accentColor : Color.secondary.opacity(0.35))

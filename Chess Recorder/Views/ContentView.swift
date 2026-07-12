@@ -455,14 +455,17 @@ struct ContentView: View {
                 }
                 Divider()
                 Button("1-0") {
-                    startNewGame(result: .whiteWins)
+                    endGame(with: .whiteWins)
                 }
+                .disabled(game.isGameOver)
                 Button("0-1") {
-                    startNewGame(result: .blackWins)
+                    endGame(with: .blackWins)
                 }
+                .disabled(game.isGameOver)
                 Button("1/2-1/2") {
-                    startNewGame(result: .draw)
+                    endGame(with: .draw)
                 }
+                .disabled(game.isGameOver)
             } label: {
                 ToolbarIconLabel("ellipsis.circle", hitSize: iconHitSize)
             }
@@ -602,6 +605,11 @@ struct ContentView: View {
         return true
     }
     
+    private func endGame(with result: PGNResult) {
+        guard result != .ongoing, !game.isGameOver else { return }
+        game.declareResult(result)
+    }
+
     private func startNewGame(result: PGNResult) {
         let archiveResult = result == .ongoing ? game.gameResult : result
         pgnArchive.finalizeActiveGame(with: archiveResult, from: game)
@@ -623,6 +631,9 @@ struct ContentView: View {
 
         pgnArchive.setActiveGame(id: id)
         _ = game.loadMainLine(moves: recordedGame.moves)
+        if recordedGame.result != .ongoing {
+            game.declareResult(recordedGame.result)
+        }
 
         if speechRecognizer.isRecording, pgnArchive.activeGameIsReviewOnly {
             speechRecognizer.stopRecording()

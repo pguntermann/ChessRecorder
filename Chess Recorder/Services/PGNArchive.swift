@@ -136,6 +136,9 @@ final class PGNArchive {
             if let activeGameID,
                let index = games.firstIndex(where: { $0.id == activeGameID }) {
                 games[index].moves = []
+                if chessGame.isGameOver {
+                    games[index].result = chessGame.gameResult
+                }
             }
             return
         }

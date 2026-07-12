@@ -110,6 +110,8 @@ class ChessGame {
     private(set) var currentTurn: PieceColor = .white
     private(set) var moves: [ChessMove] = []
     private(set) var gameResult: PGNResult = .ongoing
+    /// User-declared result (resignation/agreement) that persists across board syncs.
+    @ObservationIgnored private var declaredResult: PGNResult?
     /// Half-move count from the starting position to the viewed position (0 = start).
     private(set) var activePlyIndex: Int = 0
     var activeMoveAnimation: ActiveMoveAnimation?
@@ -236,10 +238,17 @@ class ChessGame {
         kitGame = ChessKit.Game()
         currentIndex = kitGame.startingIndex
         moves = []
+        declaredResult = nil
         gameResult = .ongoing
         activePlyIndex = 0
         activeMoveAnimation = nil
         syncBoardFromKit()
+    }
+
+    func declareResult(_ result: PGNResult) {
+        guard result != .ongoing else { return }
+        declaredResult = result
+        gameResult = result
     }
 
     var isAtLatestMove: Bool {
@@ -341,7 +350,23 @@ class ChessGame {
         case .draw(let reason):
             return ChessKitMapping.drawStatusMessage(for: reason)
         default:
+            if declaredResult != nil {
+                return Self.declaredResultStatusMessage(for: gameResult)
+            }
             return nil
+        }
+    }
+
+    private static func declaredResultStatusMessage(for result: PGNResult) -> String {
+        switch result {
+        case .whiteWins:
+            return "White wins — 1-0"
+        case .blackWins:
+            return "Black wins — 0-1"
+        case .draw:
+            return "Draw — ½-½"
+        case .ongoing:
+            return ""
         }
     }
 
@@ -361,6 +386,7 @@ class ChessGame {
         kitGame = ChessKit.Game()
         currentIndex = kitGame.startingIndex
         moves = []
+        declaredResult = nil
         gameResult = .ongoing
         activeMoveAnimation = nil
         syncBoardFromKit()
@@ -583,7 +609,13 @@ class ChessGame {
         }
 
         currentTurn = ChessKitMapping.appColor(kitBoard.position.sideToMove)
-        gameResult = ChessKitMapping.pgnResult(from: kitBoard.state) ?? .ongoing
+        if let declaredResult {
+            gameResult = declaredResult
+        } else if let detectedResult = ChessKitMapping.pgnResult(from: kitBoard.state) {
+            gameResult = detectedResult
+        } else {
+            gameResult = .ongoing
+        }
     }
 
     private func setAnimation(for move: Move, piece: ChessPiece) {

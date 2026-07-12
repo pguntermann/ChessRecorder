@@ -350,6 +350,7 @@ class SpeechRecognizer {
         try audioSession.setCategory(.record, mode: .measurement, options: .duckOthers)
         try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
         logSpeechDiagnostic("audio session activated (category=record, mode=measurement)")
+        logSpeechDiagnostic("audio route: \(Self.audioRouteDescription())")
         
         let audioEngine = AVAudioEngine()
         self.audioEngine = audioEngine
@@ -483,6 +484,7 @@ class SpeechRecognizer {
                     return
                 }
                 self.logSpeechDiagnostic("audio route changed while recording (\(reason))")
+                self.logSpeechDiagnostic("audio route: \(Self.audioRouteDescription())")
                 self.scheduleRecognitionRecovery(reason: "routeChange:\(reason)")
             }
         }
@@ -960,6 +962,32 @@ class SpeechRecognizer {
         @unknown default:
             return "unknown"
         }
+    }
+
+    private static func audioRouteDescription() -> String {
+        let session = AVAudioSession.sharedInstance()
+        let route = session.currentRoute
+
+        func portDescription(_ port: AVAudioSessionPortDescription) -> String {
+            "\(port.portName) (\(port.portType.rawValue))"
+        }
+
+        let inputs = route.inputs.map(portDescription)
+        let outputs = route.outputs.map(portDescription)
+        let inputText = inputs.isEmpty ? "none" : inputs.joined(separator: ", ")
+        let outputText = outputs.isEmpty ? "none" : outputs.joined(separator: ", ")
+
+        var parts = ["input=\(inputText)", "output=\(outputText)"]
+
+        if let preferred = session.preferredInput {
+            parts.append("preferredInput=\(portDescription(preferred))")
+        }
+
+        if let available = session.availableInputs?.map(portDescription), !available.isEmpty {
+            parts.append("availableInputs=[\(available.joined(separator: ", "))]")
+        }
+
+        return parts.joined(separator: " | ")
     }
 
     private static func shouldRecoverFromRouteChange(from notification: Notification) -> Bool {

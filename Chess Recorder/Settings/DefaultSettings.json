@@ -49,7 +49,7 @@
     "green" : 0.478,
     "red" : 0
   },
-  "showLastMoveArrow" : false,
+  "showLastMoveArrow" : true,
   "lastMoveArrowColor" : {
     "alpha" : 1,
     "blue" : 0.1,

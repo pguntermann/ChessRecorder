@@ -110,7 +110,7 @@ struct AppSettings: Codable, Equatable {
         dictationPauseSeconds: Double = 0.9,
         touchInputEnabled: Bool = true,
         touchInputHighlightColor: CodableColor = CodableColor(red: 0, green: 0.478, blue: 1),
-        showLastMoveArrow: Bool = false,
+        showLastMoveArrow: Bool = true,
         lastMoveArrowColor: CodableColor = CodableColor(red: 0.85, green: 0.65, blue: 0.1),
         engineAnalysisVisible: Bool = true,
         engineAnalysisDepth: Double = 18,
@@ -170,7 +170,7 @@ struct AppSettings: Codable, Equatable {
         touchInputEnabled = try container.decodeIfPresent(Bool.self, forKey: .touchInputEnabled) ?? true
         touchInputHighlightColor = try container.decodeIfPresent(CodableColor.self, forKey: .touchInputHighlightColor)
             ?? CodableColor(red: 0, green: 0.478, blue: 1)
-        showLastMoveArrow = try container.decodeIfPresent(Bool.self, forKey: .showLastMoveArrow) ?? false
+        showLastMoveArrow = try container.decodeIfPresent(Bool.self, forKey: .showLastMoveArrow) ?? true
         lastMoveArrowColor = try container.decodeIfPresent(CodableColor.self, forKey: .lastMoveArrowColor)
             ?? CodableColor(red: 0.85, green: 0.65, blue: 0.1)
         engineAnalysisVisible = try container.decodeIfPresent(Bool.self, forKey: .engineAnalysisVisible) ?? true
@@ -217,7 +217,7 @@ struct AppSettings: Codable, Equatable {
         dictationPauseSeconds: 0.9,
         touchInputEnabled: true,
         touchInputHighlightColor: CodableColor(red: 0, green: 0.478, blue: 1),
-        showLastMoveArrow: false,
+        showLastMoveArrow: true,
         lastMoveArrowColor: CodableColor(red: 0.85, green: 0.65, blue: 0.1),
         engineAnalysisVisible: true,
         engineAnalysisDepth: 18,

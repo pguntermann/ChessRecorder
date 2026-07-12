@@ -36,6 +36,7 @@ struct ChessBoardView: View {
     var orientation: BoardOrientation = .whiteAtBottom
     var touchInputEnabled: Bool = false
     var analysisArrow: AnalysisArrowMove?
+    var lastMoveArrow: AnalysisArrowMove?
     var chessEngine: ChessEngine?
     
     @State private var selectedSquare: ChessPosition?
@@ -47,11 +48,129 @@ struct ChessBoardView: View {
         BoardLayoutMetrics.Dimensions(boardSide: boardSide)
     }
 
+    private var coordinateGutter: CGFloat {
+        BoardLayoutMetrics.coordinateGutterLength(
+            fontSize: settings.coordinateFontSize,
+            boardScale: settings.boardSizePercent
+        )
+    }
+
     var body: some View {
         let dimensions = boardDimensions
         let squareSize = dimensions.squareSize
         let exactSide = dimensions.side
 
+        Group {
+            if settings.usesOutsideCoordinates {
+                outsideCoordinateBoard(squareSize: squareSize, exactSide: exactSide)
+            } else {
+                boardCore(squareSize: squareSize, exactSide: exactSide)
+            }
+        }
+        .onChange(of: game.activePlyIndex) { _, _ in
+            clearSelection()
+        }
+        .onChange(of: game.activeMoveAnimation?.id) { _, newID in
+            guard newID != nil, settings.moveAnimationDuration <= 0,
+                  let animation = game.activeMoveAnimation else { return }
+            game.clearMoveAnimation(id: animation.id)
+        }
+        .onChange(of: game.moves.count) { _, _ in
+            clearSelection()
+        }
+        .onChange(of: touchInputEnabled) { _, enabled in
+            if !enabled {
+                clearSelection()
+            }
+        }
+        .confirmationDialog(
+            "Promote pawn",
+            isPresented: $showPromotionPicker,
+            titleVisibility: .visible
+        ) {
+            promotionButton("Queen", piece: .queen)
+            promotionButton("Rook", piece: .rook)
+            promotionButton("Bishop", piece: .bishop)
+            promotionButton("Knight", piece: .knight)
+            Button("Cancel", role: .cancel) {
+                pendingPromotion = nil
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func outsideCoordinateBoard(squareSize: CGFloat, exactSide: CGFloat) -> some View {
+        let ranksOnLeading = orientation == .whiteAtBottom
+        let filesOnBottom = orientation == .whiteAtBottom
+
+        VStack(spacing: 0) {
+            if !filesOnBottom {
+                outsideFileLabelRow(
+                    squareSize: squareSize,
+                    ranksOnLeading: ranksOnLeading
+                )
+            }
+
+            HStack(spacing: 0) {
+                if ranksOnLeading {
+                    outsideRankLabelColumn(squareSize: squareSize)
+                }
+
+                boardCore(squareSize: squareSize, exactSide: exactSide)
+
+                if !ranksOnLeading {
+                    outsideRankLabelColumn(squareSize: squareSize)
+                }
+            }
+
+            if filesOnBottom {
+                outsideFileLabelRow(
+                    squareSize: squareSize,
+                    ranksOnLeading: ranksOnLeading
+                )
+            }
+        }
+        .fixedSize(horizontal: true, vertical: true)
+    }
+
+    @ViewBuilder
+    private func outsideFileLabelRow(squareSize: CGFloat, ranksOnLeading: Bool) -> some View {
+        HStack(spacing: 0) {
+            if ranksOnLeading {
+                Color.clear
+                    .frame(width: coordinateGutter, height: coordinateGutter)
+            }
+
+            HStack(spacing: 0) {
+                ForEach(orientation.displayFiles, id: \.self) { file in
+                    Text(fileLabel(for: file))
+                        .font(settings.coordinateFont(boardScale: settings.boardSizePercent))
+                        .foregroundStyle(settings.coordinateColor.color)
+                        .frame(width: squareSize, height: coordinateGutter)
+                }
+            }
+
+            if !ranksOnLeading {
+                Color.clear
+                    .frame(width: coordinateGutter, height: coordinateGutter)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func outsideRankLabelColumn(squareSize: CGFloat) -> some View {
+        VStack(spacing: 0) {
+            ForEach(orientation.displayRanks, id: \.self) { rank in
+                Text("\(rank + 1)")
+                    .font(settings.coordinateFont(boardScale: settings.boardSizePercent))
+                    .foregroundStyle(settings.coordinateColor.color)
+                    .frame(width: coordinateGutter, height: squareSize)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func boardCore(squareSize: CGFloat, exactSide: CGFloat) -> some View {
         ZStack(alignment: .topLeading) {
             boardGrid(squareSize: squareSize, exactSide: exactSide)
 
@@ -61,6 +180,16 @@ struct ChessBoardView: View {
                     squareSize: squareSize,
                     orientation: orientation,
                     color: settings.engineAnalysisArrowColor.color
+                )
+                .frame(width: exactSide, height: exactSide, alignment: .topLeading)
+            }
+
+            if let lastMoveArrow {
+                AnalysisArrowOverlay(
+                    move: lastMoveArrow,
+                    squareSize: squareSize,
+                    orientation: orientation,
+                    color: settings.lastMoveArrowColor.color
                 )
                 .frame(width: exactSide, height: exactSide, alignment: .topLeading)
             }
@@ -95,35 +224,10 @@ struct ChessBoardView: View {
                 )
             }
         }
-        .onChange(of: game.activePlyIndex) { _, _ in
-            clearSelection()
-        }
-        .onChange(of: game.activeMoveAnimation?.id) { _, newID in
-            guard newID != nil, settings.moveAnimationDuration <= 0,
-                  let animation = game.activeMoveAnimation else { return }
-            game.clearMoveAnimation(id: animation.id)
-        }
-        .onChange(of: game.moves.count) { _, _ in
-            clearSelection()
-        }
-        .onChange(of: touchInputEnabled) { _, enabled in
-            if !enabled {
-                clearSelection()
-            }
-        }
-        .confirmationDialog(
-            "Promote pawn",
-            isPresented: $showPromotionPicker,
-            titleVisibility: .visible
-        ) {
-            promotionButton("Queen", piece: .queen)
-            promotionButton("Rook", piece: .rook)
-            promotionButton("Bishop", piece: .bishop)
-            promotionButton("Knight", piece: .knight)
-            Button("Cancel", role: .cancel) {
-                pendingPromotion = nil
-            }
-        }
+    }
+
+    private func fileLabel(for file: Int) -> String {
+        String("abcdefgh"[String.Index(utf16Offset: file, in: "abcdefgh")])
     }
     
     @ViewBuilder
@@ -340,7 +444,15 @@ struct ChessSquareView: View {
     private var showsFileLabel: Bool {
         orientation == .whiteAtBottom ? position.rank == 0 : position.rank == 7
     }
+
+    private func fileLabel(for file: Int) -> String {
+        String("abcdefgh"[String.Index(utf16Offset: file, in: "abcdefgh")])
+    }
     
+    private var touchHighlightColor: Color {
+        settings.touchInputHighlightColor.color
+    }
+
     var body: some View {
         ZStack {
             Rectangle()
@@ -348,10 +460,10 @@ struct ChessSquareView: View {
             
             if isSelected {
                 Rectangle()
-                    .fill(Color.accentColor.opacity(0.35))
+                    .fill(touchHighlightColor.opacity(0.35))
             } else if isLegalDestination {
                 Circle()
-                    .fill(Color.accentColor.opacity(piece == nil ? 0.45 : 0.25))
+                    .fill(touchHighlightColor.opacity(piece == nil ? 0.45 : 0.25))
                     .frame(
                         width: piece == nil ? squareSize * 0.28 : squareSize * 0.82,
                         height: piece == nil ? squareSize * 0.28 : squareSize * 0.82
@@ -359,7 +471,7 @@ struct ChessSquareView: View {
                     .overlay {
                         if piece != nil {
                             Circle()
-                                .stroke(Color.accentColor.opacity(0.7), lineWidth: 3)
+                                .stroke(touchHighlightColor.opacity(0.7), lineWidth: 3)
                         }
                     }
             }
@@ -372,7 +484,7 @@ struct ChessSquareView: View {
             }
         }
         .overlay(alignment: .bottomLeading) {
-            if showsRankLabel {
+            if settings.showCoordinates, !settings.coordinatesOutsideBoard, showsRankLabel {
                 Text("\(position.rank + 1)")
                     .font(settings.coordinateFont(boardScale: coordinateScale))
                     .foregroundStyle(settings.coordinateColor.color)
@@ -380,8 +492,8 @@ struct ChessSquareView: View {
             }
         }
         .overlay(alignment: .bottomTrailing) {
-            if showsFileLabel {
-                Text(String("abcdefgh"[String.Index(utf16Offset: position.file, in: "abcdefgh")]))
+            if settings.showCoordinates, !settings.coordinatesOutsideBoard, showsFileLabel {
+                Text(fileLabel(for: position.file))
                     .font(settings.coordinateFont(boardScale: coordinateScale))
                     .foregroundStyle(settings.coordinateColor.color)
                     .padding(coordinatePadding)

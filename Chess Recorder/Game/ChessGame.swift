@@ -246,6 +246,12 @@ class ChessGame {
         currentIndex == kitGame.moves.endIndex
     }
 
+    /// The move that led to the currently viewed position, if any.
+    var moveAtActivePly: ChessMove? {
+        guard activePlyIndex > 0, activePlyIndex <= moves.count else { return nil }
+        return moves[activePlyIndex - 1]
+    }
+
     var canGoBack: Bool {
         kitGame.moves.hasIndex(before: currentIndex)
     }

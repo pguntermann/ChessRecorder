@@ -45,9 +45,14 @@ struct AppSettings: Codable, Equatable {
     var coordinateColor: CodableColor
     var coordinateFontName: String
     var coordinateFontSize: Double
+    var showCoordinates: Bool
+    var coordinatesOutsideBoard: Bool
     var moveAnimationDuration: Double
     var dictationPauseSeconds: Double
     var touchInputEnabled: Bool
+    var touchInputHighlightColor: CodableColor
+    var showLastMoveArrow: Bool
+    var lastMoveArrowColor: CodableColor
     var engineAnalysisVisible: Bool
     var engineAnalysisDepth: Double
     var engineAnalysisShowEvaluationBar: Bool
@@ -69,9 +74,14 @@ struct AppSettings: Codable, Equatable {
         case coordinateColor
         case coordinateFontName
         case coordinateFontSize
+        case showCoordinates
+        case coordinatesOutsideBoard
         case moveAnimationDuration
         case dictationPauseSeconds
         case touchInputEnabled
+        case touchInputHighlightColor
+        case showLastMoveArrow
+        case lastMoveArrowColor
         case engineAnalysisVisible
         case engineAnalysisDepth
         case engineAnalysisShowEvaluationBar
@@ -94,9 +104,14 @@ struct AppSettings: Codable, Equatable {
         coordinateColor: CodableColor,
         coordinateFontName: String,
         coordinateFontSize: Double,
+        showCoordinates: Bool = true,
+        coordinatesOutsideBoard: Bool = true,
         moveAnimationDuration: Double,
         dictationPauseSeconds: Double = 0.9,
         touchInputEnabled: Bool = true,
+        touchInputHighlightColor: CodableColor = CodableColor(red: 0, green: 0.478, blue: 1),
+        showLastMoveArrow: Bool = false,
+        lastMoveArrowColor: CodableColor = CodableColor(red: 0.85, green: 0.65, blue: 0.1),
         engineAnalysisVisible: Bool = true,
         engineAnalysisDepth: Double = 18,
         engineAnalysisShowEvaluationBar: Bool = false,
@@ -117,9 +132,14 @@ struct AppSettings: Codable, Equatable {
         self.coordinateColor = coordinateColor
         self.coordinateFontName = coordinateFontName
         self.coordinateFontSize = coordinateFontSize
+        self.showCoordinates = showCoordinates
+        self.coordinatesOutsideBoard = coordinatesOutsideBoard
         self.moveAnimationDuration = moveAnimationDuration
         self.dictationPauseSeconds = dictationPauseSeconds
         self.touchInputEnabled = touchInputEnabled
+        self.touchInputHighlightColor = touchInputHighlightColor
+        self.showLastMoveArrow = showLastMoveArrow
+        self.lastMoveArrowColor = lastMoveArrowColor
         self.engineAnalysisVisible = engineAnalysisVisible
         self.engineAnalysisDepth = engineAnalysisDepth
         self.engineAnalysisShowEvaluationBar = engineAnalysisShowEvaluationBar
@@ -143,9 +163,16 @@ struct AppSettings: Codable, Equatable {
         coordinateColor = try container.decode(CodableColor.self, forKey: .coordinateColor)
         coordinateFontName = try container.decode(String.self, forKey: .coordinateFontName)
         coordinateFontSize = try container.decode(Double.self, forKey: .coordinateFontSize)
+        showCoordinates = try container.decodeIfPresent(Bool.self, forKey: .showCoordinates) ?? true
+        coordinatesOutsideBoard = try container.decodeIfPresent(Bool.self, forKey: .coordinatesOutsideBoard) ?? true
         moveAnimationDuration = try container.decodeIfPresent(Double.self, forKey: .moveAnimationDuration) ?? 0.35
         dictationPauseSeconds = try container.decodeIfPresent(Double.self, forKey: .dictationPauseSeconds) ?? 0.9
         touchInputEnabled = try container.decodeIfPresent(Bool.self, forKey: .touchInputEnabled) ?? true
+        touchInputHighlightColor = try container.decodeIfPresent(CodableColor.self, forKey: .touchInputHighlightColor)
+            ?? CodableColor(red: 0, green: 0.478, blue: 1)
+        showLastMoveArrow = try container.decodeIfPresent(Bool.self, forKey: .showLastMoveArrow) ?? false
+        lastMoveArrowColor = try container.decodeIfPresent(CodableColor.self, forKey: .lastMoveArrowColor)
+            ?? CodableColor(red: 0.85, green: 0.65, blue: 0.1)
         engineAnalysisVisible = try container.decodeIfPresent(Bool.self, forKey: .engineAnalysisVisible) ?? true
         engineAnalysisDepth = try container.decodeIfPresent(Double.self, forKey: .engineAnalysisDepth) ?? 18
         if let legacyContainer = try? decoder.container(keyedBy: LegacyCodingKeys.self),
@@ -184,9 +211,14 @@ struct AppSettings: Codable, Equatable {
         coordinateColor: CodableColor(red: 0.12, green: 0.22, blue: 0.35),
         coordinateFontName: "",
         coordinateFontSize: 14,
+        showCoordinates: true,
+        coordinatesOutsideBoard: true,
         moveAnimationDuration: 0.35,
         dictationPauseSeconds: 0.9,
         touchInputEnabled: true,
+        touchInputHighlightColor: CodableColor(red: 0, green: 0.478, blue: 1),
+        showLastMoveArrow: false,
+        lastMoveArrowColor: CodableColor(red: 0.85, green: 0.65, blue: 0.1),
         engineAnalysisVisible: true,
         engineAnalysisDepth: 18,
         engineAnalysisShowEvaluationBar: false,
@@ -284,6 +316,10 @@ extension AppSettings {
 
     var cappedEngineAnalysisDepth: Int {
         Int(min(max(engineAnalysisDepth, 1), 30))
+    }
+
+    var usesOutsideCoordinates: Bool {
+        showCoordinates && coordinatesOutsideBoard
     }
 
     func coordinateFont(boardScale: Double = 1) -> Font {

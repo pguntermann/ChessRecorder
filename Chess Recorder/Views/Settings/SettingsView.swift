@@ -16,6 +16,8 @@ struct SettingsView: View {
     @State private var darkColor: Color
     @State private var coordinateColor: Color
     @State private var analysisArrowColor: Color
+    @State private var touchInputHighlightColor: Color
+    @State private var lastMoveArrowColor: Color
     @State private var selectedLanguage: RecognitionLanguage
     @State private var showingAddPhrase = false
     @State private var showingAddCorrection = false
@@ -36,6 +38,8 @@ struct SettingsView: View {
         _darkColor = State(initialValue: settings.darkSquareColor.color)
         _coordinateColor = State(initialValue: settings.coordinateColor.color)
         _analysisArrowColor = State(initialValue: settings.engineAnalysisArrowColor.color)
+        _touchInputHighlightColor = State(initialValue: settings.touchInputHighlightColor.color)
+        _lastMoveArrowColor = State(initialValue: settings.lastMoveArrowColor.color)
         _selectedLanguage = State(initialValue: settings.defaultRecognitionLanguage)
         _phraseListLanguage = State(initialValue: settings.defaultRecognitionLanguage)
     }
@@ -139,6 +143,122 @@ struct SettingsView: View {
                 }
                 
                 Section {
+                    Toggle("Touch input", isOn: Binding(
+                        get: { settingsStore.settings.touchInputEnabled },
+                        set: { newValue in
+                            settingsStore.update { $0.touchInputEnabled = newValue }
+                        }
+                    ))
+
+                    ColorPicker("Touch move highlight", selection: $touchInputHighlightColor, supportsOpacity: false)
+                        .disabled(!settingsStore.settings.touchInputEnabled)
+                        .onChange(of: touchInputHighlightColor) { _, color in
+                            settingsStore.update { $0.touchInputHighlightColor = CodableColor(color) }
+                        }
+
+                    Toggle("Show last-move arrow on board", isOn: Binding(
+                        get: { settingsStore.settings.showLastMoveArrow },
+                        set: { newValue in
+                            settingsStore.update { $0.showLastMoveArrow = newValue }
+                        }
+                    ))
+
+                    ColorPicker("Last-move arrow color", selection: $lastMoveArrowColor, supportsOpacity: false)
+                        .disabled(!settingsStore.settings.showLastMoveArrow)
+                        .onChange(of: lastMoveArrowColor) { _, color in
+                            settingsStore.update { $0.lastMoveArrowColor = CodableColor(color) }
+                        }
+
+                    Toggle("Show opening name", isOn: Binding(
+                        get: { settingsStore.settings.openingNameVisible },
+                        set: { newValue in
+                            settingsStore.update { $0.openingNameVisible = newValue }
+                        }
+                    ))
+                    
+                    VStack(alignment: .leading) {
+                        Text("Board size: \(Int(settingsStore.settings.boardSizePercent * 100))%")
+                        Slider(value: Binding(
+                            get: { settingsStore.settings.boardSizePercent },
+                            set: { newValue in
+                                settingsStore.update { $0.boardSizePercent = newValue }
+                            }
+                        ), in: 0.5...1.0, step: 0.05)
+                    }
+
+                    VStack(alignment: .leading) {
+                        Text("Piece size: \(Int(settingsStore.settings.pieceSizePercent * 100))%")
+                        Slider(value: Binding(
+                            get: { settingsStore.settings.pieceSizePercent },
+                            set: { newValue in
+                                settingsStore.update { $0.pieceSizePercent = newValue }
+                            }
+                        ), in: 0.5...1.0, step: 0.05)
+                    }
+                    
+                    VStack(alignment: .leading) {
+                        Text(moveAnimationLabel)
+                        Slider(value: Binding(
+                            get: { settingsStore.settings.moveAnimationDuration },
+                            set: { newValue in
+                                settingsStore.update { $0.moveAnimationDuration = newValue }
+                            }
+                        ), in: 0...1.0, step: 0.05)
+                    }
+                    
+                    ColorPicker("Light squares", selection: $lightColor, supportsOpacity: false)
+                        .onChange(of: lightColor) { _, color in
+                            settingsStore.update { $0.lightSquareColor = CodableColor(color) }
+                        }
+                    
+                    ColorPicker("Dark squares", selection: $darkColor, supportsOpacity: false)
+                        .onChange(of: darkColor) { _, color in
+                            settingsStore.update { $0.darkSquareColor = CodableColor(color) }
+                        }
+                } header: {
+                    Text("Board")
+                }
+
+                Section {
+                    Toggle("Show coordinates", isOn: Binding(
+                        get: { settingsStore.settings.showCoordinates },
+                        set: { newValue in
+                            settingsStore.update { $0.showCoordinates = newValue }
+                        }
+                    ))
+
+                    Toggle("Coordinates outside board", isOn: Binding(
+                        get: { settingsStore.settings.coordinatesOutsideBoard },
+                        set: { newValue in
+                            settingsStore.update { $0.coordinatesOutsideBoard = newValue }
+                        }
+                    ))
+                    .disabled(!settingsStore.settings.showCoordinates)
+
+                    ColorPicker("Color", selection: $coordinateColor, supportsOpacity: false)
+                        .disabled(!settingsStore.settings.showCoordinates)
+                        .onChange(of: coordinateColor) { _, color in
+                            settingsStore.update { $0.coordinateColor = CodableColor(color) }
+                        }
+                    
+                    HStack {
+                        Text("Font size")
+                        Spacer()
+                        Text("\(Int(settingsStore.settings.coordinateFontSize)) pt")
+                            .foregroundStyle(.secondary)
+                    }
+                    Slider(value: Binding(
+                        get: { settingsStore.settings.coordinateFontSize },
+                        set: { newValue in
+                            settingsStore.update { $0.coordinateFontSize = newValue }
+                        }
+                    ), in: 6...18, step: 1)
+                    .disabled(!settingsStore.settings.showCoordinates)
+                } header: {
+                    Text("Coordinates")
+                }
+                
+                Section {
                     LabeledContent("Site") {
                         TextField("?", text: Binding(
                             get: { settingsStore.settings.pgnSite },
@@ -191,66 +311,6 @@ struct SettingsView: View {
                     Text("PGN")
                 } footer: {
                     Text("Player names are used for [White] and [Black] tags in exported PGN. Use Switch to swap sides between games. Hiding header tags affects the notation panel only; Copy and Share still include full PGN headers.")
-                }
-                
-                Section {
-                    Toggle("Touch input", isOn: Binding(
-                        get: { settingsStore.settings.touchInputEnabled },
-                        set: { newValue in
-                            settingsStore.update { $0.touchInputEnabled = newValue }
-                        }
-                    ))
-
-                    Toggle("Show opening name", isOn: Binding(
-                        get: { settingsStore.settings.openingNameVisible },
-                        set: { newValue in
-                            settingsStore.update { $0.openingNameVisible = newValue }
-                        }
-                    ))
-                    
-                    VStack(alignment: .leading) {
-                        Text("Board size: \(Int(settingsStore.settings.boardSizePercent * 100))%")
-                        Slider(value: Binding(
-                            get: { settingsStore.settings.boardSizePercent },
-                            set: { newValue in
-                                settingsStore.update { $0.boardSizePercent = newValue }
-                            }
-                        ), in: 0.5...1.0, step: 0.05)
-                    }
-
-                    VStack(alignment: .leading) {
-                        Text("Piece size: \(Int(settingsStore.settings.pieceSizePercent * 100))%")
-                        Slider(value: Binding(
-                            get: { settingsStore.settings.pieceSizePercent },
-                            set: { newValue in
-                                settingsStore.update { $0.pieceSizePercent = newValue }
-                            }
-                        ), in: 0.5...1.0, step: 0.05)
-                    }
-                    
-                    VStack(alignment: .leading) {
-                        Text(moveAnimationLabel)
-                        Slider(value: Binding(
-                            get: { settingsStore.settings.moveAnimationDuration },
-                            set: { newValue in
-                                settingsStore.update { $0.moveAnimationDuration = newValue }
-                            }
-                        ), in: 0...1.0, step: 0.05)
-                    }
-                    
-                    ColorPicker("Light squares", selection: $lightColor, supportsOpacity: false)
-                        .onChange(of: lightColor) { _, color in
-                            settingsStore.update { $0.lightSquareColor = CodableColor(color) }
-                        }
-                    
-                    ColorPicker("Dark squares", selection: $darkColor, supportsOpacity: false)
-                        .onChange(of: darkColor) { _, color in
-                            settingsStore.update { $0.darkSquareColor = CodableColor(color) }
-                        }
-                } header: {
-                    Text("Board")
-                } footer: {
-                    Text("Board size scales the chessboard relative to the largest size that fits on screen. At 100%, the board uses all available space; reducing it leaves more room for the notation panels in portrait or landscape. When Touch input is enabled, tap a piece and then a destination square to make moves on the board. The opening name appears above the board when moves are played.")
                 }
                 
                 Section {
@@ -349,26 +409,6 @@ struct SettingsView: View {
                     Text("Speech Corrections")
                 } footer: {
                     Text("Corrections are applied before move parsing and phrase matching. Use them for recurring ASR mistakes such as digits, homophones, or misheard piece names.")
-                }
-                
-                Section("Coordinates") {
-                    ColorPicker("Color", selection: $coordinateColor, supportsOpacity: false)
-                        .onChange(of: coordinateColor) { _, color in
-                            settingsStore.update { $0.coordinateColor = CodableColor(color) }
-                        }
-                    
-                    HStack {
-                        Text("Font size")
-                        Spacer()
-                        Text("\(Int(settingsStore.settings.coordinateFontSize)) pt")
-                            .foregroundStyle(.secondary)
-                    }
-                    Slider(value: Binding(
-                        get: { settingsStore.settings.coordinateFontSize },
-                        set: { newValue in
-                            settingsStore.update { $0.coordinateFontSize = newValue }
-                        }
-                    ), in: 6...18, step: 1)
                 }
                 
                 Section {
@@ -471,6 +511,8 @@ struct SettingsView: View {
         darkColor = settings.darkSquareColor.color
         coordinateColor = settings.coordinateColor.color
         analysisArrowColor = settings.engineAnalysisArrowColor.color
+        touchInputHighlightColor = settings.touchInputHighlightColor.color
+        lastMoveArrowColor = settings.lastMoveArrowColor.color
         selectedLanguage = settings.defaultRecognitionLanguage
         phraseListLanguage = settings.defaultRecognitionLanguage
     }

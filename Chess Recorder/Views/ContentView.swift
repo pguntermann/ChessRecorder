@@ -239,18 +239,19 @@ struct ContentView: View {
 
     private func landscapeBoardColumnWidth(in geometry: GeometryProxy) -> CGFloat {
         let showEvalBar = settingsStore.settings.engineAnalysisShowEvaluationBar
-        let evalOverhead: CGFloat = showEvalBar
-            ? BoardLayoutMetrics.evalBarWidth + BoardLayoutMetrics.evalBarSpacing
-            : 0
         let columnPadding: CGFloat = 16
         let boardAreaHeight = landscapeBoardAreaHeight(in: geometry)
-        let naturalBoardSide = floor(max(0, boardAreaHeight) / 8) * 8
-        let boardSide = BoardLayoutMetrics.scaledBoardSide(
-            naturalSide: naturalBoardSide,
-            sizePercent: settingsStore.settings.boardSizePercent
+        let footprint = BoardLayoutMetrics.computedFootprint(
+            availableWidth: .infinity,
+            maxBoardHeight: boardAreaHeight,
+            showEvaluationBar: showEvalBar,
+            boardSizePercent: settingsStore.settings.boardSizePercent,
+            showCoordinates: settingsStore.settings.showCoordinates,
+            coordinatesOutsideBoard: settingsStore.settings.coordinatesOutsideBoard,
+            coordinateFontSize: settingsStore.settings.coordinateFontSize
         )
 
-        return boardSide + evalOverhead + columnPadding
+        return footprint.widthIncludingEvalBar(showEvalBar) + columnPadding
     }
 
     @ViewBuilder
@@ -284,13 +285,16 @@ struct ContentView: View {
         iconHitSize: CGFloat
     ) -> some View {
         let settings = settingsStore.settings
-        let boardSide = BoardLayoutMetrics.computedBoardSide(
+        let footprint = BoardLayoutMetrics.computedFootprint(
             availableWidth: availableWidth,
             maxBoardHeight: boardAreaHeight,
             showEvaluationBar: settings.engineAnalysisShowEvaluationBar,
-            boardSizePercent: settings.boardSizePercent
+            boardSizePercent: settings.boardSizePercent,
+            showCoordinates: settings.showCoordinates,
+            coordinatesOutsideBoard: settings.coordinatesOutsideBoard,
+            coordinateFontSize: settings.coordinateFontSize
         )
-        let boardDimensions = BoardLayoutMetrics.Dimensions(boardSide: boardSide)
+        let boardDimensions = BoardLayoutMetrics.Dimensions(boardSide: footprint.boardSide)
 
         return VStack(alignment: .leading, spacing: compactOpening ? 6 : 10) {
             OpeningNameView(
@@ -303,7 +307,7 @@ struct ContentView: View {
 
             boardLayout(boardSide: boardDimensions.side)
                 .frame(maxWidth: .infinity)
-                .frame(height: boardDimensions.side)
+                .frame(height: footprint.totalHeight)
 
             MoveNavigationBar(
                 game: game,
@@ -690,7 +694,7 @@ private struct BoardWithEvaluationLayout: View {
     var body: some View {
         let dimensions = BoardLayoutMetrics.Dimensions(boardSide: boardSide)
 
-        HStack(spacing: BoardLayoutMetrics.evalBarSpacing) {
+        HStack(alignment: .top, spacing: BoardLayoutMetrics.evalBarSpacing) {
             ChessBoardView(
                 game: game,
                 settings: settings,
@@ -698,6 +702,7 @@ private struct BoardWithEvaluationLayout: View {
                 orientation: orientation,
                 touchInputEnabled: settings.touchInputEnabled && canAcceptNewMoves,
                 analysisArrow: showBoardArrow ? engineAnalysis.display.nextMoveArrow : nil,
+                lastMoveArrow: lastMoveArrow(for: game, settings: settings),
                 chessEngine: chessEngine
             )
 
@@ -710,9 +715,26 @@ private struct BoardWithEvaluationLayout: View {
                     isEngineReady: engineAnalysis.isEngineReady
                 )
                 .frame(width: BoardLayoutMetrics.evalBarWidth, height: dimensions.side)
+                .padding(
+                    .top,
+                    settings.usesOutsideCoordinates && orientation == .blackAtBottom
+                        ? BoardLayoutMetrics.coordinateGutterLength(
+                            fontSize: settings.coordinateFontSize,
+                            boardScale: settings.boardSizePercent
+                        )
+                        : 0
+                )
             }
         }
         .frame(maxWidth: .infinity)
+    }
+
+    private func lastMoveArrow(for game: ChessGame, settings: AppSettings) -> AnalysisArrowMove? {
+        guard settings.showLastMoveArrow,
+              let move = game.moveAtActivePly else {
+            return nil
+        }
+        return AnalysisArrowMove(from: move.from, to: move.to)
     }
 }
 

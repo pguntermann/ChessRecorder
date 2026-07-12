@@ -45,7 +45,11 @@ struct ContentView: View {
     }
 
     private var canAcceptNewMoves: Bool {
-        game.isAtLatestMove && !pgnArchive.activeGameIsReviewOnly
+        game.isAtLatestMove && !game.isGameOver && !pgnArchive.activeGameIsReviewOnly
+    }
+
+    private var recordButtonEnabled: Bool {
+        speechRecognizer.isReadyForUse && (speechRecognizer.isRecording || canAcceptNewMoves)
     }
     
     var body: some View {
@@ -120,6 +124,7 @@ struct ContentView: View {
             pgnArchive.syncActiveGame(from: game)
             if game.isGameOver {
                 engineAnalysis.stop()
+                stopRecordingIfNeeded()
             } else {
                 engineAnalysis.refresh(game: game)
             }
@@ -137,6 +142,7 @@ struct ContentView: View {
             pgnArchive.syncActiveGame(from: game)
             if game.isGameOver {
                 engineAnalysis.stop()
+                stopRecordingIfNeeded()
             }
         }
         .sheet(isPresented: $showingSettings) {
@@ -406,7 +412,7 @@ struct ContentView: View {
                     )
                     .foregroundColor(speechRecognizer.isRecording ? .red : (canAcceptNewMoves ? .blue : .secondary))
                 }
-                .disabled(!speechRecognizer.isReadyForUse || !canAcceptNewMoves)
+                .disabled(!recordButtonEnabled)
                 .accessibilityLabel(speechRecognizer.isRecording ? "Stop recording" : "Record")
             } else {
                 Button {
@@ -433,7 +439,7 @@ struct ContentView: View {
                     )
                 }
                 .layoutPriority(1)
-                .disabled(!speechRecognizer.isReadyForUse || !canAcceptNewMoves)
+                .disabled(!recordButtonEnabled)
             }
             
             Button {

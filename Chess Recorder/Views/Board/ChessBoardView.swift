@@ -183,22 +183,22 @@ struct ChessBoardView: View {
         ZStack(alignment: .topLeading) {
             boardGrid(squareSize: squareSize, exactSide: exactSide)
 
-            if let analysisArrow {
-                AnalysisArrowOverlay(
-                    move: analysisArrow,
-                    squareSize: squareSize,
-                    orientation: orientation,
-                    color: settings.engineAnalysisArrowColor.color
-                )
-                .frame(width: exactSide, height: exactSide, alignment: .topLeading)
-            }
-
             if let lastMoveArrow {
                 AnalysisArrowOverlay(
                     move: lastMoveArrow,
                     squareSize: squareSize,
                     orientation: orientation,
                     color: settings.lastMoveArrowColor.color
+                )
+                .frame(width: exactSide, height: exactSide, alignment: .topLeading)
+            }
+
+            if let analysisArrow {
+                AnalysisArrowOverlay(
+                    move: analysisArrow,
+                    squareSize: squareSize,
+                    orientation: orientation,
+                    color: settings.engineAnalysisArrowColor.color
                 )
                 .frame(width: exactSide, height: exactSide, alignment: .topLeading)
             }

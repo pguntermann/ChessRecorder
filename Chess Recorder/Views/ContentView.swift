@@ -617,9 +617,11 @@ struct ContentView: View {
 
     private func startNewGame(result: PGNResult) {
         let archiveResult = result == .ongoing ? game.gameResult : result
+        beginArchiveSelection()
         pgnArchive.finalizeActiveGame(with: archiveResult, from: game, opening: openingService.display)
         game.resetGame()
         speechRecognizer.resetTranscriptDisplay()
+        finishArchiveSelection()
     }
     
     private func clearPGN() {
@@ -634,13 +636,18 @@ struct ContentView: View {
         if !pgnArchive.activeGameIsReviewOnly {
             pgnArchive.syncActiveGame(from: game, opening: openingService.display)
         }
-        guard let recordedGame = pgnArchive.games.first(where: { $0.id == id }) else { return }
 
-        isApplyingArchiveSelection = true
-        defer { isApplyingArchiveSelection = false }
-
+        beginArchiveSelection()
         pgnArchive.setActiveGame(id: id)
-        _ = game.loadMainLine(moves: recordedGame.moves)
+        guard let recordedGame = pgnArchive.games.first(where: { $0.id == id }) else {
+            finishArchiveSelection()
+            return
+        }
+
+        let loaded = game.loadMainLine(moves: recordedGame.moves)
+        if !loaded {
+            print("Failed to load game \(id) (\(recordedGame.moves.count) moves)")
+        }
         if recordedGame.result != .ongoing {
             game.declareResult(recordedGame.result)
         }
@@ -648,6 +655,7 @@ struct ContentView: View {
         if speechRecognizer.isRecording, pgnArchive.activeGameIsReviewOnly {
             speechRecognizer.stopRecording()
         }
+        finishArchiveSelection()
     }
 
     private func deleteGame(id: UUID) {
@@ -656,9 +664,7 @@ struct ContentView: View {
         }
         let nextActiveID = pgnArchive.removeGame(id: id)
 
-        isApplyingArchiveSelection = true
-        defer { isApplyingArchiveSelection = false }
-
+        beginArchiveSelection()
         if let nextActiveID,
            let recordedGame = pgnArchive.games.first(where: { $0.id == nextActiveID }) {
             _ = game.loadMainLine(moves: recordedGame.moves)
@@ -671,6 +677,17 @@ struct ContentView: View {
 
         if speechRecognizer.isRecording, pgnArchive.activeGameIsReviewOnly {
             speechRecognizer.stopRecording()
+        }
+        finishArchiveSelection()
+    }
+
+    private func beginArchiveSelection() {
+        isApplyingArchiveSelection = true
+    }
+
+    private func finishArchiveSelection() {
+        Task { @MainActor in
+            isApplyingArchiveSelection = false
         }
     }
 

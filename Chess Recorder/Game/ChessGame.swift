@@ -357,7 +357,7 @@ class ChessGame {
             resetGame()
             return true
         }
-        return replayMainLine(recordedMoves.map(\.san))
+        return replayMainLine(recordedMoves)
     }
 
     var isGameOver: Bool {
@@ -409,7 +409,7 @@ class ChessGame {
     }
 
     @discardableResult
-    private func replayMainLine(_ sans: [String]) -> Bool {
+    private func replayMainLine(_ recordedMoves: [ChessMove]) -> Bool {
         let snapshot = captureSnapshot()
 
         kitBoard = Board()
@@ -425,8 +425,14 @@ class ChessGame {
         syncBoardFromKit()
         activePlyIndex = 0
 
-        for san in sans {
-            guard applyReplaySAN(san) else {
+        for recordedMove in recordedMoves {
+            let applied = applyReplayMove(
+                from: recordedMove.from,
+                to: recordedMove.to,
+                promotion: recordedMove.promotion
+            ) || applyReplaySAN(recordedMove.san)
+
+            guard applied else {
                 restoreSnapshot(snapshot)
                 return false
             }

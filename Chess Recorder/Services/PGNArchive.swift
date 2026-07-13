@@ -200,10 +200,17 @@ final class PGNArchive {
                 }
             }
         } else if let activeGameID,
-                  let index = games.firstIndex(where: { $0.id == activeGameID }),
-                  games[index].moves.isEmpty,
-                  games[index].result == .ongoing {
-            games.remove(at: index)
+                  let index = games.firstIndex(where: { $0.id == activeGameID }) {
+            if !games[index].moves.isEmpty {
+                // Keep moves already synced to the archive (e.g. after declaring 1-0).
+                games[index].result = result
+                if let opening {
+                    games[index].eco = opening.eco
+                    games[index].openingName = opening.name
+                }
+            } else if games[index].result == .ongoing {
+                games.remove(at: index)
+            }
         }
 
         appendNewOngoingGame()

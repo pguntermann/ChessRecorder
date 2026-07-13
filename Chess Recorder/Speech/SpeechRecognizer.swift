@@ -96,6 +96,8 @@ class SpeechRecognizer {
     var onMoveDetected: ((String) -> Bool)?
     var onMoveCandidatesDetected: (([String], Bool) -> String?)?
     var onUndoDetected: (() -> Void)?
+    /// When false, rejected voice moves are treated as stale audio (e.g. game over) — no failure UI.
+    var canAcceptVoiceMoves: (() -> Bool)?
     
     var isReadyForUse: Bool {
         !isInitializing && !isRebuildingLanguageModel
@@ -597,9 +599,6 @@ class SpeechRecognizer {
     
     @MainActor
     private func prepareForNextMove() {
-        lastAcceptedTranscript = nil
-        lastAcceptedSpeechKey = nil
-        lastAcceptedAtGeneration = -1
         clearDictationPauseIndicator()
         stableTranscriptTask?.cancel()
         stableTranscriptTask = nil
@@ -902,6 +901,15 @@ class SpeechRecognizer {
             return
         }
 
+        if canAcceptVoiceMoves?() == false {
+            tracer?.printReport(
+                language: currentLanguage,
+                failureReason: "Stale speech ignored — game not accepting moves"
+            )
+            prepareForNextMove()
+            return
+        }
+
         var rejectedMoves: [String] = []
 
         for move in candidates {
@@ -931,6 +939,10 @@ class SpeechRecognizer {
             rejectedMoves: rejectedMoves,
             failureReason: "No legal move matched"
         )
+        if canAcceptVoiceMoves?() == false {
+            prepareForNextMove()
+            return
+        }
         noteProcessingFailure(correctedText, attemptedMoves: rejectedMoves)
     }
     

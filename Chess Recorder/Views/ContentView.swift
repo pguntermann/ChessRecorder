@@ -129,11 +129,7 @@ struct ContentView: View {
             openingService.refresh(game: game)
         }
         .onChange(of: game.activePlyIndex) { _, _ in
-            if game.isGameOver {
-                engineAnalysis.stop()
-            } else {
-                refreshEngineIfAppropriate()
-            }
+            refreshEngineIfAppropriate()
             openingService.refresh(game: game)
         }
         .onChange(of: game.gameResult) { _, _ in
@@ -536,6 +532,9 @@ struct ContentView: View {
             DeveloperModeStore.isAvailable && developerModeStore.isSpeechPipelineTracingEnabled
         speechRecognizer.onMoveCandidatesDetected = { candidates, preferCaptures in
             self.processVoiceMoveCandidates(candidates, preferCaptures: preferCaptures)
+        }
+        speechRecognizer.canAcceptVoiceMoves = {
+            self.canAcceptNewMoves
         }
 
         speechRecognizer.onMoveDetected = { moveNotation in

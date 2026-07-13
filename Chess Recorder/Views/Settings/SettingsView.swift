@@ -265,6 +265,18 @@ struct SettingsView: View {
                 }
                 
                 Section {
+                    LabeledContent("Event") {
+                        TextField(AppSettings.defaultPGNEvent, text: Binding(
+                            get: { settingsStore.settings.pgnEvent },
+                            set: { newValue in
+                                settingsStore.update { $0.pgnEvent = newValue }
+                            }
+                        ))
+                        .multilineTextAlignment(.trailing)
+                        .textInputAutocapitalization(.words)
+                        .autocorrectionDisabled()
+                    }
+
                     LabeledContent("Site") {
                         TextField("?", text: Binding(
                             get: { settingsStore.settings.pgnSite },
@@ -316,7 +328,7 @@ struct SettingsView: View {
                 } header: {
                     Text("PGN")
                 } footer: {
-                    Text("Player names are used for [White] and [Black] tags in exported PGN. Use Switch to swap sides between games. Hiding header tags affects the notation panel only; Copy and Share still include full PGN headers.")
+                    Text("Event, Site, and player names are used in exported PGN headers. [ECO] is added automatically when an opening is recognized. Use Switch to swap sides between games. Hiding header tags affects the notation panel only; Copy and Share still include full PGN headers.")
                 }
                 
                 Section {

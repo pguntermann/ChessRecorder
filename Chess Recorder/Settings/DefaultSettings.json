@@ -37,6 +37,7 @@
   },
   "moveAnimationDuration" : 0.35,
   "pgnBlack" : "?",
+  "pgnEvent" : "Chess Recorder",
   "pgnHideHeaderTags" : true,
   "pgnSite" : "?",
   "pgnWhite" : "?",

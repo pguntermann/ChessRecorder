@@ -17,6 +17,7 @@ enum PGNResult: String {
 }
 
 struct PGNMetadata: Equatable {
+    let event: String
     let site: String
     let white: String
     let black: String
@@ -72,17 +73,22 @@ enum PGNFormatter {
         round: Int,
         result: PGNResult = .ongoing,
         metadata: PGNMetadata,
-        date: Date = Date()
+        date: Date = Date(),
+        eco: String? = nil
     ) -> String {
-        """
-        [Event "Chess Recorder"]
-        [Site "\(escapeTag(metadata.site))"]
-        [Date "\(dateString(date))"]
-        [Round "\(round)"]
-        [White "\(escapeTag(metadata.white))"]
-        [Black "\(escapeTag(metadata.black))"]
-        [Result "\(result.rawValue)"]
-        """
+        var lines = [
+            "[Event \"\(escapeTag(metadata.event))\"]",
+            "[Site \"\(escapeTag(metadata.site))\"]",
+            "[Date \"\(dateString(date))\"]",
+            "[Round \"\(round)\"]",
+            "[White \"\(escapeTag(metadata.white))\"]",
+            "[Black \"\(escapeTag(metadata.black))\"]",
+            "[Result \"\(result.rawValue)\"]"
+        ]
+        if let eco, !eco.isEmpty {
+            lines.append("[ECO \"\(escapeTag(eco))\"]")
+        }
+        return lines.joined(separator: "\n")
     }
 
     static func formatGame(
@@ -90,9 +96,16 @@ enum PGNFormatter {
         round: Int,
         result: PGNResult = .ongoing,
         metadata: PGNMetadata,
-        date: Date = Date()
+        date: Date = Date(),
+        eco: String? = nil
     ) -> String {
-        let headers = Self.headers(round: round, result: result, metadata: metadata, date: date)
+        let headers = Self.headers(
+            round: round,
+            result: result,
+            metadata: metadata,
+            date: date,
+            eco: eco
+        )
         let moveText = Self.movetext(from: moves, result: result)
         guard !moves.isEmpty else { return headers }
         return headers + "\n\n" + moveText
@@ -200,7 +213,10 @@ final class PGNArchive {
         return activeGameID
     }
 
-    func displayText(metadata: PGNMetadata) -> String {
+    func displayText(
+        metadata: PGNMetadata,
+        ecoForMoves: ([ChessMove]) -> String? = { _ in nil }
+    ) -> String {
         games
             .reversed()
             .filter { !$0.moves.isEmpty }
@@ -210,7 +226,8 @@ final class PGNArchive {
                     round: $0.round,
                     result: $0.result,
                     metadata: metadata,
-                    date: $0.date
+                    date: $0.date,
+                    eco: ecoForMoves($0.moves)
                 )
             }
             .joined(separator: "\n\n")

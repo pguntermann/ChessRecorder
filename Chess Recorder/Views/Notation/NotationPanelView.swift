@@ -17,6 +17,7 @@ struct NotationPanelView: View {
     @Bindable var pgnArchive: PGNArchive
     let metadata: PGNMetadata
     var hidePGNHeaderTags: Bool = true
+    let ecoForMoves: ([ChessMove]) -> String?
     let transcript: String
     let isRecording: Bool
     let dictationPauseDeadline: Date?
@@ -35,7 +36,7 @@ struct NotationPanelView: View {
     @State private var exportItem: ShareablePGNExport?
 
     private var fullPGNNotation: String {
-        pgnArchive.displayText(metadata: metadata)
+        pgnArchive.displayText(metadata: metadata, ecoForMoves: ecoForMoves)
     }
 
     private var hasAnyPGNContent: Bool {
@@ -159,6 +160,7 @@ struct NotationPanelView: View {
                                 GamePGNRowView(
                                     recordedGame: recordedGame,
                                     metadata: metadata,
+                                    eco: ecoForMoves(recordedGame.moves),
                                     hideHeaderTags: hidePGNHeaderTags,
                                     isActive: recordedGame.id == pgnArchive.activeGameID,
                                     activePlyIndex: game.activePlyIndex,
@@ -180,6 +182,7 @@ struct NotationPanelView: View {
                                     result: game.gameResult
                                 ),
                                 metadata: metadata,
+                                eco: ecoForMoves(game.moves),
                                 hideHeaderTags: hidePGNHeaderTags,
                                 isActive: true,
                                 activePlyIndex: game.activePlyIndex,
@@ -235,6 +238,7 @@ struct NotationPanelView: View {
 private struct GamePGNRowView: View {
     let recordedGame: RecordedGame
     let metadata: PGNMetadata
+    var eco: String?
     var hideHeaderTags: Bool = true
     let isActive: Bool
     let activePlyIndex: Int
@@ -274,7 +278,8 @@ private struct GamePGNRowView: View {
                     round: recordedGame.round,
                     result: recordedGame.result,
                     metadata: metadata,
-                    date: recordedGame.date
+                    date: recordedGame.date,
+                    eco: eco
                 ))
                 .font(.system(.caption, design: .monospaced))
                 .foregroundStyle(.secondary)

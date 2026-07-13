@@ -70,15 +70,25 @@ final class OpeningService {
             return
         }
 
-        var lastKnown = OpeningDisplay.unknown
+        display = openingDisplay(forFens: game.fensAfterMoves()) ?? .unknown
+    }
 
-        for fen in game.fensAfterMoves() {
+    func ecoCode(for moves: [ChessMove]) -> String? {
+        guard isLoaded, !moves.isEmpty else { return nil }
+
+        let replayGame = ChessGame()
+        guard replayGame.loadMainLine(moves: moves) else { return nil }
+        return openingDisplay(forFens: replayGame.fensAfterMoves())?.eco
+    }
+
+    private func openingDisplay(forFens fens: [String]) -> OpeningDisplay? {
+        var lastKnown: OpeningDisplay?
+        for fen in fens {
             if let match = lookupOpening(fen: fen) {
                 lastKnown = match
             }
         }
-
-        display = lastKnown
+        return lastKnown
     }
 
     private func lookupOpening(fen: String) -> OpeningDisplay? {

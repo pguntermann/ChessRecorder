@@ -60,10 +60,13 @@ struct AppSettings: Codable, Equatable {
     var engineAnalysisShowBoardArrow: Bool
     var engineAnalysisArrowColor: CodableColor
     var openingNameVisible: Bool
+    var pgnEvent: String
     var pgnSite: String
     var pgnWhite: String
     var pgnBlack: String
     var pgnHideHeaderTags: Bool
+
+    static let defaultPGNEvent = "Chess Recorder"
     
     enum CodingKeys: String, CodingKey {
         case boardSizePercent
@@ -89,6 +92,7 @@ struct AppSettings: Codable, Equatable {
         case engineAnalysisShowBoardArrow
         case engineAnalysisArrowColor
         case openingNameVisible
+        case pgnEvent
         case pgnSite
         case pgnWhite
         case pgnBlack
@@ -119,6 +123,7 @@ struct AppSettings: Codable, Equatable {
         engineAnalysisShowBoardArrow: Bool = false,
         engineAnalysisArrowColor: CodableColor = CodableColor(red: 0, green: 0.478, blue: 1),
         openingNameVisible: Bool = true,
+        pgnEvent: String = AppSettings.defaultPGNEvent,
         pgnSite: String = "?",
         pgnWhite: String = "?",
         pgnBlack: String = "?",
@@ -147,6 +152,7 @@ struct AppSettings: Codable, Equatable {
         self.engineAnalysisShowBoardArrow = engineAnalysisShowBoardArrow
         self.engineAnalysisArrowColor = engineAnalysisArrowColor
         self.openingNameVisible = openingNameVisible
+        self.pgnEvent = pgnEvent
         self.pgnSite = pgnSite
         self.pgnWhite = pgnWhite
         self.pgnBlack = pgnBlack
@@ -185,6 +191,7 @@ struct AppSettings: Codable, Equatable {
         engineAnalysisArrowColor = try container.decodeIfPresent(CodableColor.self, forKey: .engineAnalysisArrowColor)
             ?? CodableColor(red: 0, green: 0.478, blue: 1)
         openingNameVisible = try container.decodeIfPresent(Bool.self, forKey: .openingNameVisible) ?? true
+        pgnEvent = try container.decodeIfPresent(String.self, forKey: .pgnEvent) ?? Self.defaultPGNEvent
         pgnSite = try container.decodeIfPresent(String.self, forKey: .pgnSite) ?? "?"
         pgnWhite = try container.decodeIfPresent(String.self, forKey: .pgnWhite) ?? "?"
         pgnBlack = try container.decodeIfPresent(String.self, forKey: .pgnBlack) ?? "?"
@@ -193,6 +200,7 @@ struct AppSettings: Codable, Equatable {
     
     var pgnMetadata: PGNMetadata {
         PGNMetadata(
+            event: pgnEvent.isEmpty ? Self.defaultPGNEvent : pgnEvent,
             site: pgnSite.isEmpty ? "?" : pgnSite,
             white: pgnWhite.isEmpty ? "?" : pgnWhite,
             black: pgnBlack.isEmpty ? "?" : pgnBlack
@@ -226,6 +234,7 @@ struct AppSettings: Codable, Equatable {
         engineAnalysisShowBoardArrow: true,
         engineAnalysisArrowColor: CodableColor(red: 0, green: 0.478, blue: 1),
         openingNameVisible: true,
+        pgnEvent: defaultPGNEvent,
         pgnSite: "?",
         pgnWhite: "?",
         pgnBlack: "?",

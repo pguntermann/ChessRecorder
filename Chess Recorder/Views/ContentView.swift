@@ -357,6 +357,7 @@ struct ContentView: View {
             pgnArchive: pgnArchive,
             metadata: settingsStore.settings.pgnMetadata,
             hidePGNHeaderTags: settingsStore.settings.pgnHideHeaderTags,
+            ecoForMoves: { openingService.ecoCode(for: $0) },
             transcript: speechRecognizer.transcript,
             isRecording: speechRecognizer.isRecording,
             dictationPauseDeadline: speechRecognizer.dictationPauseDeadline,

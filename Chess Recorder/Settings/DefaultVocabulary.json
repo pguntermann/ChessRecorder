@@ -8,6 +8,13 @@
       "updatedAt" : "2026-01-01T00:00:00Z"
     },
     {
+      "heard" : "ay",
+      "id" : "F4A5B6C7-D8E9-4012-FA01-456789012345",
+      "languageCode" : "en-US",
+      "replacement" : "a",
+      "updatedAt" : "2026-01-01T00:00:00Z"
+    },
+    {
       "heard" : "dish shop",
       "id" : "C1D2E3F4-A5B6-7890-CDEF-123456789001",
       "languageCode" : "en-US",

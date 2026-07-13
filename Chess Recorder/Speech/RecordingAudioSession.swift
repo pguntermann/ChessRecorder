@@ -18,6 +18,29 @@ enum RecordingAudioSession {
         updatePreferredInput(session: session, log: log)
     }
 
+    /// Deactivates then re-activates capture after an audio route change.
+    static func reactivateForCapture(log: ((String) -> Void)? = nil) throws {
+        let session = AVAudioSession.sharedInstance()
+        try session.setActive(false, options: .notifyOthersOnDeactivation)
+        try activateForCapture(log: log)
+    }
+
+    static func inputTapFormat(for inputNode: AVAudioInputNode) -> AVAudioFormat {
+        inputNode.outputFormat(forBus: 0)
+    }
+
+    /// Installs an input tap using `nil` format so AVAudioEngine delivers its negotiated
+    /// hardware format. The tap must be installed before `prepare()` so the graph has an input node.
+    static func installInputTap(
+        on engine: AVAudioEngine,
+        bufferSize: AVAudioFrameCount = 1024,
+        handler: @escaping (AVAudioPCMBuffer, AVAudioTime) -> Void
+    ) {
+        let inputNode = engine.inputNode
+        inputNode.installTap(onBus: 0, bufferSize: bufferSize, format: nil, block: handler)
+        engine.prepare()
+    }
+
     static func updatePreferredInput(
         session: AVAudioSession = .sharedInstance(),
         log: ((String) -> Void)? = nil
@@ -38,6 +61,24 @@ enum RecordingAudioSession {
         }
 
         clearPreferredInput(session: session, log: log, reason: "no known microphone in availableInputs")
+    }
+
+    static func activeCaptureInputDisplayName() -> String {
+        let session = AVAudioSession.sharedInstance()
+
+        if let routeInput = session.currentRoute.inputs.first {
+            return routeInput.portName
+        }
+
+        if let preferred = session.preferredInput {
+            return preferred.portName
+        }
+
+        return String(localized: "Microphone")
+    }
+
+    static func currentInputDisplayName() -> String {
+        activeCaptureInputDisplayName()
     }
 
     private static func setPreferredInput(

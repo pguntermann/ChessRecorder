@@ -239,10 +239,14 @@ class SpeechRecognizer {
         guard let vocabularyStore else { return }
 
         setInitializationPhase(.preparingSpeechVocabulary)
-        setInitializationStatusDetail("Loading built-in chess move phrases…")
+        setInitializationStatusDetail("Loading built-in chess phrases…")
         await yieldForSpeechModelUI()
 
-        _ = vocabularyStore.seedCommonPhrasesIfNeeded(for: language)
+        _ = await vocabularyStore.seedCommonPhrasesIfNeeded(for: language) { [weak self] loaded, total in
+            self?.setInitializationStatusDetail(
+                "Loading built-in chess phrases (\(loaded) of \(total))…"
+            )
+        }
 
         let userPhraseCount = vocabularyStore.entries(for: language).count
         let correctionCount = vocabularyStore.correctionEntries(for: language).count
@@ -355,15 +359,14 @@ class SpeechRecognizer {
         
         try beginRecognitionTask(context: "startRecording")
         
-        let recordingFormat = inputNode.outputFormat(forBus: 0)
+        RecordingAudioSession.installInputTap(on: audioEngine) { [weak self] buffer, _ in
+            self?.recognitionRequest?.append(buffer)
+        }
+        let recordingFormat = RecordingAudioSession.inputTapFormat(for: inputNode)
         logSpeechDiagnostic(
             "installing input tap (sampleRate=\(recordingFormat.sampleRate), channels=\(recordingFormat.channelCount))"
         )
-        inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
-            self?.recognitionRequest?.append(buffer)
-        }
         
-        audioEngine.prepare()
         try audioEngine.start()
         logSpeechDiagnostic("audio engine started")
         
@@ -466,15 +469,14 @@ class SpeechRecognizer {
 
             try beginRecognitionTask(context: "audioCaptureRestart(\(reason))")
 
-            let recordingFormat = inputNode.outputFormat(forBus: 0)
+            let recordingFormat = RecordingAudioSession.inputTapFormat(for: inputNode)
             logSpeechDiagnostic(
                 "reinstalling input tap (sampleRate=\(recordingFormat.sampleRate), channels=\(recordingFormat.channelCount))"
             )
-            inputNode.installTap(onBus: 0, bufferSize: 1024, format: recordingFormat) { [weak self] buffer, _ in
+            RecordingAudioSession.installInputTap(on: audioEngine) { [weak self] buffer, _ in
                 self?.recognitionRequest?.append(buffer)
             }
 
-            audioEngine.prepare()
             try audioEngine.start()
             logSpeechDiagnostic("audio engine restarted after route change")
         } catch {

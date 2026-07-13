@@ -150,7 +150,10 @@ struct ContentView: View {
                 settingsStore: settingsStore,
                 vocabularyStore: vocabularyStore,
                 developerModeStore: developerModeStore,
-                pendingSpeechModelWork: $pendingSpeechModelWork
+                pendingSpeechModelWork: $pendingSpeechModelWork,
+                onStopRecording: {
+                    speechRecognizer.stopRecording()
+                }
             )
         }
         .onChange(of: showingSettings) { wasShowing, isShowing in

@@ -11,6 +11,7 @@ struct SettingsView: View {
     @Bindable var vocabularyStore: PersonalVocabularyStore
     @Bindable var developerModeStore: DeveloperModeStore
     @Binding var pendingSpeechModelWork: PendingSpeechModelWork
+    let onStopRecording: () -> Void
     
     @State private var lightColor: Color
     @State private var darkColor: Color
@@ -27,11 +28,13 @@ struct SettingsView: View {
         settingsStore: SettingsStore,
         vocabularyStore: PersonalVocabularyStore,
         developerModeStore: DeveloperModeStore,
-        pendingSpeechModelWork: Binding<PendingSpeechModelWork>
+        pendingSpeechModelWork: Binding<PendingSpeechModelWork>,
+        onStopRecording: @escaping () -> Void = {}
     ) {
         self.settingsStore = settingsStore
         self.vocabularyStore = vocabularyStore
         self.developerModeStore = developerModeStore
+        self.onStopRecording = onStopRecording
         _pendingSpeechModelWork = pendingSpeechModelWork
         let settings = settingsStore.settings
         _lightColor = State(initialValue: settings.lightSquareColor.color)
@@ -88,6 +91,8 @@ struct SettingsView: View {
                             }
                         ), in: 0.3...2.0, step: 0.05)
                     }
+
+                    MicrophoneTestSettingsSection(onStopRecording: onStopRecording)
                 } header: {
                     Text("Speech")
                 } footer: {

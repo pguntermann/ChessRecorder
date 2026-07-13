@@ -148,7 +148,10 @@ final class PersonalVocabularyStore {
     }
 
     @discardableResult
-    func seedCommonPhrasesIfNeeded(for language: RecognitionLanguage) -> Int {
+    func seedCommonPhrasesIfNeeded(
+        for language: RecognitionLanguage,
+        onProgress: (@MainActor (_ loaded: Int, _ total: Int) -> Void)? = nil
+    ) async -> Int {
         var changes = 0
 
         for retired in Self.retiredBuiltInMovePhrases(for: language) {
@@ -171,7 +174,19 @@ final class PersonalVocabularyStore {
             if phrases.count != before { changes += 1 }
         }
 
-        for item in Self.commonTrainingPhrases(for: language) {
+        let trainingItems = Self.commonTrainingPhrases(for: language)
+        let recognitionItems = Self.commonRecognitionPhrases(for: language)
+        let total = trainingItems.count + recognitionItems.count
+        var loaded = 0
+
+        if let onProgress {
+            await MainActor.run {
+                onProgress(0, total)
+            }
+            await Task.yield()
+        }
+
+        for item in trainingItems {
             let changed = upsert(
                 phrase: item.phrase,
                 moveNotation: item.moveNotation,
@@ -180,9 +195,16 @@ final class PersonalVocabularyStore {
                 source: .builtIn
             )
             if changed { changes += 1 }
+            loaded += 1
+            if Self.shouldReportPhraseSeedProgress(loaded: loaded, total: total) {
+                await MainActor.run {
+                    onProgress?(loaded, total)
+                }
+                await Task.yield()
+            }
         }
 
-        for item in Self.commonRecognitionPhrases(for: language) {
+        for item in recognitionItems {
             let changed = upsert(
                 phrase: item.phrase,
                 moveNotation: item.phrase,
@@ -191,6 +213,13 @@ final class PersonalVocabularyStore {
                 source: .recognitionOnly
             )
             if changed { changes += 1 }
+            loaded += 1
+            if Self.shouldReportPhraseSeedProgress(loaded: loaded, total: total) {
+                await MainActor.run {
+                    onProgress?(loaded, total)
+                }
+                await Task.yield()
+            }
         }
 
         if changes > 0 {
@@ -199,6 +228,10 @@ final class PersonalVocabularyStore {
         }
 
         return changes
+    }
+
+    private static func shouldReportPhraseSeedProgress(loaded: Int, total: Int) -> Bool {
+        loaded == total || loaded % 20 == 0
     }
     
     @discardableResult
@@ -674,12 +707,14 @@ final class PersonalVocabularyStore {
     }
 
     private static func retiredRecognitionPhrases(for language: RecognitionLanguage) -> [String] {
-        switch language {
-        case .english:
-            return ["bishop shop takes d7"]
-        case .german:
-            return []
-        }
+        ChessSpeechTrainingPhrases.retiredFileBiasedRecognitionPhrases(for: language) + {
+            switch language {
+            case .english:
+                return ["bishop shop takes d7"]
+            case .german:
+                return []
+            }
+        }()
     }
 
     private static func commonTrainingPhrases(for language: RecognitionLanguage) -> [(phrase: String, moveNotation: String, count: Int)] {
@@ -780,6 +815,14 @@ final class PersonalVocabularyStore {
             for piece in pieces {
                 phrases.append((piece, 480))
             }
+            for (phrase, count) in ChessSpeechTrainingPhrases.balancedFileDigitRankPhrases() {
+                phrases.append((phrase, count))
+            }
+            for (phrase, count) in ChessSpeechTrainingPhrases.balancedFileSpokenRankPhrases(
+                spokenRanks: spokenRanks
+            ) {
+                phrases.append((phrase, count))
+            }
             for (phrase, count) in ChessTranscriptNormalizer.englishPawnCaptureBoostPhrases(
                 fileCount: 380,
                 misheardCount: 360
@@ -788,8 +831,6 @@ final class PersonalVocabularyStore {
             }
             for phrase in [
                 "c3", "c 3", "see three", "sea three", "see 3", "sea 3",
-                "a3", "a 3", "hey three", "hey 3", "ay three", "ay 3",
-                "a6", "a 6", "hey six", "ay six", "hey 6",
                 "bishop b5 check", "knight f3 check", "rook d1 check",
                 "bishop takes d7", "bishop takes 7",
                 "bishop e4 to e5", "bishop f1 to c4", "bishop takes e5",
@@ -820,18 +861,13 @@ final class PersonalVocabularyStore {
             for piece in pieces {
                 phrases.append((piece, 480))
             }
-            for rank in 1...8 {
-                let rankText = String(rank)
-                phrases.append(("e\(rankText)", 280))
-                phrases.append(("e \(rankText)", 260))
+            for (phrase, count) in ChessSpeechTrainingPhrases.balancedFileDigitRankPhrases() {
+                phrases.append((phrase, count))
             }
-            for spoken in ["eins", "zwei", "drei", "vier", "funf", "fünf", "sechs", "sieben", "acht"] {
-                phrases.append(("e \(spoken)", 280))
-            }
-            for rank in 1...8 {
-                let rankText = String(rank)
-                phrases.append(("h\(rankText)", 360))
-                phrases.append(("h \(rankText)", 340))
+            for (phrase, count) in ChessSpeechTrainingPhrases.balancedFileSpokenRankPhrases(
+                spokenRanks: spokenRanks
+            ) {
+                phrases.append((phrase, count))
             }
             for phrase in [
                 "turm f auf d1", "springer g1 auf f3", "turm f1 auf d1",
@@ -871,11 +907,14 @@ final class PersonalVocabularyStore {
     }
     
     private static let bundledDefaultsMigrationKey = "PersonalVocabularyDidMigrateBundledDefaults"
+    private static let bundledCorrectionsRevisionKey = "PersonalVocabularyBundledCorrectionsRevision"
+    private static let currentBundledCorrectionsRevision = 2
 
     private func load() {
         if let file = Self.loadVocabulary(from: storageURL) {
             apply(file)
             migrateBundledDefaultsIfNeeded()
+            migrateBundledCorrectionsIfNeeded()
             return
         }
 
@@ -885,6 +924,38 @@ final class PersonalVocabularyStore {
         }
 
         UserDefaults.standard.set(true, forKey: Self.bundledDefaultsMigrationKey)
+        UserDefaults.standard.set(Self.currentBundledCorrectionsRevision, forKey: Self.bundledCorrectionsRevisionKey)
+    }
+
+    /// Adds bundled default corrections introduced after the initial install.
+    private func migrateBundledCorrectionsIfNeeded() {
+        let storedRevision = UserDefaults.standard.integer(forKey: Self.bundledCorrectionsRevisionKey)
+        guard storedRevision < Self.currentBundledCorrectionsRevision else { return }
+
+        ensureBundledCorrections()
+        UserDefaults.standard.set(Self.currentBundledCorrectionsRevision, forKey: Self.bundledCorrectionsRevisionKey)
+    }
+
+    /// Adds any bundled default corrections missing from the user's saved vocabulary.
+    private func ensureBundledCorrections() {
+        guard let bundled = Self.bundledVocabulary() else { return }
+
+        var changed = false
+        for bundledCorrection in bundled.corrections {
+            guard let language = bundledCorrection.language else { continue }
+            let normalizedHeard = Self.normalizePhrase(bundledCorrection.heard, language: language)
+            let alreadyPresent = corrections.contains { existing in
+                existing.languageCode == bundledCorrection.languageCode &&
+                Self.normalizePhrase(existing.heard, language: language) == normalizedHeard
+            }
+            guard !alreadyPresent else { continue }
+            corrections.append(bundledCorrection)
+            changed = true
+        }
+
+        if changed {
+            save()
+        }
     }
 
     /// One-time upgrade path for installs that predated bundled default corrections.

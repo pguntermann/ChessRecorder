@@ -28,6 +28,7 @@ struct ContentView: View {
     @State private var isAppReady = false
     @State private var pendingSpeechModelWork = PendingSpeechModelWork()
     @State private var showSpeechModelRebuildOverlay = false
+    @State private var isApplyingArchiveSelection = false
     
     init(
         settingsStore: SettingsStore,
@@ -120,7 +121,7 @@ struct ContentView: View {
         }
         .onChange(of: game.moves.count) { _, _ in
             openingService.refresh(game: game)
-            pgnArchive.syncActiveGame(from: game, opening: openingService.display)
+            syncLiveBoardToArchiveIfRecording()
             if game.isGameOver {
                 engineAnalysis.stop()
                 stopRecordingIfNeeded()
@@ -133,7 +134,7 @@ struct ContentView: View {
             openingService.refresh(game: game)
         }
         .onChange(of: game.gameResult) { _, _ in
-            pgnArchive.syncActiveGame(from: game, opening: openingService.display)
+            syncLiveBoardToArchiveIfRecording()
             if game.isGameOver {
                 engineAnalysis.stop()
                 stopRecordingIfNeeded()
@@ -630,8 +631,13 @@ struct ContentView: View {
     private func activateGame(id: UUID) {
         guard pgnArchive.activeGameID != id else { return }
 
-        pgnArchive.syncActiveGame(from: game)
+        if !pgnArchive.activeGameIsReviewOnly {
+            pgnArchive.syncActiveGame(from: game, opening: openingService.display)
+        }
         guard let recordedGame = pgnArchive.games.first(where: { $0.id == id }) else { return }
+
+        isApplyingArchiveSelection = true
+        defer { isApplyingArchiveSelection = false }
 
         pgnArchive.setActiveGame(id: id)
         _ = game.loadMainLine(moves: recordedGame.moves)
@@ -645,12 +651,20 @@ struct ContentView: View {
     }
 
     private func deleteGame(id: UUID) {
-        pgnArchive.syncActiveGame(from: game)
+        if !pgnArchive.activeGameIsReviewOnly {
+            pgnArchive.syncActiveGame(from: game, opening: openingService.display)
+        }
         let nextActiveID = pgnArchive.removeGame(id: id)
+
+        isApplyingArchiveSelection = true
+        defer { isApplyingArchiveSelection = false }
 
         if let nextActiveID,
            let recordedGame = pgnArchive.games.first(where: { $0.id == nextActiveID }) {
             _ = game.loadMainLine(moves: recordedGame.moves)
+            if recordedGame.result != .ongoing {
+                game.declareResult(recordedGame.result)
+            }
         } else {
             game.resetGame()
         }
@@ -658,6 +672,11 @@ struct ContentView: View {
         if speechRecognizer.isRecording, pgnArchive.activeGameIsReviewOnly {
             speechRecognizer.stopRecording()
         }
+    }
+
+    private func syncLiveBoardToArchiveIfRecording() {
+        guard !isApplyingArchiveSelection, !pgnArchive.activeGameIsReviewOnly else { return }
+        pgnArchive.syncActiveGame(from: game, opening: openingService.display)
     }
     
     private func undoLastMove() {

@@ -89,32 +89,38 @@ private struct LiveTranscriptFailureView: View {
     }
 }
 
-/// Smooth countdown driven by a single linear animation instead of 60 Hz layout passes.
+/// Countdown label follows the processing deadline; the bar uses one linear animation per pause cycle.
 private struct DictationPauseIndicator: View {
     let deadline: Date?
     let duration: TimeInterval
     let isActive: Bool
 
-    @State private var progress: CGFloat = 0
+    @State private var barProgress: CGFloat = 0
 
     private static let reservedHeight: CGFloat = 28
+    private static let labelRefreshInterval: TimeInterval = 0.1
 
     var body: some View {
-        indicatorContent
-            .frame(height: Self.reservedHeight, alignment: .top)
-            .padding(.top, 4)
-            .opacity(isActive ? 1 : 0)
-            .animation(.easeInOut(duration: 0.2), value: isActive)
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel("Interpreting move")
-            .accessibilityValue(accessibilityValue)
-            .accessibilityHidden(!isActive)
-            .onChange(of: pauseCycleKey) { _, _ in
-                restartAnimation()
-            }
-            .onAppear {
-                restartAnimation()
-            }
+        TimelineView(.animation(minimumInterval: Self.labelRefreshInterval, paused: !isActive)) { timeline in
+            indicatorContent(
+                remaining: remainingSeconds(at: timeline.date),
+                barProgress: barProgress
+            )
+        }
+        .frame(height: Self.reservedHeight, alignment: .top)
+        .padding(.top, 4)
+        .opacity(isActive ? 1 : 0)
+        .animation(.easeInOut(duration: 0.2), value: isActive)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Interpreting move")
+        .accessibilityValue(accessibilityValue(at: Date()))
+        .accessibilityHidden(!isActive)
+        .onChange(of: pauseCycleKey) { _, _ in
+            restartBarAnimation()
+        }
+        .onAppear {
+            restartBarAnimation()
+        }
     }
 
     private var pauseCycleKey: String {
@@ -122,60 +128,70 @@ private struct DictationPauseIndicator: View {
         return "\(deadline.timeIntervalSinceReferenceDate)-\(duration)"
     }
 
-    private var remaining: TimeInterval {
-        guard isActive, duration > 0 else { return 0 }
-        return max(0, progress * duration)
+    private func remainingSeconds(at date: Date) -> TimeInterval {
+        guard isActive, let deadline, duration > 0 else { return 0 }
+        return max(0, deadline.timeIntervalSince(date))
     }
 
-    private var accessibilityValue: String {
+    private func accessibilityValue(at date: Date) -> String {
         guard isActive else { return "" }
-        return String(format: "%.1f seconds remaining", remaining)
+        return String(format: "%.1f seconds remaining", remainingSeconds(at: date))
+    }
+
+    private func displayedRemainingSeconds(_ remaining: TimeInterval) -> TimeInterval {
+        (remaining * 10).rounded(.down) / 10
     }
 
     @ViewBuilder
-    private var indicatorContent: some View {
+    private func indicatorContent(remaining: TimeInterval, barProgress: CGFloat) -> some View {
+        let displayedRemaining = displayedRemainingSeconds(remaining)
+
         VStack(alignment: .leading, spacing: 4) {
             HStack {
                 Text("Interpreting in")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
                 Spacer()
-                Text(String(format: "%.1f s", remaining))
+                Text(String(format: "%.1f s", displayedRemaining))
                     .font(.caption2.monospacedDigit())
                     .foregroundStyle(.secondary)
-                    .contentTransition(.numericText())
-                    .animation(.linear(duration: 0.1), value: remaining)
+                    .frame(minWidth: 36, alignment: .trailing)
             }
 
-            GeometryReader { geometry in
-                ZStack(alignment: .leading) {
-                    Capsule()
-                        .fill(Color.secondary.opacity(0.2))
+            Capsule()
+                .fill(Color.secondary.opacity(0.2))
+                .overlay(alignment: .leading) {
                     Capsule()
                         .fill(Color.accentColor)
-                        .frame(width: geometry.size.width * progress)
+                        .scaleEffect(x: min(max(barProgress, 0), 1), y: 1, anchor: .leading)
                 }
-            }
-            .frame(height: 4)
+                .frame(maxWidth: .infinity)
+                .frame(height: 4)
+                .clipShape(Capsule())
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private func restartAnimation() {
+    private func restartBarAnimation() {
         guard isActive, let deadline, duration > 0 else {
-            progress = 0
+            barProgress = 0
             return
         }
 
-        let remainingDuration = max(0, deadline.timeIntervalSinceNow)
-        guard remainingDuration > 0 else {
-            progress = 0
+        let remaining = max(0, deadline.timeIntervalSinceNow)
+        guard remaining > 0 else {
+            barProgress = 0
             return
         }
 
-        let startProgress = CGFloat(remainingDuration / duration)
-        progress = startProgress
-        withAnimation(.linear(duration: remainingDuration)) {
-            progress = 0
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) {
+            barProgress = min(1, CGFloat(remaining / duration))
+        }
+
+        withAnimation(.linear(duration: remaining)) {
+            barProgress = 0
         }
     }
 }

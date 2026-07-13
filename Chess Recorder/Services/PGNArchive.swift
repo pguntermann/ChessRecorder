@@ -155,37 +155,32 @@ final class PGNArchive {
     }
 
     func syncActiveGame(from chessGame: ChessGame, opening: OpeningDisplay?) {
-        if chessGame.moves.isEmpty {
-            if let activeGameID,
-               let index = games.firstIndex(where: { $0.id == activeGameID }) {
-                // Never wipe archived games just because the in-memory board is temporarily empty
-                // (e.g. while replaying a long main line or if a load attempt fails).
-                if games[index].result == .ongoing {
-                    games[index].moves = []
-                }
-                if let opening {
-                    games[index].eco = opening.eco
-                    games[index].openingName = opening.name
-                }
-                if chessGame.isGameOver {
-                    games[index].result = chessGame.gameResult
-                }
-            }
-            return
-        }
-
         ensureActiveGameExists()
         guard let activeGameID,
               let index = games.firstIndex(where: { $0.id == activeGameID }) else { return }
+
+        // Archived games are read-only in the archive. The live board is only mirrored into the
+        // ongoing recording slot — never into finished games being reviewed.
+        guard games[index].result == .ongoing else { return }
+
+        if chessGame.moves.isEmpty {
+            games[index].moves = []
+            if let opening {
+                games[index].eco = opening.eco
+                games[index].openingName = opening.name
+            }
+            if chessGame.isGameOver {
+                games[index].result = chessGame.gameResult
+            }
+            return
+        }
 
         games[index].moves = chessGame.moves
         if let opening {
             games[index].eco = opening.eco
             games[index].openingName = opening.name
         }
-        if games[index].result == .ongoing {
-            games[index].result = chessGame.gameResult
-        }
+        games[index].result = chessGame.gameResult
     }
 
     func finalizeActiveGame(with result: PGNResult, from chessGame: ChessGame) {

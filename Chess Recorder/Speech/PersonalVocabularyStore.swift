@@ -808,14 +808,23 @@ final class PersonalVocabularyStore {
     private static func retiredBuiltInMovePhrases(for language: RecognitionLanguage) -> [String] {
         switch language {
         case .english:
-            return ["hey 3", "hey three", "ay 3", "ay three"]
+            return [
+                "hey 3", "hey three", "ay 3", "ay three",
+                "e3", "g3", "b3", "f6", "g6", "c6", "g1", "c3", "h5", "a3",
+                "hey siri", "ay siri", "hey sir"
+            ]
         case .german:
-            return ["hey 3", "hey three"]
+            return [
+                "hey 3", "hey three",
+                "g3", "b3", "f6", "c6", "g6", "g1", "c3", "h5", "a3",
+                "see three", "sea three", "since we", "her siri", "see we", "sea we",
+                "hey siri", "hey sir"
+            ]
         }
     }
 
     private static let bundledTrainingSeedRevisionKey = "PersonalVocabularyBundledTrainingSeedRevision"
-    private static let currentBundledTrainingSeedRevision = 1
+    private static let currentBundledTrainingSeedRevision = 3
     private static let bundledRecognitionSeedRevisionKey = "PersonalVocabularyBundledRecognitionSeedRevision"
     private static let currentBundledRecognitionSeedRevision = 2
     private static let legacyRecognitionOnlyPurgeKey = "PersonalVocabularyDidPurgeRecognitionOnly"
@@ -874,7 +883,6 @@ final class PersonalVocabularyStore {
             return [
                 ("d4", "d4", 350), ("d 4", "d4", 300),
                 ("e4", "e4", 350), ("e 4", "e4", 300),
-                ("e3", "e3", 340), ("e 3", "e3", 320),
                 ("c4", "c4", 300), ("c 4", "c4", 250),
                 ("e5", "e5", 350), ("e 5", "e5", 300),
                 ("d5", "d5", 300), ("d 5", "d5", 250),
@@ -885,14 +893,6 @@ final class PersonalVocabularyStore {
                 ("nc6", "nc6", 300), ("knight c6", "nc6", 380), ("knight c 6", "nc6", 340),
                 ("bf4", "bf4", 220), ("bishop f4", "bf4", 260),
                 ("bb5", "bb5", 220), ("bishop b5", "bb5", 260),
-                ("g3", "g3", 220), ("g 3", "g3", 200),
-                ("b3", "b3", 200), ("b 3", "b3", 180),
-                ("f6", "f6", 280), ("f 6", "f6", 260), ("g6", "g6", 240), ("g 6", "g6", 220),
-                ("c6", "c6", 280), ("c 6", "c6", 260),
-                ("g1", "g1", 220), ("g 1", "g1", 200), ("c3", "c3", 240), ("c 3", "c3", 220),
-                ("h5", "h5", 200), ("h 5", "h5", 180),
-                ("a3", "a3", 420), ("a 3", "a3", 400),
-                ("hey siri", "a3", 500), ("ay siri", "a3", 480), ("hey sir", "a3", 460),
                 ("castle", "o-o", 240), ("castle kingside", "o-o", 260),
                 ("castle queenside", "o-o-o", 220)
             ]
@@ -911,19 +911,6 @@ final class PersonalVocabularyStore {
                 ("springer c sechs", "nc6", 400),
                 ("lf4", "bf4", 220), ("laufer f4", "bf4", 260), ("läufer f4", "bf4", 260), ("laufer f vier", "bf4", 280), ("läufer f vier", "bf4", 280),
                 ("lb5", "bb5", 220), ("laufer b5", "bb5", 260), ("läufer b5", "bb5", 260),
-                ("g3", "g3", 220), ("g 3", "g3", 200), ("g drei", "g3", 230),
-                ("b3", "b3", 200), ("b 3", "b3", 180), ("b drei", "b3", 210),
-                ("f6", "f6", 280), ("f 6", "f6", 260), ("f sechs", "f6", 300),
-                ("c6", "c6", 280), ("c 6", "c6", 260), ("c sechs", "c6", 300),
-                ("g6", "g6", 240), ("g 6", "g6", 220), ("g sechs", "g6", 260),
-                ("g1", "g1", 220), ("g 1", "g1", 200), ("g eins", "g1", 240),
-                ("c3", "c3", 320), ("c 3", "c3", 300), ("see three", "c3", 320),
-                ("sea three", "c3", 320), ("since we", "c3", 300), ("her siri", "c3", 300),
-                ("see we", "c3", 300), ("sea we", "c3", 300),
-                ("c drei", "c3", 250),
-                ("h5", "h5", 200), ("h 5", "h5", 180), ("h funf", "h5", 210), ("h fünf", "h5", 210),
-                ("a3", "a3", 420), ("a 3", "a3", 400), ("a drei", "a3", 410),
-                ("hey siri", "a3", 500), ("hey sir", "a3", 460),
                 ("kurz rochiert", "o-o", 240), ("kleine rochade", "o-o", 240), ("kurz rochade", "o-o", 240),
                 ("kurze rochade", "o-o", 240), ("rochade", "o-o", 180),
                 ("lang rochiert", "o-o-o", 240), ("lange rochade", "o-o-o", 260),

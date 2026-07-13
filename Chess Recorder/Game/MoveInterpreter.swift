@@ -421,6 +421,15 @@ nonisolated enum MoveInterpreter {
                 }
             }
             
+            if index > 0,
+               isPieceName(words[index - 1]),
+               let merged = rankDisambiguatedTarget(in: words[index]) {
+                result.append(merged.rank)
+                result.append(merged.square)
+                index += 1
+                continue
+            }
+
             if let square = sanitizeSquare(words[index]) {
                 if index + 1 < words.count,
                    sanitizeSquare(words[index + 1]) == nil,
@@ -665,17 +674,19 @@ nonisolated enum MoveInterpreter {
         piece: String,
         language: RecognitionLanguage
     ) -> [String] {
-        guard start + 2 < words.count else { return [] }
+        guard start + 1 < words.count else { return [] }
+
+        // "springer 5f3" — ASR may merge rank disambiguation with destination square.
+        if let merged = rankDisambiguatedTarget(in: words[start + 1]) {
+            return [piece + merged.rank + merged.square]
+        }
 
         // "knight bd7" — ASR may merge file disambiguation with destination square.
-        if start + 1 < words.count,
-           words[start + 1].count == 3,
-           let file = words[start + 1].first,
-           "abcdefgh".contains(file),
-           let square = sanitizeSquare(String(words[start + 1].dropFirst())),
-           file != square.first {
-            return [piece + String(file) + square]
+        if let merged = fileDisambiguatedTarget(in: words[start + 1]) {
+            return [piece + merged.file + merged.square]
         }
+
+        guard start + 2 < words.count else { return [] }
 
         let disambiguator = words[start + 1]
         guard let suffix = disambiguationSuffix(forToken: disambiguator, language: language) else {
@@ -695,6 +706,32 @@ nonisolated enum MoveInterpreter {
         guard !destinationSquares.isEmpty else { return [] }
 
         return destinationSquares.map { piece + suffix + $0 }
+    }
+
+    /// "5f3" → rank 5 + square f3 (ASR often merges rank disambiguation with the destination).
+    private static func rankDisambiguatedTarget(in token: String) -> (rank: String, square: String)? {
+        let lowered = token.lowercased()
+        guard lowered.count == 3,
+              let rank = lowered.first,
+              "12345678".contains(rank),
+              let square = sanitizeSquare(String(lowered.dropFirst())),
+              rank != square.last else {
+            return nil
+        }
+        return (String(rank), square)
+    }
+
+    /// "bd7" → file b + square d7 (ASR often merges file disambiguation with the destination).
+    private static func fileDisambiguatedTarget(in token: String) -> (file: String, square: String)? {
+        let lowered = token.lowercased()
+        guard lowered.count == 3,
+              let file = lowered.first,
+              "abcdefgh".contains(file),
+              let square = sanitizeSquare(String(lowered.dropFirst())),
+              file != square.first else {
+            return nil
+        }
+        return (String(file), square)
     }
 
     private static func disambiguationSuffix(for square: String) -> String {
@@ -1069,6 +1106,18 @@ nonisolated enum MoveInterpreter {
                     moves.append(move)
                 }
             }
+
+            let rankDisambiguatedRegex = try! Regex("\(piecePattern)([1-8])([a-h][1-8])")
+            if let match = compact.matches(of: rankDisambiguatedRegex).last {
+                let output = String(compact[match.range])
+                if let move = pieceRankDisambiguatedTargetNotation(
+                    compact: output,
+                    prefix: prefix,
+                    markers: markerNames(for: piecePattern)
+                ) {
+                    moves.append(move)
+                }
+            }
         }
         
         if let move = extractCompactPawnCapture(from: compact) {
@@ -1226,17 +1275,20 @@ nonisolated enum MoveInterpreter {
     ) -> String? {
         guard let marker = markers.first(where: { compact.hasPrefix($0) }) else { return nil }
         let remainder = String(compact.dropFirst(marker.count))
-        guard remainder.count == 3,
-              let file = remainder.first,
-              "abcdefgh".contains(file) else {
-            return nil
-        }
-        let square = String(remainder.dropFirst())
-        guard let destination = sanitizeSquare(square),
-              file != destination.first else {
-            return nil
-        }
-        return prefix + String(file) + destination
+        guard let merged = fileDisambiguatedTarget(in: remainder) else { return nil }
+        return prefix + merged.file + merged.square
+    }
+
+    /// "springer5f3" → N5f3 (rank disambiguation + destination square, no "to").
+    private static func pieceRankDisambiguatedTargetNotation(
+        compact: String,
+        prefix: String,
+        markers: [String]
+    ) -> String? {
+        guard let marker = markers.first(where: { compact.hasPrefix($0) }) else { return nil }
+        let remainder = String(compact.dropFirst(marker.count))
+        guard let merged = rankDisambiguatedTarget(in: remainder) else { return nil }
+        return prefix + merged.rank + merged.square
     }
     
     private static func extractCompactPawnPromotions(from compact: String) -> [String] {

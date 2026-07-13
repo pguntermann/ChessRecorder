@@ -39,6 +39,39 @@ final class LegalMoveResolverTests: XCTestCase {
         XCTAssertFalse(LegalMoveResolver.requiresExplicitSourceMatch("e4"))
     }
 
+    func testPawnFileCaptureDoesNotMatchBishopCaptureWithSameSquare() {
+        // Both bxc5 (pawn b4) and Bxc5 (bishop d6) are legal; lowercase notation must pick the pawn.
+        let fen = "4k3/8/3B4/2q5/1P6/8/8/RN2K1R w - - 0 1"
+        guard let position = Position(fen: fen) else {
+            return XCTFail("Invalid FEN")
+        }
+
+        let board = Board(position: position)
+        let legalMoves = Self.legalMoves(on: board)
+
+        let pawnCapture = LegalMoveResolver.match(notation: "bxc5", among: legalMoves)
+        XCTAssertEqual(pawnCapture?.piece.kind, .pawn)
+        XCTAssertEqual(pawnCapture?.start.notation, "b4")
+
+        let bishopCapture = LegalMoveResolver.match(notation: "Bxc5", among: legalMoves)
+        XCTAssertEqual(bishopCapture?.piece.kind, .bishop)
+        XCTAssertEqual(bishopCapture?.start.notation, "d6")
+    }
+
+    func testMatchBestPrefersPawnFileCaptureCandidate() {
+        let fen = "4k3/8/3B4/2q5/1P6/8/8/RN2K1R w - - 0 1"
+        guard let position = Position(fen: fen) else {
+            return XCTFail("Invalid FEN")
+        }
+
+        let board = Board(position: position)
+        let legalMoves = Self.legalMoves(on: board)
+
+        let matched = LegalMoveResolver.matchBest(candidates: ["bxc5", "bxe5"], among: legalMoves)
+        XCTAssertEqual(matched?.piece.kind, .pawn)
+        XCTAssertEqual(matched?.san, "bxc5")
+    }
+
     private static func legalMoves(on board: Board) -> [Move] {
         var moves: [Move] = []
         let side = board.position.sideToMove

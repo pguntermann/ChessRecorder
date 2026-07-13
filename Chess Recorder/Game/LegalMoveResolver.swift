@@ -90,6 +90,24 @@ enum LegalMoveResolver {
     // MARK: - Matching
 
     private static func exactMatch(_ notation: String, among legalMoves: [Move]) -> Move? {
+        // Pawn file captures use a lowercase file letter (bxc5). Bishop captures use Bxc5.
+        // Case-insensitive matching would conflate the two when both are legal.
+        if ChessKitMapping.isPawnFileCaptureSAN(notation),
+           let first = notation.first,
+           first.isLowercase {
+            return legalMoves.first { move in
+                move.piece.kind == .pawn && move.san.lowercased() == notation.lowercased()
+            }
+        }
+
+        if let first = notation.first,
+           "NBRQK".contains(first),
+           notation.dropFirst().contains(where: { $0 == "x" || $0 == "X" }) {
+            return legalMoves.first { move in
+                move.san == notation
+            }
+        }
+
         let lowered = notation.lowercased()
         return legalMoves.first { move in
             move.san.lowercased() == lowered

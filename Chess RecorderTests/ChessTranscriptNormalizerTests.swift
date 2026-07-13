@@ -147,6 +147,64 @@ final class ChessTranscriptNormalizerTests: XCTestCase {
         XCTAssertEqual(candidates.first, "Ncxe2", "got \(candidates)")
     }
 
+    func testGermanPawnFileCaptureMoveCandidates() {
+        let cases: [(input: String, expected: String)] = [
+            ("b schlagt c5", "bxc5"),
+            ("B schlagt c5", "bxc5"),
+            ("b schlägt c5", "bxc5")
+        ]
+
+        for testCase in cases {
+            let candidates = MoveInterpreter.candidates(from: testCase.input, language: .german)
+            XCTAssertEqual(
+                candidates.first,
+                testCase.expected,
+                "Expected \(testCase.expected) first for '\(testCase.input)', got \(candidates)"
+            )
+        }
+    }
+
+    func testPieceRankDisambiguationMoveCandidates() {
+        let priorityCases: [(input: String, expected: String, language: RecognitionLanguage)] = [
+            ("springer 5f3", "N5f3", .german),
+            ("Springer 5F3", "N5f3", .german),
+            ("springer 5 f3", "N5f3", .german),
+            ("springer fünf f3", "N5f3", .german),
+            ("springer 5 f 3", "N5f3", .german),
+            ("knight 5 f3", "N5f3", .english),
+            ("knight 5f3", "N5f3", .english),
+            ("rook 1 d1", "R1d1", .english),
+            ("turm 1 d1", "R1d1", .german)
+        ]
+
+        for testCase in priorityCases {
+            let candidates = MoveInterpreter.candidates(from: testCase.input, language: testCase.language)
+            XCTAssertTrue(
+                candidates.contains(testCase.expected),
+                "Expected \(testCase.expected) in candidates for '\(testCase.input)', got \(candidates)"
+            )
+            XCTAssertEqual(
+                candidates.first,
+                testCase.expected,
+                "Expected \(testCase.expected) first for '\(testCase.input)', got \(candidates)"
+            )
+        }
+
+        let supportedCases: [(input: String, expected: String, language: RecognitionLanguage)] = [
+            ("springer 5 auf f3", "N5f3", .german),
+            ("springer 5 nach f3", "N5f3", .german),
+            ("knight 5 to f3", "N5f3", .english)
+        ]
+
+        for testCase in supportedCases {
+            let candidates = MoveInterpreter.candidates(from: testCase.input, language: testCase.language)
+            XCTAssertTrue(
+                candidates.contains(testCase.expected),
+                "Expected \(testCase.expected) in candidates for '\(testCase.input)', got \(candidates)"
+            )
+        }
+    }
+
     func testReplacementRulesAreUniquePerStage() {
         for language in RecognitionLanguage.allCases {
             for stage in TranscriptReplacementStage.allCases {

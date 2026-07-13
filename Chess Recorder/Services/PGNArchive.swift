@@ -202,6 +202,7 @@ final class PGNArchive {
 
     func displayText(metadata: PGNMetadata) -> String {
         games
+            .reversed()
             .filter { !$0.moves.isEmpty }
             .map {
                 PGNFormatter.formatGame(
@@ -222,18 +223,18 @@ final class PGNArchive {
 
     private func appendNewOngoingGame() {
         let id = UUID()
-        games.append(RecordedGame(
+        games.insert(RecordedGame(
             id: id,
             moves: [],
             round: games.count + 1,
             result: .ongoing
-        ))
+        ), at: 0)
         activeGameID = id
     }
 
     private func renumberRounds() {
         for index in games.indices {
-            games[index].round = index + 1
+            games[index].round = games.count - index
         }
     }
 }

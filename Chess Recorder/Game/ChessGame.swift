@@ -112,6 +112,8 @@ class ChessGame {
     private(set) var gameResult: PGNResult = .ongoing
     /// User-declared result (resignation/agreement) that persists across board syncs.
     @ObservationIgnored private var declaredResult: PGNResult?
+    /// Terminal overlay text that persists when reviewing move history.
+    @ObservationIgnored private var statusMessageOverride: String?
     /// Half-move count from the starting position to the viewed position (0 = start).
     private(set) var activePlyIndex: Int = 0
     var activeMoveAnimation: ActiveMoveAnimation?
@@ -239,6 +241,7 @@ class ChessGame {
         currentIndex = kitGame.startingIndex
         moves = []
         declaredResult = nil
+        statusMessageOverride = nil
         gameResult = .ongoing
         activePlyIndex = 0
         activeMoveAnimation = nil
@@ -249,6 +252,7 @@ class ChessGame {
         guard result != .ongoing else { return }
         declaredResult = result
         gameResult = result
+        statusMessageOverride = Self.declaredResultStatusMessage(for: result)
     }
 
     var isAtLatestMove: Bool {
@@ -343,16 +347,21 @@ class ChessGame {
     }
 
     var gameStatusMessage: String? {
-        switch kitBoard.state {
+        if isGameOver, let statusMessageOverride {
+            return statusMessageOverride
+        }
+
+        return Self.statusMessage(from: kitBoard.state)
+    }
+
+    private static func statusMessage(from state: Board.State) -> String? {
+        switch state {
         case .checkmate(let color):
             let winner = color == .black ? "White" : "Black"
             return "Checkmate — \(winner) wins"
         case .draw(let reason):
             return ChessKitMapping.drawStatusMessage(for: reason)
         default:
-            if declaredResult != nil {
-                return Self.declaredResultStatusMessage(for: gameResult)
-            }
             return nil
         }
     }
@@ -387,6 +396,7 @@ class ChessGame {
         currentIndex = kitGame.startingIndex
         moves = []
         declaredResult = nil
+        statusMessageOverride = nil
         gameResult = .ongoing
         activeMoveAnimation = nil
         syncBoardFromKit()
@@ -609,11 +619,23 @@ class ChessGame {
         }
 
         currentTurn = ChessKitMapping.appColor(kitBoard.position.sideToMove)
+
+        guard currentIndex == kitGame.moves.endIndex else { return }
+
         if let declaredResult {
             gameResult = declaredResult
-        } else if let detectedResult = ChessKitMapping.pgnResult(from: kitBoard.state) {
+            return
+        }
+
+        if let detectedResult = ChessKitMapping.pgnResult(from: kitBoard.state) {
             gameResult = detectedResult
-        } else {
+            if detectedResult.isFinal {
+                statusMessageOverride = Self.statusMessage(from: kitBoard.state)
+            }
+            return
+        }
+
+        if !gameResult.isFinal {
             gameResult = .ongoing
         }
     }

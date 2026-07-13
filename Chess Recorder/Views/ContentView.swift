@@ -53,8 +53,6 @@ struct ContentView: View {
     }
     
     var body: some View {
-        @Bindable var speechRecognizer = speechRecognizer
-
         GeometryReader { geometry in
             if geometry.size.width > geometry.size.height {
                 landscapeLayout(in: geometry)
@@ -126,7 +124,7 @@ struct ContentView: View {
                 engineAnalysis.stop()
                 stopRecordingIfNeeded()
             } else {
-                engineAnalysis.refresh(game: game)
+                refreshEngineIfAppropriate()
             }
             openingService.refresh(game: game)
         }
@@ -134,7 +132,7 @@ struct ContentView: View {
             if game.isGameOver {
                 engineAnalysis.stop()
             } else {
-                engineAnalysis.refresh(game: game)
+                refreshEngineIfAppropriate()
             }
             openingService.refresh(game: game)
         }
@@ -224,7 +222,7 @@ struct ContentView: View {
             VStack(spacing: 0) {
                 controlToolbar(compact: false, availableWidth: sidebarWidth)
                 ScrollView {
-                    notationPanel
+                    notationSidebar
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -281,7 +279,7 @@ struct ContentView: View {
 
                     Divider()
 
-                    notationPanel
+                    notationSidebar
                 }
             }
         }
@@ -351,28 +349,32 @@ struct ContentView: View {
         )
     }
     
-    private var notationPanel: some View {
-        NotationPanelView(
-            game: game,
-            pgnArchive: pgnArchive,
-            metadata: settingsStore.settings.pgnMetadata,
-            hidePGNHeaderTags: settingsStore.settings.pgnHideHeaderTags,
-            ecoForMoves: { openingService.ecoCode(for: $0) },
-            transcript: speechRecognizer.transcript,
-            isRecording: speechRecognizer.isRecording,
-            dictationPauseDeadline: speechRecognizer.dictationPauseDeadline,
-            dictationPauseDuration: speechRecognizer.dictationPauseDuration,
-            pendingFailure: speechRecognizer.pendingFailure,
-            isRebuildingLanguageModel: speechRecognizer.isRebuildingLanguageModel,
-            engineAnalysisVisible: settingsStore.settings.engineAnalysisVisible,
-            engineAnalysisUseAlgebraicNotation: settingsStore.settings.engineAnalysisUseAlgebraicNotation,
-            engineAnalysis: engineAnalysis,
-            onTeachPhrase: { showingTeachPhrase = true },
-            onDismissFailure: { speechRecognizer.clearPendingFailure() },
-            onClearPGN: clearPGN,
-            onActivateGame: activateGame,
-            onDeleteGame: deleteGame
-        )
+    private var notationSidebar: some View {
+        VStack(spacing: 16) {
+            LiveTranscriptSection(
+                speechRecognizer: speechRecognizer,
+                onTeachPhrase: { showingTeachPhrase = true }
+            )
+
+            NotationPanelView(
+                game: game,
+                pgnArchive: pgnArchive,
+                metadata: settingsStore.settings.pgnMetadata,
+                hidePGNHeaderTags: settingsStore.settings.pgnHideHeaderTags,
+                ecoForMoves: { openingService.ecoCode(for: $0) },
+                engineAnalysisVisible: settingsStore.settings.engineAnalysisVisible,
+                engineAnalysisUseAlgebraicNotation: settingsStore.settings.engineAnalysisUseAlgebraicNotation,
+                engineAnalysis: engineAnalysis,
+                onClearPGN: clearPGN,
+                onActivateGame: activateGame,
+                onDeleteGame: deleteGame
+            )
+        }
+    }
+
+    private func refreshEngineIfAppropriate() {
+        guard settingsStore.settings.engineAnalysisVisible else { return }
+        engineAnalysis.refresh(game: game)
     }
     
     private func controlToolbar(compact: Bool, availableWidth: CGFloat) -> some View {
@@ -618,13 +620,13 @@ struct ContentView: View {
         let archiveResult = result == .ongoing ? game.gameResult : result
         pgnArchive.finalizeActiveGame(with: archiveResult, from: game)
         game.resetGame()
-        speechRecognizer.transcript = ""
+        speechRecognizer.resetTranscriptDisplay()
     }
     
     private func clearPGN() {
         pgnArchive.resetAll()
         game.resetGame()
-        speechRecognizer.transcript = ""
+        speechRecognizer.resetTranscriptDisplay()
     }
 
     private func activateGame(id: UUID) {

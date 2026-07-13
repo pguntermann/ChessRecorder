@@ -188,26 +188,17 @@ class ChessGame {
     func executeVoiceCandidates(_ candidates: [String], preferCaptures: Bool = false) -> String? {
         guard isAtLatestMove else { return nil }
 
-        if preferCaptures {
-            for notation in candidates where MoveInterpreter.isCaptureNotation(notation) {
-                if executeSAN(notation) {
-                    return notation
-                }
-            }
-            for notation in candidates where !MoveInterpreter.isCaptureNotation(notation) {
-                if executeSAN(notation) {
-                    return notation
-                }
-            }
-        } else {
-            for notation in candidates {
-                if executeSAN(notation) {
-                    return notation
-                }
-            }
+        let legalMoves = enumerateLegalKitMoves()
+        guard let matched = LegalMoveResolver.matchBest(
+            candidates: candidates,
+            among: legalMoves,
+            preferCaptures: preferCaptures
+        ) else {
+            return nil
         }
 
-        return nil
+        guard applyLegalMove(matched) else { return nil }
+        return matched.san
     }
 
     @discardableResult

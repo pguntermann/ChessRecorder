@@ -81,6 +81,11 @@ final class OpeningService {
         return openingDisplay(forFens: replayGame.fensAfterMoves())?.eco
     }
 
+    func ecoCode(for game: ChessGame) -> String? {
+        guard isLoaded, !game.moves.isEmpty else { return nil }
+        return openingDisplay(forFens: game.fensAfterMoves())?.eco
+    }
+
     private func openingDisplay(forFens fens: [String]) -> OpeningDisplay? {
         var lastKnown: OpeningDisplay?
         for fen in fens {

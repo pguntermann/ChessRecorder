@@ -72,6 +72,12 @@ class SpeechRecognizer {
     private var recognitionGeneration = 0
     private var stableTranscriptTask: Task<Void, Never>?
     private var lastScheduledTranscript: String?
+    /// Last raw ASR string shown in the live transcript (not corrected/processed text).
+    private var lastDisplayedRawASR = ""
+    private var pendingLiveTranscriptRaw: String?
+    private var liveTranscriptThrottleTask: Task<Void, Never>?
+    private var lastPartialNormalizeTime = Date.distantPast
+    private let partialNormalizeMinInterval: TimeInterval = 0.05
     /// ASR sometimes drops the source file on the final hypothesis after a correct partial ("d takes c4" → "takes c4").
     private var lastSeenCaptureFile: Character?
     /// ASR sometimes revises a capture destination file on the final hypothesis ("dame schlagt a" → "dame schlagt e8").
@@ -145,6 +151,11 @@ class SpeechRecognizer {
     @MainActor
     func clearPendingFailure() {
         pendingFailure = nil
+    }
+
+    @MainActor
+    func resetTranscriptDisplay() {
+        clearLiveTranscriptDisplay()
     }
     
     @MainActor
@@ -355,6 +366,12 @@ class SpeechRecognizer {
         recognitionRecoveryTask?.cancel()
         recognitionRecoveryTask = nil
         stopRecognitionTask()
+        clearLiveTranscriptDisplay()
+        rawTranscript = ""
+        lastAcceptedTranscript = nil
+        lastAcceptedSpeechKey = nil
+        lastAcceptedAtGeneration = -1
+        lastScheduledTranscript = nil
         
         try RecordingAudioSession.activateForCapture(log: logSpeechDiagnostic)
         logSpeechDiagnostic("audio route: \(Self.audioRouteDescription())")
@@ -409,8 +426,18 @@ class SpeechRecognizer {
     }
     
     @MainActor
-    private func clearSessionState() {
+    private func clearLiveTranscriptDisplay() {
         transcript = ""
+        lastDisplayedRawASR = ""
+        pendingLiveTranscriptRaw = nil
+        liveTranscriptThrottleTask?.cancel()
+        liveTranscriptThrottleTask = nil
+        lastPartialNormalizeTime = .distantPast
+    }
+
+    @MainActor
+    private func clearSessionState() {
+        clearLiveTranscriptDisplay()
         rawTranscript = ""
         lastProcessedMove = nil
         lastAcceptedTranscript = nil
@@ -570,12 +597,15 @@ class SpeechRecognizer {
     
     @MainActor
     private func prepareForNextMove() {
+        lastAcceptedTranscript = nil
+        lastAcceptedSpeechKey = nil
+        lastAcceptedAtGeneration = -1
         clearDictationPauseIndicator()
         stableTranscriptTask?.cancel()
         stableTranscriptTask = nil
         lastScheduledTranscript = nil
 
-        transcript = ""
+        clearLiveTranscriptDisplay()
         rawTranscript = ""
         lastProcessedMove = nil
         lastSeenCaptureFile = nil
@@ -592,7 +622,7 @@ class SpeechRecognizer {
     @MainActor
     private func flushRecognitionBuffer() {
         print("Flushing accumulated transcript")
-        transcript = ""
+        clearLiveTranscriptDisplay()
         rawTranscript = ""
         lastAcceptedTranscript = nil
         lastAcceptedSpeechKey = nil
@@ -683,10 +713,7 @@ class SpeechRecognizer {
                     )
                 }
                 self.rawTranscript = newTranscript
-                self.transcript = ChessTranscriptNormalizer.normalizeForPhraseMatching(
-                    newTranscript,
-                    language: self.currentLanguage
-                )
+                self.updateLiveTranscript(from: newTranscript, isFinal: result.isFinal)
                 self.handleTranscript(newTranscript, isFinal: result.isFinal)
             }
         }
@@ -712,6 +739,52 @@ class SpeechRecognizer {
         return nsError.domain == "kAFAssistantErrorDomain" && nsError.code == 203
     }
     
+    @MainActor
+    private func updateLiveTranscript(from raw: String, isFinal: Bool) {
+        guard !raw.isEmpty else { return }
+        guard raw != lastDisplayedRawASR else { return }
+
+        let now = Date()
+        if !isFinal,
+           now.timeIntervalSince(lastPartialNormalizeTime) < partialNormalizeMinInterval {
+            pendingLiveTranscriptRaw = raw
+            scheduleThrottledLiveTranscriptUpdate()
+            return
+        }
+
+        applyLiveTranscriptDisplay(raw: raw)
+    }
+
+    @MainActor
+    private func applyLiveTranscriptDisplay(raw: String) {
+        pendingLiveTranscriptRaw = nil
+        liveTranscriptThrottleTask?.cancel()
+        liveTranscriptThrottleTask = nil
+
+        transcript = ChessTranscriptNormalizer.normalizeForPhraseMatching(
+            raw,
+            language: currentLanguage
+        )
+        lastDisplayedRawASR = raw
+        lastPartialNormalizeTime = Date()
+    }
+
+    @MainActor
+    private func scheduleThrottledLiveTranscriptUpdate() {
+        guard let pending = pendingLiveTranscriptRaw,
+              pending != lastDisplayedRawASR else { return }
+
+        liveTranscriptThrottleTask?.cancel()
+        let delay = max(0, partialNormalizeMinInterval - Date().timeIntervalSince(lastPartialNormalizeTime))
+        liveTranscriptThrottleTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(delay))
+            guard !Task.isCancelled else { return }
+            guard let pending = self.pendingLiveTranscriptRaw,
+                  pending != self.lastDisplayedRawASR else { return }
+            self.applyLiveTranscriptDisplay(raw: pending)
+        }
+    }
+
     @MainActor
     private func handleTranscript(_ text: String, isFinal: Bool) {
         guard !text.isEmpty else { return }
@@ -792,7 +865,7 @@ class SpeechRecognizer {
             )
             return
         }
-        
+
         let candidates = MoveInterpreter.candidates(
             from: correctedText,
             language: currentLanguage,
@@ -808,7 +881,7 @@ class SpeechRecognizer {
             noteProcessingFailure(correctedText, attemptedMoves: [])
             return
         }
-        
+
         print("Move candidates: \(candidates.joined(separator: ", "))")
 
         let preferCaptures = MoveInterpreter.prefersCaptureResolution(
@@ -828,14 +901,14 @@ class SpeechRecognizer {
             prepareForNextMove()
             return
         }
-        
+
         var rejectedMoves: [String] = []
-        
+
         for move in candidates {
             if move == lastProcessedMove {
                 continue
             }
-            
+
             print("Trying move: \(move)")
             if onMoveDetected?(move) == true {
                 print("Accepted move: \(move)")
@@ -848,11 +921,11 @@ class SpeechRecognizer {
                 prepareForNextMove()
                 return
             }
-            
+
             print("Rejected move: \(move)")
             rejectedMoves.append(move)
         }
-        
+
         tracer?.printReport(
             language: currentLanguage,
             rejectedMoves: rejectedMoves,

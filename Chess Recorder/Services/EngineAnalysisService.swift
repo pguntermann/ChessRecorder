@@ -4,7 +4,6 @@
 //
 
 import Foundation
-import CStockfish
 import LucidEngine
 
 struct AnalysisArrowMove: Equatable {
@@ -48,20 +47,22 @@ struct EngineAnalysisDisplay: Equatable {
 @Observable
 @MainActor
 final class EngineAnalysisService {
-    private static let maxDepth = 100
     private static let defaultDepth = 18
+    private static let displayPublishMinInterval: TimeInterval = 0.25
 
     private(set) var isActive = false
     private(set) var isAnalyzing = false
     private(set) var isEngineReady = false
     private(set) var display = EngineAnalysisDisplay()
-    
-    private let engine: LucidEngine
+
+    private let engineWorker: EngineAnalysisEngine
     private var analysisTask: Task<Void, Never>?
-    private var isPrepared = false
+    private var analysisGeneration = 0
     private var configuredDepth = 18
     private var isDepthUnlimited = false
-    
+    private var lastDisplayPublish = Date.distantPast
+    private var pendingDisplay: EngineAnalysisDisplay?
+
     init() {
         let configuration = (try? EngineConfiguration(
             defaultDepth: Self.defaultDepth,
@@ -69,290 +70,185 @@ final class EngineAnalysisService {
             hashSizeMB: 16,
             timeoutSeconds: 30
         )) ?? .default
-        engine = LucidEngine(configuration: configuration)
+        engineWorker = EngineAnalysisEngine(configuration: configuration)
     }
 
     func configure(depth: Int, unlimited: Bool) {
-        configuredDepth = min(max(depth, 1), Self.maxDepth)
+        configuredDepth = min(max(depth, 1), EngineAnalysisDisplayBuilder.maxDepth)
         isDepthUnlimited = unlimited
     }
-    
+
     func prepare() async {
-        guard !isPrepared else { return }
-        
+        guard !isEngineReady else { return }
+
         display.statusMessage = "Starting engine…"
-        
+
         do {
-            try await engine.start()
-            isPrepared = true
+            try await engineWorker.prepare()
             isEngineReady = true
             display.statusMessage = "Stopped"
         } catch {
-            isPrepared = false
             isEngineReady = false
             display.statusMessage = "Engine unavailable"
         }
     }
-    
+
     func shutdown() async {
         stop()
-        if isPrepared {
-            await engine.shutdown()
-            isPrepared = false
-            isEngineReady = false
-        }
+        await engineWorker.shutdown()
+        isEngineReady = false
     }
-    
+
     func startAnalyzing(game: ChessGame) {
-        guard isPrepared else {
+        guard isEngineReady else {
             display.statusMessage = "Engine unavailable"
             return
         }
-        
+
         isActive = true
         refresh(game: game)
     }
-    
+
     func stop() {
         isActive = false
-        sf_stop_search()
+        analysisGeneration += 1
         analysisTask?.cancel()
         analysisTask = nil
+        pendingDisplay = nil
         isAnalyzing = false
         display = EngineAnalysisDisplay(statusMessage: "Stopped")
+        Task { await engineWorker.stopSearch() }
     }
-    
+
     func refresh(game: ChessGame) {
-        guard isActive, isPrepared else { return }
-        
-        sf_stop_search()
+        guard isActive, isEngineReady else { return }
+
+        analysisGeneration += 1
+        let generation = analysisGeneration
         analysisTask?.cancel()
-        
-        let fen = game.fen()
-        let sideToMove = game.currentTurn
-        let gamePhase = Self.currentPhase(fens: game.fenSequenceFromStart())
-        
-        analysisTask = Task {
-            await withTaskCancellationHandler {
-                isAnalyzing = true
-                display.statusMessage = isDepthUnlimited ? "Analyzing (uncapped)…" : "Analyzing…"
-                
-                defer {
-                    if !Task.isCancelled {
-                        isAnalyzing = false
+
+        let snapshot = AnalysisSnapshot(
+            fen: game.fen(),
+            sideToMove: game.currentTurn,
+            fenSequence: game.fenSequenceFromStart()
+        )
+        let targetDepth = configuredDepth
+        let unlimited = isDepthUnlimited
+
+        isAnalyzing = true
+        display.statusMessage = unlimited ? "Analyzing (uncapped)…" : "Analyzing…"
+
+        analysisTask = Task.detached(priority: .userInitiated) { [engineWorker] in
+            await engineWorker.stopSearch()
+
+            let gamePhase = EngineAnalysisDisplayBuilder.currentPhase(fens: snapshot.fenSequence)
+            var latestAssessment: PositionAssessment?
+            var nextDepth: Int? = EngineAnalysisDisplayBuilder.initialDepth(
+                targetDepth: targetDepth,
+                unlimited: unlimited
+            )
+
+            defer {
+                Task { @MainActor in
+                    guard generation == self.analysisGeneration else { return }
+                    self.isAnalyzing = false
+                    if let pendingDisplay = self.pendingDisplay {
+                        self.display = pendingDisplay
+                        self.pendingDisplay = nil
                     }
                 }
-                
-                var latestAssessment: PositionAssessment?
-                var nextDepth: Int? = Self.initialDepth(targetDepth: configuredDepth, unlimited: isDepthUnlimited)
+            }
 
-                while !Task.isCancelled, let depth = nextDepth {
-                    do {
-                        let assessment = try await engine.evaluate(fen: fen, depth: depth)
-                        guard !Task.isCancelled else { return }
+            while !Task.isCancelled, let depth = nextDepth {
+                do {
+                    let assessment = try await engineWorker.evaluate(fen: snapshot.fen, depth: depth)
+                    guard !Task.isCancelled else { return }
 
-                        latestAssessment = assessment
-                        display = Self.makeDisplay(
-                            assessment: assessment,
-                            fen: fen,
-                            sideToMove: sideToMove,
+                    latestAssessment = assessment
+                    let isFinal = !EngineAnalysisDisplayBuilder.hasNextDepth(
+                        after: assessment.depth,
+                        targetDepth: targetDepth,
+                        unlimited: unlimited
+                    )
+                    let builtDisplay = EngineAnalysisDisplayBuilder.makeDisplay(
+                        assessment: assessment,
+                        fen: snapshot.fen,
+                        sideToMove: snapshot.sideToMove,
+                        gamePhase: gamePhase,
+                        statusMessage: EngineAnalysisDisplayBuilder.depthStatusMessage(
+                            currentDepth: assessment.depth,
+                            targetDepth: targetDepth,
+                            unlimited: unlimited,
+                            isFinal: isFinal
+                        )
+                    )
+
+                    await MainActor.run {
+                        guard generation == self.analysisGeneration else { return }
+                        self.publishDisplay(builtDisplay, force: isFinal)
+                    }
+
+                    nextDepth = EngineAnalysisDisplayBuilder.nextDepth(
+                        after: assessment.depth,
+                        targetDepth: targetDepth,
+                        unlimited: unlimited
+                    )
+                } catch {
+                    guard !Task.isCancelled else { return }
+
+                    let failureDisplay: EngineAnalysisDisplay
+                    if let latestAssessment {
+                        failureDisplay = EngineAnalysisDisplayBuilder.makeDisplay(
+                            assessment: latestAssessment,
+                            fen: snapshot.fen,
+                            sideToMove: snapshot.sideToMove,
                             gamePhase: gamePhase,
-                            statusMessage: Self.depthStatusMessage(
-                                currentDepth: assessment.depth,
-                                targetDepth: configuredDepth,
-                                unlimited: isDepthUnlimited,
-                                isFinal: !Self.hasNextDepth(
-                                    after: assessment.depth,
-                                    targetDepth: configuredDepth,
-                                    unlimited: isDepthUnlimited
-                                )
+                            statusMessage: EngineAnalysisDisplayBuilder.statusMessage(
+                                for: error,
+                                fallbackDepth: latestAssessment.depth,
+                                unlimited: unlimited
                             )
                         )
-                        nextDepth = Self.nextDepth(after: assessment.depth, targetDepth: configuredDepth, unlimited: isDepthUnlimited)
-                    } catch {
-                        guard !Task.isCancelled else { return }
-
-                        if let latestAssessment {
-                            display = Self.makeDisplay(
-                                assessment: latestAssessment,
-                                fen: fen,
-                                sideToMove: sideToMove,
-                                gamePhase: gamePhase,
-                                statusMessage: Self.statusMessage(
-                                    for: error,
-                                    fallbackDepth: latestAssessment.depth,
-                                    unlimited: isDepthUnlimited
-                                )
-                            )
-                        } else {
-                            display = EngineAnalysisDisplay(
-                                evaluationText: "—",
-                                evaluationBarWhiteFraction: 0.5,
-                                winProbability: nil,
-                                gamePhase: gamePhase,
-                                principalLineUCI: "",
-                                principalLineSAN: "",
-                                nextMoveArrow: nil,
-                                statusMessage: Self.statusMessage(for: error)
-                            )
-                        }
-                        return
+                    } else {
+                        failureDisplay = EngineAnalysisDisplay(
+                            evaluationText: "—",
+                            evaluationBarWhiteFraction: 0.5,
+                            winProbability: nil,
+                            gamePhase: gamePhase,
+                            principalLineUCI: "",
+                            principalLineSAN: "",
+                            nextMoveArrow: nil,
+                            statusMessage: EngineAnalysisDisplayBuilder.statusMessage(for: error)
+                        )
                     }
+
+                    await MainActor.run {
+                        guard generation == self.analysisGeneration else { return }
+                        self.publishDisplay(failureDisplay, force: true)
+                    }
+                    return
                 }
-            } onCancel: {
-                sf_stop_search()
             }
         }
-    }
-    
-    private static func initialDepth(targetDepth: Int, unlimited: Bool) -> Int {
-        min(unlimited ? 6 : targetDepth, 6)
-    }
-
-    private static func nextDepth(after depth: Int, targetDepth: Int, unlimited: Bool) -> Int? {
-        let candidate: Int
-        switch depth {
-        case ..<10:
-            candidate = depth + 2
-        case ..<20:
-            candidate = depth + 4
-        default:
-            candidate = depth + 8
-        }
-
-        if unlimited {
-            return candidate <= maxDepth ? candidate : nil
-        }
-        return candidate <= targetDepth ? candidate : nil
-    }
-
-    private static func hasNextDepth(after depth: Int, targetDepth: Int, unlimited: Bool) -> Bool {
-        nextDepth(after: depth, targetDepth: targetDepth, unlimited: unlimited) != nil
-    }
-
-    private static func depthStatusMessage(currentDepth: Int, targetDepth: Int, unlimited: Bool, isFinal: Bool) -> String {
-        if unlimited {
-            return isFinal ? "Depth \(currentDepth) (uncapped)" : "Depth \(currentDepth) (updating)"
-        }
-        return isFinal ? "Depth \(currentDepth)" : "Depth \(currentDepth) of \(targetDepth)"
-    }
-
-    private static func statusMessage(for error: Error, fallbackDepth: Int? = nil, unlimited: Bool = false) -> String {
-        guard let engineError = error as? EngineError else {
-            return "Analysis failed"
-        }
-        
-        switch engineError {
-        case .evaluationTimeout:
-            if let fallbackDepth {
-                return unlimited ? "Depth \(fallbackDepth) (timed out)" : "Depth \(fallbackDepth) (timed out)"
-            }
-            return "Analysis timed out"
-        case .engineNotRunning:
-            return "Engine unavailable"
-        case .invalidFEN(_):
-            return "Invalid position"
-        default:
-            return "Analysis failed"
-        }
-    }
-    
-    private static func makeDisplay(
-        assessment: PositionAssessment,
-        fen: String,
-        sideToMove: PieceColor,
-        gamePhase: EngineGamePhase,
-        statusMessage: String
-    ) -> EngineAnalysisDisplay {
-        let whiteScore = whitePerspectiveScore(assessment.score, sideToMove: sideToMove)
-        let wdl = WinProbabilityCalculator.calculate(score: whiteScore)
-
-        return EngineAnalysisDisplay(
-            evaluationText: formatEvaluation(assessment.score, sideToMove: sideToMove),
-            evaluationBarWhiteFraction: evaluationBarWhiteFraction(assessment.score, sideToMove: sideToMove),
-            winProbability: WinProbabilityDisplay(wdl: wdl),
-            gamePhase: gamePhase,
-            principalLineUCI: formatPrincipalLineUCI(assessment.principalVariation.map(\.uci)),
-            principalLineSAN: ChessKitMapping.formatEnginePrincipalLineSAN(assessment.principalVariation.map(\.uci), fen: fen),
-            nextMoveArrow: arrowMove(from: assessment.principalVariation.first?.uci),
-            statusMessage: statusMessage
-        )
     }
 
     static func currentPhase(fens: [String]) -> EngineGamePhase {
-        guard fens.count >= 2 else { return .opening }
-
-        let phases = GamePhaseDetector.detect(fens: fens)
-        let moveNumber = fens.count - 1
-
-        if let endgame = phases.endgame, endgame.contains(moveNumber) {
-            return .endgame
-        }
-        if let middlegame = phases.middlegame, middlegame.contains(moveNumber) {
-            return .middlegame
-        }
-        if let opening = phases.opening, opening.contains(moveNumber) {
-            return .opening
-        }
-        return .opening
-    }
-
-    private static func formatEvaluation(_ score: Score, sideToMove: PieceColor) -> String {
-        let whitePerspective = whitePerspectiveScore(score, sideToMove: sideToMove)
-        switch whitePerspective {
-        case .centipawns(let cp):
-            return String(format: "%+.2f", Double(cp) / 100.0)
-        case .mate(let moves):
-            if moves > 0 {
-                return "M\(moves)"
-            }
-            if moves < 0 {
-                return "-M\(abs(moves))"
-            }
-            return "0.00"
-        }
-    }
-
-    private static func evaluationBarWhiteFraction(_ score: Score, sideToMove: PieceColor) -> Double {
-        let whitePerspective = whitePerspectiveScore(score, sideToMove: sideToMove)
-
-        switch whitePerspective {
-        case .centipawns(let cp):
-            return evaluationBarWhiteFraction(forPawns: Double(cp) / 100.0)
-        case .mate(let moves):
-            if moves > 0 { return 1.0 }
-            if moves < 0 { return 0.0 }
-            return 0.5
-        }
+        EngineAnalysisDisplayBuilder.currentPhase(fens: fens)
     }
 
     static func evaluationBarWhiteFraction(forPawns pawns: Double) -> Double {
-        let normalized = tanh(pawns / 4.0)
-        return min(max((normalized + 1.0) / 2.0, 0.0), 1.0)
+        EngineAnalysisDisplayBuilder.evaluationBarWhiteFraction(forPawns: pawns)
     }
 
-    private static func whitePerspectiveScore(_ score: Score, sideToMove: PieceColor) -> Score {
-        switch score {
-        case .centipawns(let cp):
-            return .centipawns(sideToMove == .white ? cp : -cp)
-        case .mate(let moves):
-            return .mate(sideToMove == .white ? moves : -moves)
-        }
-    }
-    
-    private static func formatPrincipalLineUCI(_ line: [String]) -> String {
-        guard !line.isEmpty else { return "—" }
-        return line.joined(separator: " ")
-    }
-
-    private static func arrowMove(from uci: String?) -> AnalysisArrowMove? {
-        guard let uci,
-              let move = ChessKitMapping.engineMoveComponents(from: uci),
-              let from = ChessPosition(notation: move.from),
-              let to = ChessPosition(notation: move.to) else {
-            return nil
+    private func publishDisplay(_ newDisplay: EngineAnalysisDisplay, force: Bool) {
+        let now = Date()
+        if force || now.timeIntervalSince(lastDisplayPublish) >= Self.displayPublishMinInterval {
+            display = newDisplay
+            lastDisplayPublish = now
+            pendingDisplay = nil
+            return
         }
 
-        return AnalysisArrowMove(from: from, to: to)
+        pendingDisplay = newDisplay
     }
 }

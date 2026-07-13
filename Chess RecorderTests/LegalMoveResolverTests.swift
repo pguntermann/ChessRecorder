@@ -20,6 +20,18 @@ final class LegalMoveResolverTests: XCTestCase {
         XCTAssertEqual(fCapture?.start.notation, "f4")
     }
 
+    func testMatchBestReturnsNilForAmbiguousKnightCapture() {
+        let fen = "5k2/8/8/3p3/1N3N2/8/8/4K3 w - - 0 1"
+        guard let position = Position(fen: fen) else {
+            return XCTFail("Invalid FEN")
+        }
+
+        let board = Board(position: position)
+        let legalMoves = Self.legalMoves(on: board)
+
+        XCTAssertNil(LegalMoveResolver.matchBest(candidates: ["Nxd5"], among: legalMoves))
+    }
+
     func testRequiresExplicitSourceMatch() {
         XCTAssertTrue(LegalMoveResolver.requiresExplicitSourceMatch("Nbxd5"))
         XCTAssertTrue(LegalMoveResolver.requiresExplicitSourceMatch("Ncxe2"))

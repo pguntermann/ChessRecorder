@@ -76,4 +76,46 @@ final class ChessGameTests: XCTestCase {
         XCTAssertEqual(game.moves.last?.san, "e4")
         XCTAssertTrue(game.isAtLatestMove)
     }
+
+    func testExecuteVoiceCandidatesPrefersFirstLegalMatch() {
+        let game = ChessGame()
+        let setup: [(ChessPosition, ChessPosition)] = [
+            (ChessPosition(file: 4, rank: 1), ChessPosition(file: 4, rank: 3)),
+            (ChessPosition(file: 4, rank: 6), ChessPosition(file: 4, rank: 4)),
+            (ChessPosition(file: 6, rank: 0), ChessPosition(file: 5, rank: 2)),
+            (ChessPosition(file: 1, rank: 7), ChessPosition(file: 2, rank: 5)),
+            (ChessPosition(file: 1, rank: 0), ChessPosition(file: 2, rank: 2)),
+            (ChessPosition(file: 6, rank: 7), ChessPosition(file: 5, rank: 5)),
+            (ChessPosition(file: 3, rank: 1), ChessPosition(file: 3, rank: 3)),
+            (ChessPosition(file: 4, rank: 4), ChessPosition(file: 3, rank: 3))
+        ]
+
+        for (from, to) in setup {
+            XCTAssertTrue(game.performMove(from: from, to: to))
+        }
+
+        XCTAssertEqual(game.executeVoiceCandidates(["Nfxd4", "Ncxd4"]), "Nxd4")
+        XCTAssertEqual(game.moves.last?.from.notation, "f3")
+    }
+
+    func testExecuteVoiceCandidatesUsesDisambiguatedCapture() {
+        let game = ChessGame()
+        let setup: [(ChessPosition, ChessPosition)] = [
+            (ChessPosition(file: 4, rank: 1), ChessPosition(file: 4, rank: 3)),
+            (ChessPosition(file: 4, rank: 6), ChessPosition(file: 4, rank: 4)),
+            (ChessPosition(file: 6, rank: 0), ChessPosition(file: 5, rank: 2)),
+            (ChessPosition(file: 1, rank: 7), ChessPosition(file: 2, rank: 5)),
+            (ChessPosition(file: 1, rank: 0), ChessPosition(file: 2, rank: 2)),
+            (ChessPosition(file: 6, rank: 7), ChessPosition(file: 5, rank: 5)),
+            (ChessPosition(file: 3, rank: 1), ChessPosition(file: 3, rank: 3)),
+            (ChessPosition(file: 4, rank: 4), ChessPosition(file: 3, rank: 3))
+        ]
+
+        for (from, to) in setup {
+            XCTAssertTrue(game.performMove(from: from, to: to))
+        }
+
+        XCTAssertEqual(game.executeVoiceCandidates(["Nfxd4"]), "Nxd4")
+        XCTAssertEqual(game.moves.last?.from.notation, "f3")
+    }
 }

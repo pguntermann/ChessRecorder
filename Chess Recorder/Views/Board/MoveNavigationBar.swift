@@ -78,24 +78,26 @@ struct MoveNavigationBar: View {
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     } else {
-                        ForEach(Array(game.moves.enumerated()), id: \.offset) { index, move in
-                            if index % 2 == 0 {
+                        LazyHStack(spacing: 4) {
+                            ForEach(Array(game.moves.enumerated()), id: \.offset) { index, move in
+                                if index % 2 == 0 {
+                                    moveToken(
+                                        id: "number-\(index)",
+                                        text: "\(index / 2 + 1).",
+                                        isMoveNumber: true,
+                                        moveIndex: index,
+                                        action: { onGoToPly(index) }
+                                    )
+                                }
+
                                 moveToken(
-                                    id: "number-\(index)",
-                                    text: "\(index / 2 + 1).",
-                                    isMoveNumber: true,
+                                    id: "move-\(index)",
+                                    text: move.algebraicNotation,
+                                    isMoveNumber: false,
                                     moveIndex: index,
-                                    action: { onGoToPly(index) }
+                                    action: { onGoToPly(index + 1) }
                                 )
                             }
-
-                            moveToken(
-                                id: "move-\(index)",
-                                text: move.algebraicNotation,
-                                isMoveNumber: false,
-                                moveIndex: index,
-                                action: { onGoToPly(index + 1) }
-                            )
                         }
                     }
                 }

@@ -65,6 +65,8 @@ class SpeechRecognizer {
     private var lastAcceptedTranscript: String?
     /// Prevents the dictation timer from restarting on stale ASR audio after a move is accepted.
     private var lastAcceptedSpeechKey: String?
+    /// Recognition generation when `lastAcceptedSpeechKey` was recorded (dedup is per ASR session).
+    private var lastAcceptedAtGeneration = -1
     private var lastHandledUndo: String?
     private var lastUndoTime: Date?
     private var recognitionGeneration = 0
@@ -413,6 +415,7 @@ class SpeechRecognizer {
         lastProcessedMove = nil
         lastAcceptedTranscript = nil
         lastAcceptedSpeechKey = nil
+        lastAcceptedAtGeneration = -1
         lastHandledUndo = nil
         lastUndoTime = nil
         pendingFailure = nil
@@ -593,6 +596,7 @@ class SpeechRecognizer {
         rawTranscript = ""
         lastAcceptedTranscript = nil
         lastAcceptedSpeechKey = nil
+        lastAcceptedAtGeneration = -1
         lastSeenCaptureFile = nil
         lastPartialCaptureDestinationFile = nil
         clearDictationPauseIndicator()
@@ -737,7 +741,8 @@ class SpeechRecognizer {
     }
 
     private func matchesLastAcceptedSpeech(_ text: String) -> Bool {
-        guard let lastAcceptedSpeechKey else { return false }
+        guard let lastAcceptedSpeechKey,
+              lastAcceptedAtGeneration == recognitionGeneration else { return false }
         return speechComparisonKey(for: text) == lastAcceptedSpeechKey
     }
     
@@ -779,7 +784,8 @@ class SpeechRecognizer {
         let correctedText = correctedTranscript(for: text, tracer: tracer)
         transcript = correctedText
 
-        if correctedText == lastAcceptedTranscript {
+        if correctedText == lastAcceptedTranscript,
+           lastAcceptedAtGeneration == recognitionGeneration {
             tracer?.printReport(
                 language: currentLanguage,
                 failureReason: "Duplicate transcript — skipped"
@@ -817,6 +823,7 @@ class SpeechRecognizer {
             lastProcessedMove = acceptedMove
             lastAcceptedTranscript = correctedText
             lastAcceptedSpeechKey = correctedText
+            lastAcceptedAtGeneration = recognitionGeneration
             pendingFailure = nil
             prepareForNextMove()
             return
@@ -836,6 +843,7 @@ class SpeechRecognizer {
                 lastProcessedMove = move
                 lastAcceptedTranscript = correctedText
                 lastAcceptedSpeechKey = correctedText
+                lastAcceptedAtGeneration = recognitionGeneration
                 pendingFailure = nil
                 prepareForNextMove()
                 return
@@ -1056,6 +1064,7 @@ class SpeechRecognizer {
         lastProcessedMove = nil
         lastAcceptedTranscript = nil
         lastAcceptedSpeechKey = nil
+        lastAcceptedAtGeneration = -1
         
         print("Undo command detected: \(undoPhrase)")
         onUndoDetected?()

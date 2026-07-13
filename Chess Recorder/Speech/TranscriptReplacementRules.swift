@@ -209,8 +209,35 @@ enum TranscriptReplacementRules {
     + germanHFileRules(lexicon: lexicon)
   }
 
+  private static func germanCastlingRules() -> [TranscriptReplacementRule] {
+    [
+      rule("de.castle-lang-rochade", #"\blang rochade\b"#, "lange rochade"),
+      rule(
+        "de.castle-queenside-wing",
+        #"\brochade auf (damen\s*(seite|flugel)|damenseite|damenflugel)\b"#,
+        "lange rochade"
+      ),
+      rule(
+        "de.castle-kingside-wing",
+        #"\brochade auf (konigs?\s*(seite|flugel)|konig\s*seite|konigsseite|konigsflugel)\b"#,
+        "kurze rochade"
+      )
+    ]
+  }
+
+  private static func germanCastlingRepairRules() -> [TranscriptReplacementRule] {
+    [
+      rule("de.castle-lang-rochade-repair", #"\blang rochade\b"#, "lange rochade")
+    ]
+  }
+
+  /// Applied before spoken-file homophone spacing so `rochade auf …` is not broken by `de ` → `d `.
+  static func germanEarlyCastlingRules() -> [TranscriptReplacementRule] {
+    germanCastlingRules()
+  }
+
   private static func germanPhraseMatchingRules() -> [TranscriptReplacementRule] {
-    germanAFileRules()
+    germanAFileRules() + germanCastlingRepairRules()
   }
 
   private static func germanSpokenLetterSpacingRules() -> [TranscriptReplacementRule] {

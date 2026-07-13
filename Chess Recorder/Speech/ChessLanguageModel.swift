@@ -187,7 +187,8 @@ enum ChessLanguageModel {
             }
 
             for phrase in ["zurück", "rückgängig", "kurz rochiert", "lang rochiert",
-                           "kleine rochade", "große rochade", "grosse rochade", "lange rochade"] {
+                           "kleine rochade", "große rochade", "grosse rochade", "lange rochade",
+                           "lang rochade", "rochade auf damenseite", "rochade auf königsseite"] {
                 SFCustomLanguageModelData.PhraseCount(phrase: phrase, count: 220)
             }
             
@@ -268,7 +269,11 @@ enum ChessLanguageModel {
                 SFCustomLanguageModelData.PhraseCount(phrase: phrase, count: count)
             }
 
-            for phrase in ["castle", "castle kingside", "castle queenside"] {
+            for phrase in [
+                "castle", "castle kingside", "castle queenside",
+                "castle on kingside", "castle on queenside",
+                "castling kingside", "castling queenside"
+            ] {
                 SFCustomLanguageModelData.PhraseCount(phrase: phrase, count: 240)
             }
             

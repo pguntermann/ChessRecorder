@@ -104,6 +104,13 @@ struct ActiveMoveAnimation: Equatable {
     let secondary: AnimatedPieceMove?
 }
 
+struct TakebackAnimation: Equatable {
+    let id: UUID
+    let primary: AnimatedPieceMove
+    let secondary: AnimatedPieceMove?
+    let fadeInPieces: [AnimatedPieceMove]
+}
+
 @Observable
 class ChessGame {
     private(set) var board: [[ChessPiece?]]
@@ -117,10 +124,12 @@ class ChessGame {
     /// Half-move count from the starting position to the viewed position (0 = start).
     private(set) var activePlyIndex: Int = 0
     var activeMoveAnimation: ActiveMoveAnimation?
+    var activeTakebackAnimation: TakebackAnimation?
 
     @ObservationIgnored private var kitBoard: Board
     @ObservationIgnored private var kitGame: ChessKit.Game
     @ObservationIgnored private var currentIndex: MoveTree.Index
+    @ObservationIgnored private var cachedLegalKitMoves: [Move]?
 
     init() {
         let game = ChessKit.Game()
@@ -151,6 +160,10 @@ class ChessGame {
             ) {
                 return true
             }
+            return executeLegalMatch(notation: notation)
+        }
+
+        if LegalMoveResolver.requiresExplicitSourceMatch(notation) {
             return executeLegalMatch(notation: notation)
         }
 
@@ -194,17 +207,7 @@ class ChessGame {
             }
         }
 
-        let legalMoves = enumerateLegalKitMoves()
-        guard let matched = LegalMoveResolver.matchBest(
-            candidates: candidates,
-            among: legalMoves,
-            preferCaptures: preferCaptures
-        ) else {
-            return nil
-        }
-
-        guard applyLegalMove(matched) else { return nil }
-        return matched.san
+        return nil
     }
 
     @discardableResult
@@ -252,6 +255,11 @@ class ChessGame {
         activeMoveAnimation = nil
     }
 
+    func clearTakebackAnimation(id: UUID) {
+        guard activeTakebackAnimation?.id == id else { return }
+        activeTakebackAnimation = nil
+    }
+
     func resetGame() {
         kitBoard = Board()
         kitGame = ChessKit.Game()
@@ -262,6 +270,8 @@ class ChessGame {
         gameResult = .ongoing
         activePlyIndex = 0
         activeMoveAnimation = nil
+        activeTakebackAnimation = nil
+        invalidateLegalMovesCache()
         syncBoardFromKit()
     }
 
@@ -347,7 +357,7 @@ class ChessGame {
 
     func undoLastMove() -> Bool {
         guard canUndo else { return false }
-        return replayMainLine(Array(moves.dropLast().map(\.san)))
+        return truncateLastMainLineMove()
     }
 
     @discardableResult
@@ -402,12 +412,15 @@ class ChessGame {
         currentIndex = index
         kitBoard.update(position: position, resetPositionCounts: true)
         activeMoveAnimation = nil
+        activeTakebackAnimation = nil
         syncBoardFromKit()
         refreshActivePlyIndex()
     }
 
     @discardableResult
     private func replayMainLine(_ sans: [String]) -> Bool {
+        let snapshot = captureSnapshot()
+
         kitBoard = Board()
         kitGame = ChessKit.Game()
         currentIndex = kitGame.startingIndex
@@ -416,16 +429,184 @@ class ChessGame {
         statusMessageOverride = nil
         gameResult = .ongoing
         activeMoveAnimation = nil
+        activeTakebackAnimation = nil
+        invalidateLegalMovesCache()
         syncBoardFromKit()
         activePlyIndex = 0
 
         for san in sans {
             guard applyReplaySAN(san) else {
-                resetGame()
+                restoreSnapshot(snapshot)
                 return false
             }
         }
         return true
+    }
+
+    /// Removes the last main-line move by rebuilding a shorter ChessKit tree from stored `Move`s.
+    @discardableResult
+    private func truncateLastMainLineMove() -> Bool {
+        guard canUndo else { return false }
+
+        let mainLineMoves = mainLineKitMoves()
+        guard mainLineMoves.count == moves.count, !mainLineMoves.isEmpty else { return false }
+
+        let boardBeforeUndo = board
+        guard let undoneChessMove = moves.last else { return false }
+        let undoneKitMove = mainLineMoves.last
+        let truncatedMoves = Array(mainLineMoves.dropLast())
+        guard let rebuilt = makeKitGame(mainLineMoves: truncatedMoves) else { return false }
+
+        kitGame = rebuilt.game
+        currentIndex = rebuilt.endIndex
+        moves.removeLast()
+
+        guard let parentPosition = kitGame.positions[currentIndex] else { return false }
+        kitBoard.update(position: parentPosition, resetPositionCounts: true)
+        activeMoveAnimation = nil
+        invalidateLegalMovesCache()
+
+        if declaredResult == nil {
+            statusMessageOverride = nil
+        }
+
+        syncBoardFromKit()
+        refreshActivePlyIndex()
+
+        if let undoneKitMove,
+           let takebackAnimation = makeTakebackAnimation(
+               undoneChessMove: undoneChessMove,
+               undoneKitMove: undoneKitMove,
+               boardBeforeUndo: boardBeforeUndo
+           ) {
+            activeTakebackAnimation = takebackAnimation
+        }
+
+        return true
+    }
+
+    private func makeTakebackAnimation(
+        undoneChessMove: ChessMove,
+        undoneKitMove: Move,
+        boardBeforeUndo: [[ChessPiece?]]
+    ) -> TakebackAnimation? {
+        guard let movingPiece = boardBeforeUndo[undoneChessMove.to.file][undoneChessMove.to.rank] else {
+            return nil
+        }
+
+        let primary = AnimatedPieceMove(
+            piece: movingPiece,
+            from: undoneChessMove.to,
+            to: undoneChessMove.from
+        )
+
+        var secondary: AnimatedPieceMove?
+        if case .castle(let castling) = undoneKitMove.result {
+            let rookEnd = ChessKitMapping.appPosition(from: castling.rookEnd)
+            let rookStart = ChessKitMapping.appPosition(from: castling.rookStart)
+            if let rook = boardBeforeUndo[rookEnd.file][rookEnd.rank] {
+                secondary = AnimatedPieceMove(piece: rook, from: rookEnd, to: rookStart)
+            }
+        }
+
+        var fadeInPieces: [AnimatedPieceMove] = []
+
+        if let restingMover = board[undoneChessMove.from.file][undoneChessMove.from.rank] {
+            fadeInPieces.append(
+                AnimatedPieceMove(piece: restingMover, from: undoneChessMove.from, to: undoneChessMove.from)
+            )
+        }
+
+        if case .castle(let castling) = undoneKitMove.result {
+            let rookStart = ChessKitMapping.appPosition(from: castling.rookStart)
+            if let rook = board[rookStart.file][rookStart.rank] {
+                fadeInPieces.append(
+                    AnimatedPieceMove(piece: rook, from: rookStart, to: rookStart)
+                )
+            }
+        }
+
+        if case .capture(let capturedPiece) = undoneKitMove.result {
+            let captureSquare = ChessKitMapping.appPosition(from: capturedPiece.square)
+            if let restored = board[captureSquare.file][captureSquare.rank] {
+                fadeInPieces.append(
+                    AnimatedPieceMove(piece: restored, from: captureSquare, to: captureSquare)
+                )
+            }
+        }
+
+        return TakebackAnimation(
+            id: UUID(),
+            primary: primary,
+            secondary: secondary,
+            fadeInPieces: fadeInPieces
+        )
+    }
+
+    private func mainLineKitMoves() -> [Move] {
+        var kitMoves: [Move] = []
+        var index = kitGame.startingIndex
+
+        while kitGame.moves.hasIndex(after: index) {
+            let next = kitGame.moves.index(after: index)
+            guard let move = kitGame.moves[next] else { break }
+            kitMoves.append(move)
+            index = next
+        }
+
+        return kitMoves
+    }
+
+    private func makeKitGame(mainLineMoves: [Move]) -> (game: ChessKit.Game, endIndex: MoveTree.Index)? {
+        let startPosition = kitGame.startingPosition ?? .standard
+        var game = ChessKit.Game(startingWith: startPosition, tags: kitGame.tags)
+        var index = game.startingIndex
+
+        for move in mainLineMoves {
+            index = game.make(move: move, from: index)
+        }
+
+        guard game.positions[index] != nil else { return nil }
+        return (game, index)
+    }
+
+    private struct GameSnapshot {
+        let kitBoard: Board
+        let kitGame: ChessKit.Game
+        let currentIndex: MoveTree.Index
+        let moves: [ChessMove]
+        let declaredResult: PGNResult?
+        let statusMessageOverride: String?
+        let gameResult: PGNResult
+        let activePlyIndex: Int
+    }
+
+    private func captureSnapshot() -> GameSnapshot {
+        GameSnapshot(
+            kitBoard: kitBoard,
+            kitGame: kitGame,
+            currentIndex: currentIndex,
+            moves: moves,
+            declaredResult: declaredResult,
+            statusMessageOverride: statusMessageOverride,
+            gameResult: gameResult,
+            activePlyIndex: activePlyIndex
+        )
+    }
+
+    private func restoreSnapshot(_ snapshot: GameSnapshot) {
+        kitBoard = snapshot.kitBoard
+        kitGame = snapshot.kitGame
+        currentIndex = snapshot.currentIndex
+        moves = snapshot.moves
+        declaredResult = snapshot.declaredResult
+        statusMessageOverride = snapshot.statusMessageOverride
+        gameResult = snapshot.gameResult
+        activePlyIndex = snapshot.activePlyIndex
+        activeMoveAnimation = nil
+        activeTakebackAnimation = nil
+        invalidateLegalMovesCache()
+        syncBoardFromKit()
     }
 
     @discardableResult
@@ -438,6 +619,10 @@ class ChessGame {
             ) {
                 return true
             }
+            return executeLegalMatchForReplay(notation: notation)
+        }
+
+        if LegalMoveResolver.requiresExplicitSourceMatch(notation) {
             return executeLegalMatchForReplay(notation: notation)
         }
 
@@ -571,6 +756,10 @@ class ChessGame {
     }
 
     private func enumerateLegalKitMoves() -> [Move] {
+        if let cachedLegalKitMoves {
+            return cachedLegalKitMoves
+        }
+
         var moves: [Move] = []
         let side = kitBoard.position.sideToMove
 
@@ -593,6 +782,7 @@ class ChessGame {
             }
         }
 
+        cachedLegalKitMoves = moves
         return moves
     }
 
@@ -617,10 +807,15 @@ class ChessGame {
 
         currentIndex = kitGame.make(move: kitMove, from: currentIndex)
         moves.append(ChessKitMapping.appMove(from: kitMove))
+        invalidateLegalMovesCache()
         syncBoardFromKit()
         refreshActivePlyIndex()
         setAnimation(for: kitMove, piece: animatedPiece)
         return true
+    }
+
+    private func invalidateLegalMovesCache() {
+        cachedLegalKitMoves = nil
     }
 
     private func syncBoardFromKit() {

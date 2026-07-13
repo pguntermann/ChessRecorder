@@ -35,6 +35,25 @@ final class ChessTranscriptNormalizerTests: XCTestCase {
         NormalizationCase(id: "de.coordinate-d7-d6", language: .german, input: "d7 d6", expected: "d7 d6"),
         NormalizationCase(id: "de.explicit-capture", language: .german, input: "d schlagt e6", expected: "d schlagt e6"),
         NormalizationCase(id: "de.inferred-capture", language: .german, input: "d e6", expected: "d schlagt e6"),
+        NormalizationCase(id: "de.castle-lang-rochade", language: .german, input: "lang rochade", expected: "lange rochade"),
+        NormalizationCase(
+            id: "de.castle-queenside-wing",
+            language: .german,
+            input: "rochade auf damenseite",
+            expected: "lange rochade"
+        ),
+        NormalizationCase(
+            id: "de.castle-kingside-wing",
+            language: .german,
+            input: "rochade auf königsseite",
+            expected: "kurze rochade"
+        ),
+        NormalizationCase(
+            id: "de.castle-queenside-flugel",
+            language: .german,
+            input: "rochade auf damenflügel",
+            expected: "lange rochade"
+        ),
         NormalizationCase(id: "en.coordinate-e2-e4", language: .english, input: "e2 e4", expected: "e2 e4"),
         NormalizationCase(id: "en.inferred-capture", language: .english, input: "c d4", expected: "c takes d4")
     ]
@@ -61,6 +80,71 @@ final class ChessTranscriptNormalizerTests: XCTestCase {
     func testSpokenFileLetterUsesLexicon() {
         XCTAssertEqual(ChessTranscriptNormalizer.spokenFileLetter(for: "ah", language: .german), "a")
         XCTAssertEqual(ChessTranscriptNormalizer.spokenFileLetter(for: "see", language: .english), "c")
+    }
+
+    func testGermanCastlingMoveCandidates() {
+        let cases: [(input: String, expected: String)] = [
+            ("lang rochade", "O-O-O"),
+            ("lange rochade", "O-O-O"),
+            ("rochade auf damenseite", "O-O-O"),
+            ("rochade auf damenflügel", "O-O-O"),
+            ("rochade auf königsseite", "O-O"),
+            ("rochade auf königsflügel", "O-O"),
+            ("kurz rochade", "O-O")
+        ]
+
+        for testCase in cases {
+            let candidates = MoveInterpreter.candidates(from: testCase.input, language: .german)
+            XCTAssertEqual(
+                candidates.first,
+                testCase.expected,
+                "Failed for '\(testCase.input)': got \(candidates)"
+            )
+        }
+    }
+
+    func testEnglishCastlingMoveCandidates() {
+        let cases: [(input: String, expected: String)] = [
+            ("castle queenside", "O-O-O"),
+            ("castling queenside", "O-O-O"),
+            ("castle on queenside", "O-O-O"),
+            ("castle kingside", "O-O"),
+            ("castling kingside", "O-O"),
+            ("castle on kingside", "O-O")
+        ]
+
+        for testCase in cases {
+            let candidates = MoveInterpreter.candidates(from: testCase.input, language: .english)
+            XCTAssertEqual(
+                candidates.first,
+                testCase.expected,
+                "Failed for '\(testCase.input)': got \(candidates)"
+            )
+        }
+    }
+
+    func testGermanPieceFileCaptureMoveCandidates() {
+        let cases: [(input: String, expected: String)] = [
+            ("springer b schlagt d7", "Nbxd7"),
+            ("laufer h schlagt g5", "Bhxg5"),
+            ("turm f schlagt d1", "Rfxd1")
+        ]
+
+        for testCase in cases {
+            let candidates = MoveInterpreter.candidates(from: testCase.input, language: .german)
+            XCTAssertTrue(
+                candidates.contains(testCase.expected),
+                "Expected \(testCase.expected) in candidates for '\(testCase.input)', got \(candidates)"
+            )
+        }
+    }
+
+    func testGermanPieceFileCaptureWithSplitSquare() {
+        let candidates = MoveInterpreter.candidates(
+            from: "springer c schlagt e 2",
+            language: .german
+        )
+        XCTAssertEqual(candidates.first, "Ncxe2", "got \(candidates)")
     }
 
     func testReplacementRulesAreUniquePerStage() {

@@ -894,7 +894,9 @@ final class PersonalVocabularyStore {
                 ("bf4", "bf4", 220), ("bishop f4", "bf4", 260),
                 ("bb5", "bb5", 220), ("bishop b5", "bb5", 260),
                 ("castle", "o-o", 240), ("castle kingside", "o-o", 260),
-                ("castle queenside", "o-o-o", 220)
+                ("castle on kingside", "o-o", 250), ("castling kingside", "o-o", 250),
+                ("castle queenside", "o-o-o", 220), ("castle on queenside", "o-o-o", 220),
+                ("castling queenside", "o-o-o", 220)
             ]
         case .german:
             return [
@@ -913,7 +915,10 @@ final class PersonalVocabularyStore {
                 ("lb5", "bb5", 220), ("laufer b5", "bb5", 260), ("läufer b5", "bb5", 260),
                 ("kurz rochiert", "o-o", 240), ("kleine rochade", "o-o", 240), ("kurz rochade", "o-o", 240),
                 ("kurze rochade", "o-o", 240), ("rochade", "o-o", 180),
-                ("lang rochiert", "o-o-o", 240), ("lange rochade", "o-o-o", 260),
+                ("rochade auf konigsseite", "o-o", 260), ("rochade auf konig seite", "o-o", 240),
+                ("lang rochiert", "o-o-o", 240), ("lange rochade", "o-o-o", 260), ("lang rochade", "o-o-o", 260),
+                ("rochade auf damenseite", "o-o-o", 280), ("rochade auf damen seite", "o-o-o", 260),
+                ("rochade auf damenflugel", "o-o-o", 260), ("rochade auf konigsflugel", "o-o", 240),
                 ("grosse rochade", "o-o-o", 240), ("große rochade", "o-o-o", 240)
             ]
         }
@@ -939,7 +944,7 @@ final class PersonalVocabularyStore {
     
     private static let bundledDefaultsMigrationKey = "PersonalVocabularyDidMigrateBundledDefaults"
     private static let bundledCorrectionsRevisionKey = "PersonalVocabularyBundledCorrectionsRevision"
-    private static let currentBundledCorrectionsRevision = 2
+    private static let currentBundledCorrectionsRevision = 4
 
     private func load() {
         if let file = Self.loadVocabulary(from: storageURL) {

@@ -84,6 +84,11 @@ struct ChessBoardView: View {
                   let animation = game.activeMoveAnimation else { return }
             game.clearMoveAnimation(id: animation.id)
         }
+        .onChange(of: game.activeTakebackAnimation?.id) { _, newID in
+            guard newID != nil, settings.moveAnimationDuration <= 0,
+                  let animation = game.activeTakebackAnimation else { return }
+            game.clearTakebackAnimation(id: animation.id)
+        }
         .onChange(of: game.moves.count) { _, _ in
             clearSelection()
         }
@@ -217,6 +222,21 @@ struct ChessBoardView: View {
                 .id(animation.id)
                 .frame(width: exactSide, height: exactSide, alignment: .topLeading)
             }
+
+            if settings.moveAnimationDuration > 0,
+               let animation = game.activeTakebackAnimation {
+                TakebackAnimationOverlay(
+                    animation: animation,
+                    squareSize: squareSize,
+                    pieceSize: squareSize * settings.pieceSizePercent,
+                    duration: settings.moveAnimationDuration,
+                    orientation: orientation
+                ) {
+                    game.clearTakebackAnimation(id: animation.id)
+                }
+                .id(animation.id)
+                .frame(width: exactSide, height: exactSide, alignment: .topLeading)
+            }
         }
         .frame(width: exactSide, height: exactSide, alignment: .topLeading)
         .fixedSize()
@@ -322,9 +342,19 @@ struct ChessBoardView: View {
     }
     
     private func shouldHidePiece(at position: ChessPosition) -> Bool {
-        guard let animation = game.activeMoveAnimation else { return false }
-        if position == animation.primary.to { return true }
-        if let secondary = animation.secondary, position == secondary.to { return true }
+        if let animation = game.activeMoveAnimation {
+            if position == animation.primary.to { return true }
+            if let secondary = animation.secondary, position == secondary.to { return true }
+        }
+
+        if let takeback = game.activeTakebackAnimation {
+            if position == takeback.primary.from { return true }
+            if let secondary = takeback.secondary, position == secondary.from { return true }
+            for fadeIn in takeback.fadeInPieces where position == fadeIn.to {
+                return true
+            }
+        }
+
         return false
     }
     private var boardStatusOverlay: (icon: String, title: String)? {
@@ -519,6 +549,61 @@ struct ChessSquareView: View {
             guard touchInputEnabled else { return }
             onTap?()
         }
+    }
+}
+
+private struct TakebackAnimationOverlay: View {
+    let animation: TakebackAnimation
+    let squareSize: CGFloat
+    let pieceSize: CGFloat
+    let duration: TimeInterval
+    let orientation: BoardOrientation
+    let onComplete: () -> Void
+
+    @State private var fadeOutOpacity: Double = 1
+    @State private var fadeInOpacity: Double = 0
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            fadeOutPiece(animation.primary)
+            if let secondary = animation.secondary {
+                fadeOutPiece(secondary)
+            }
+            ForEach(Array(animation.fadeInPieces.enumerated()), id: \.offset) { _, piece in
+                fadeInPiece(piece)
+            }
+        }
+        .allowsHitTesting(false)
+        .onAppear {
+            withAnimation(.easeInOut(duration: duration)) {
+                fadeOutOpacity = 0
+                fadeInOpacity = 1
+            }
+            Task {
+                try? await Task.sleep(for: .seconds(duration))
+                onComplete()
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func fadeOutPiece(_ move: AnimatedPieceMove) -> some View {
+        Image(move.piece.imageName)
+            .resizable()
+            .aspectRatio(contentMode: .fit)
+            .frame(width: pieceSize, height: pieceSize)
+            .position(squareCenter(for: move.from, squareSize: squareSize, orientation: orientation))
+            .opacity(fadeOutOpacity)
+    }
+
+    @ViewBuilder
+    private func fadeInPiece(_ move: AnimatedPieceMove) -> some View {
+        Image(move.piece.imageName)
+            .resizable()
+            .aspectRatio(contentMode: .fit)
+            .frame(width: pieceSize, height: pieceSize)
+            .position(squareCenter(for: move.to, squareSize: squareSize, orientation: orientation))
+            .opacity(fadeInOpacity)
     }
 }
 

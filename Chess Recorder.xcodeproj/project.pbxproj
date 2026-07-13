@@ -11,15 +11,6 @@
 		17E0A0102FFF9100026DE7C /* ChessKit in Frameworks */ = {isa = PBXBuildFile; productRef = 17E0A0112FFF9100026DE7C /* ChessKit */; };
 /* End PBXBuildFile section */
 
-/* Begin PBXFileReference section */
-		1760A27E2FFED5F20026DE7C /* Chess Recorder.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Chess Recorder.app"; sourceTree = BUILT_PRODUCTS_DIR; };
-		17TEST032FFF00000026DE7C /* Chess RecorderTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Chess RecorderTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
-		17F0A1042FFF00000026DE7C /* Version.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Version.xcconfig; sourceTree = "<group>"; };
-		17F0A1052FFF00000026DE7D /* Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Debug.xcconfig; sourceTree = "<group>"; };
-		17F0A1062FFF00000026DE7E /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Release.xcconfig; sourceTree = "<group>"; };
-		17F0A1072FFF00000026DE7F /* DeveloperMode.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = DeveloperMode.xcconfig; sourceTree = "<group>"; };
-/* End PBXFileReference section */
-
 /* Begin PBXContainerItemProxy section */
 		17TEST022FFF00000026DE7C /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -29,6 +20,15 @@
 			remoteInfo = "Chess Recorder";
 		};
 /* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		1760A27E2FFED5F20026DE7C /* Chess Recorder.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Chess Recorder.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		17F0A1042FFF00000026DE7C /* Version.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Version.xcconfig; sourceTree = "<group>"; };
+		17F0A1052FFF00000026DE7D /* Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Debug.xcconfig; sourceTree = "<group>"; };
+		17F0A1062FFF00000026DE7E /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Release.xcconfig; sourceTree = "<group>"; };
+		17F0A1072FFF00000026DE7F /* DeveloperMode.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = DeveloperMode.xcconfig; sourceTree = "<group>"; };
+		17TEST032FFF00000026DE7C /* Chess RecorderTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Chess RecorderTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		1760A2802FFED5F20026DE7C /* Chess Recorder */ = {

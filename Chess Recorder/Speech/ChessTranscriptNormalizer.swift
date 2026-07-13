@@ -119,6 +119,15 @@ enum ChessTranscriptNormalizer {
             .replacingOccurrences(of: "0-0", with: "o-o")
         tracer?.record("Normalization", "Castling digit fix", result)
 
+        if language == .german {
+            result = TranscriptReplacementEngine.apply(
+                result,
+                rules: TranscriptReplacementRules.germanEarlyCastlingRules(),
+                tracer: tracer,
+                stageLabel: "German castling"
+            )
+        }
+
         result = applySpokenFileHomophoneSpacing(result, language: language)
         tracer?.record("Normalization", "Spoken file homophones", result)
 

@@ -41,6 +41,20 @@
       "languageCode" : "de-DE",
       "replacement" : "g",
       "updatedAt" : "2026-01-01T00:00:00Z"
+    },
+    {
+      "heard" : "ihr",
+      "id" : "B3C4D5E6-F7A8-9012-BCDE-F23456789012",
+      "languageCode" : "de-DE",
+      "replacement" : "e",
+      "updatedAt" : "2026-01-01T00:00:00Z"
+    },
+    {
+      "heard" : "zeh",
+      "id" : "C4D5E6F7-A8B9-0123-CDEF-345678901234",
+      "languageCode" : "de-DE",
+      "replacement" : "c",
+      "updatedAt" : "2026-01-01T00:00:00Z"
     }
   ],
   "phrases" : [],

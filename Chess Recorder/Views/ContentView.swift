@@ -755,7 +755,8 @@ private struct BoardWithEvaluationLayout: View {
               let move = game.moveAtActivePly else {
             return nil
         }
-        if settings.moveAnimationDuration > 0, game.activeMoveAnimation != nil {
+        if settings.moveAnimationDuration > 0,
+           game.activeMoveAnimation != nil || game.activeTakebackAnimation != nil {
             return nil
         }
         return AnalysisArrowMove(from: move.from, to: move.to)

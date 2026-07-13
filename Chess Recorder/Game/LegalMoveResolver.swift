@@ -28,6 +28,15 @@ enum LegalMoveResolver {
         return confusedTargetFiles(for: file).map { String($0) + String(rank) }
     }
 
+    /// True when SAN names a specific source file, rank, or square (e.g. Nbxd7, Rfd1).
+    static func requiresExplicitSourceMatch(_ notation: String) -> Bool {
+        guard let intent = parseIntent(ChessKitMapping.normalizeSAN(notation)) else { return false }
+        if case .piece(_, _, let disambiguation, _, _) = intent {
+            return disambiguation != nil
+        }
+        return false
+    }
+
     /// Finds a legal move matching spoken notation, using the same destinations as touch input.
     static func match(
         notation: String,

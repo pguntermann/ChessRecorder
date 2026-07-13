@@ -14,14 +14,20 @@ nonisolated enum MoveInterpreter {
         from text: String,
         language: RecognitionLanguage,
         personalVocabulary: PersonalVocabularyStore? = nil,
+        transcriptAlreadyNormalized: Bool = false,
         tracer: SpeechPipelineTracer? = nil
     ) -> [String] {
-        let normalized = normalizeTranscript(
-            text,
-            language: language,
-            personalVocabulary: personalVocabulary,
-            tracer: tracer
-        )
+        let normalized: String
+        if transcriptAlreadyNormalized {
+            normalized = text
+        } else {
+            normalized = normalizeTranscript(
+                text,
+                language: language,
+                personalVocabulary: personalVocabulary,
+                tracer: tracer
+            )
+        }
         let rawTokens = tokenize(normalized)
         tracer?.record("Move parsing", "Tokenized", rawTokens.joined(separator: " "))
         let allTokens = coalesceTokens(rawTokens, language: language)
@@ -57,17 +63,25 @@ nonisolated enum MoveInterpreter {
 
         var interpreted: [String] = []
         // Always interpret the trailing phrase — ASR accumulates old failed attempts.
-        let windowSizes = [10, 8, 6, 4, 3, 2, 1].filter { $0 <= allTokens.count }
-        for size in windowSizes {
+        // Try the full suffix first (includes 5-token phrases like "springer c schlagt e 2"),
+        // then fall back to sparse shorter windows without probing every intermediate length.
+        let transcriptWideMoves = extractTranscriptWideCandidates(
+            from: normalized,
+            allTokens: allTokens,
+            language: language
+        )
+        for size in trailingWindowSizes(tokenCount: allTokens.count) {
             let tokens = Array(allTokens.suffix(size))
             let phrase = tokens.joined(separator: " ")
-            let tokenResults = candidatesFromTokens(
+            var tokenResults = candidatesFromTokenWindow(
                 tokens,
-                normalized: phrase,
-                fullNormalized: normalized,
+                normalized: normalized,
                 allTokens: allTokens,
                 language: language
             )
+            if !transcriptWideMoves.isEmpty {
+                tokenResults = deduplicatedMoves(tokenResults + transcriptWideMoves)
+            }
             if !tokenResults.isEmpty {
                 interpreted = tokenResults
                 tracer?.record("Move parsing", "Parsed from window (\(size) tokens): \"\(phrase)\"", tokenResults.joined(separator: ", "))
@@ -138,8 +152,14 @@ nonisolated enum MoveInterpreter {
         return coordinates + squares + others
     }
 
-    static func prefersCaptureResolution(from text: String, language: RecognitionLanguage) -> Bool {
-        let normalized = ChessTranscriptNormalizer.normalizeForPhraseMatching(text, language: language)
+    static func prefersCaptureResolution(
+        from text: String,
+        language: RecognitionLanguage,
+        transcriptAlreadyNormalized: Bool = false
+    ) -> Bool {
+        let normalized = transcriptAlreadyNormalized
+            ? text
+            : ChessTranscriptNormalizer.normalizeForPhraseMatching(text, language: language)
         let tokens = coalesceTokens(tokenize(normalized), language: language)
         return tokens.contains(where: isCaptureVerb)
     }
@@ -212,10 +232,52 @@ nonisolated enum MoveInterpreter {
         return results
     }
     
-    private static func candidatesFromTokens(
+    private static let sparseTrailingWindowSizes = [10, 8, 6, 5, 4, 3, 2, 1]
+
+    /// Suffix lengths to try, largest first. Always includes the full token count (up to 10).
+    private static func trailingWindowSizes(tokenCount: Int) -> [Int] {
+        let capped = min(tokenCount, 10)
+        var sizes = [capped]
+        for size in sparseTrailingWindowSizes where size < capped {
+            sizes.append(size)
+        }
+        return sizes
+    }
+
+    private static func extractTranscriptWideCandidates(
+        from normalized: String,
+        allTokens: [String],
+        language: RecognitionLanguage
+    ) -> [String] {
+        var results: [String] = []
+        var seen = Set<String>()
+
+        func add(_ move: String?) {
+            guard let move, isValidMoveNotation(move), seen.insert(move).inserted else { return }
+            results.append(move)
+        }
+
+        let fullWords = tokenize(normalized)
+        let hasCaptureVerb = allTokens.contains(where: isCaptureVerb)
+            || fullWords.contains(where: isCaptureVerb)
+        let hasPieceName = allTokens.contains(where: isPieceName)
+            || fullWords.contains(where: isPieceName)
+
+        add(extractCastle(from: normalized, language: language))
+        for move in extractPatterns(
+            from: normalized,
+            language: language,
+            allowBareSquares: !hasPieceName && !hasCaptureVerb
+        ) {
+            add(move)
+        }
+
+        return results
+    }
+
+    private static func candidatesFromTokenWindow(
         _ tokens: [String],
         normalized: String,
-        fullNormalized: String,
         allTokens: [String],
         language: RecognitionLanguage
     ) -> [String] {
@@ -231,17 +293,15 @@ nonisolated enum MoveInterpreter {
             add(move)
         }
 
-        let fullWords = tokenize(fullNormalized)
+        let fullWords = tokenize(normalized)
         let hasCaptureVerb = allTokens.contains(where: isCaptureVerb)
             || fullWords.contains(where: isCaptureVerb)
         let hasPieceName = tokens.contains(where: isPieceName)
             || fullWords.contains(where: isPieceName)
         let pawnCaptureTokens = allTokens.contains(where: isCaptureVerb) ? allTokens : tokens
-        
+
         switch language {
         case .english:
-            add(extractCastle(from: fullNormalized, language: language))
-            for move in extractPatterns(from: fullNormalized, language: language, allowBareSquares: !hasPieceName && !hasCaptureVerb) { add(move) }
             for move in extractDisambiguatedPieceMoves(from: tokens, piecePrefix: englishPiecePrefix, language: language) { add(move) }
             for move in extractPieceSourceTarget(from: tokens, piecePrefix: englishPiecePrefix) { add(move) }
             for move in extractPieceCaptures(from: tokens, piecePrefix: englishPiecePrefix, language: language) { add(move) }
@@ -255,8 +315,6 @@ nonisolated enum MoveInterpreter {
                 add(normalizeEnglishToken(tokens.last ?? ""))
             }
         case .german:
-            add(extractCastle(from: fullNormalized, language: language))
-            for move in extractPatterns(from: fullNormalized, language: language, allowBareSquares: !hasPieceName && !hasCaptureVerb) { add(move) }
             for move in extractDisambiguatedPieceMoves(from: tokens, piecePrefix: germanPiecePrefix, language: language) { add(move) }
             for move in extractPieceSourceTarget(from: tokens, piecePrefix: germanPiecePrefix) { add(move) }
             for move in extractPieceCaptures(from: tokens, piecePrefix: germanPiecePrefix, language: language) { add(move) }
@@ -270,7 +328,7 @@ nonisolated enum MoveInterpreter {
                 add(normalizeGermanToken(tokens.last ?? ""))
             }
         }
-        
+
         return results
     }
     
@@ -452,35 +510,50 @@ nonisolated enum MoveInterpreter {
 
         switch language {
         case .english:
-            if matchesAny(normalized, phrases: [
-                "castle queenside", "castles queenside", "castle long", "castles long",
-                "queenside castle", "long castle"
-            ]) {
+            if matchesAny(normalized, phrases: englishQueensideCastlingPhrases) {
                 return "O-O-O"
             }
-            if matchesAny(normalized, phrases: [
-                "castle kingside", "castles kingside", "castle short", "castles short",
-                "kingside castle", "short castle"
-            ]) {
+            if matchesAny(normalized, phrases: englishKingsideCastlingPhrases) {
                 return "O-O"
             }
         case .german:
-            if matchesAny(normalized, phrases: [
-                "lang rochiert", "gross rochiert", "groß rochiert",
-                "lange rochade", "große rochade", "grosse rochade", "gross rochade",
-                "groß rochade"
-            ]) {
+            if matchesAny(normalized, phrases: germanQueensideCastlingPhrases) {
                 return "O-O-O"
             }
-            if matchesAny(normalized, phrases: [
-                "kurz rochiert", "kleine rochade", "klein rochade", "kurze rochade",
-                "kurz rochade"
-            ]) {
+            if matchesAny(normalized, phrases: germanKingsideCastlingPhrases) {
                 return "O-O"
             }
         }
         return nil
     }
+
+    private static let englishQueensideCastlingPhrases = [
+        "castle queenside", "castles queenside", "castle on queenside", "castles on queenside",
+        "castling queenside", "castlings queenside",
+        "castle long", "castles long", "queenside castle", "long castle"
+    ]
+
+    private static let englishKingsideCastlingPhrases = [
+        "castle kingside", "castles kingside", "castle on kingside", "castles on kingside",
+        "castling kingside", "castlings kingside",
+        "castle short", "castles short", "kingside castle", "short castle"
+    ]
+
+    private static let germanQueensideCastlingPhrases = [
+        "lang rochiert", "gross rochiert", "groß rochiert",
+        "lang rochade",
+        "lange rochade", "große rochade", "grosse rochade", "gross rochade",
+        "groß rochade",
+        "rochade auf damenseite", "rochade auf damen seite",
+        "rochade auf damenflugel", "rochade auf damen flugel"
+    ]
+
+    private static let germanKingsideCastlingPhrases = [
+        "kurz rochiert", "kleine rochade", "klein rochade", "kurze rochade",
+        "kurz rochade",
+        "rochade auf konigsseite", "rochade auf konigs seite", "rochade auf konig seite",
+        "rochade auf konigsflugel", "rochade auf konigs flugel"
+    ]
     
     private static func matchesAny(_ text: String, phrases: [String]) -> Bool {
         phrases.contains { text.contains($0) }
@@ -507,6 +580,15 @@ nonisolated enum MoveInterpreter {
                     let piece = piecePrefix(words[verbIndex - 2])
                     if !piece.isEmpty {
                         moves.append(piece + fromSquare + "x" + target)
+                    }
+                }
+
+                if verbIndex >= 2,
+                   isPieceName(words[verbIndex - 2]),
+                   let suffix = disambiguationSuffix(forToken: words[verbIndex - 1], language: language) {
+                    let piece = piecePrefix(words[verbIndex - 2])
+                    if !piece.isEmpty {
+                        moves.append(piece + suffix + "x" + target)
                     }
                 }
 
@@ -812,6 +894,11 @@ nonisolated enum MoveInterpreter {
 
             let targets = targetSquareCandidates(from: words, verbIndex: verbIndex, language: language)
             guard !targets.isEmpty else { continue }
+
+            // "Springer b schlägt d7" — the file token is piece disambiguation, not a pawn file.
+            if verbIndex >= 2, isPieceName(words[verbIndex - 2]) {
+                continue
+            }
 
             let source = words[verbIndex - 1]
             let sourceFiles = sourceFileLetters(from: source, language: language)

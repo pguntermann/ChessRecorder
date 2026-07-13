@@ -63,6 +63,8 @@ class SpeechRecognizer {
     private var speechRecognizer: SFSpeechRecognizer?
     private var lastProcessedMove: String?
     private var lastAcceptedTranscript: String?
+    /// Prevents the dictation timer from restarting on stale ASR audio after a move is accepted.
+    private var lastAcceptedSpeechKey: String?
     private var lastHandledUndo: String?
     private var lastUndoTime: Date?
     private var recognitionGeneration = 0
@@ -410,6 +412,7 @@ class SpeechRecognizer {
         rawTranscript = ""
         lastProcessedMove = nil
         lastAcceptedTranscript = nil
+        lastAcceptedSpeechKey = nil
         lastHandledUndo = nil
         lastUndoTime = nil
         pendingFailure = nil
@@ -564,16 +567,23 @@ class SpeechRecognizer {
     
     @MainActor
     private func prepareForNextMove() {
+        clearDictationPauseIndicator()
+        stableTranscriptTask?.cancel()
+        stableTranscriptTask = nil
+        lastScheduledTranscript = nil
+
         transcript = ""
         rawTranscript = ""
-        lastAcceptedTranscript = nil
         lastProcessedMove = nil
         lastSeenCaptureFile = nil
         lastPartialCaptureDestinationFile = nil
         clearFailureState()
-        stableTranscriptTask?.cancel()
-        stableTranscriptTask = nil
-        restartRecognitionSession(reason: "prepareForNextMove")
+
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(50))
+            guard self.isRecording else { return }
+            self.restartRecognitionSession(reason: "prepareForNextMove")
+        }
     }
     
     @MainActor
@@ -582,6 +592,7 @@ class SpeechRecognizer {
         transcript = ""
         rawTranscript = ""
         lastAcceptedTranscript = nil
+        lastAcceptedSpeechKey = nil
         lastSeenCaptureFile = nil
         lastPartialCaptureDestinationFile = nil
         clearDictationPauseIndicator()
@@ -668,7 +679,10 @@ class SpeechRecognizer {
                     )
                 }
                 self.rawTranscript = newTranscript
-                self.transcript = self.correctedTranscript(for: newTranscript)
+                self.transcript = ChessTranscriptNormalizer.normalizeForPhraseMatching(
+                    newTranscript,
+                    language: self.currentLanguage
+                )
                 self.handleTranscript(newTranscript, isFinal: result.isFinal)
             }
         }
@@ -703,11 +717,28 @@ class SpeechRecognizer {
             clearDictationPauseIndicator()
             return
         }
+
+        if matchesLastAcceptedSpeech(text) {
+            clearDictationPauseIndicator()
+            stableTranscriptTask?.cancel()
+            stableTranscriptTask = nil
+            lastScheduledTranscript = nil
+            return
+        }
         
         let pauseNanoseconds = isFinal
             ? finalPauseNanoseconds
             : UInt64(dictationPauseSeconds * 1_000_000_000)
         scheduleProcessing(for: text, after: pauseNanoseconds)
+    }
+
+    private func speechComparisonKey(for text: String) -> String {
+        correctedTranscript(for: text)
+    }
+
+    private func matchesLastAcceptedSpeech(_ text: String) -> Bool {
+        guard let lastAcceptedSpeechKey else { return false }
+        return speechComparisonKey(for: text) == lastAcceptedSpeechKey
     }
     
     @MainActor
@@ -745,7 +776,8 @@ class SpeechRecognizer {
             }
         }
 
-        let correctedText = correctedTranscript(for: text)
+        let correctedText = correctedTranscript(for: text, tracer: tracer)
+        transcript = correctedText
 
         if correctedText == lastAcceptedTranscript {
             tracer?.printReport(
@@ -756,9 +788,10 @@ class SpeechRecognizer {
         }
         
         let candidates = MoveInterpreter.candidates(
-            from: text,
+            from: correctedText,
             language: currentLanguage,
             personalVocabulary: vocabularyStore,
+            transcriptAlreadyNormalized: true,
             tracer: tracer
         )
         guard !candidates.isEmpty else {
@@ -773,8 +806,9 @@ class SpeechRecognizer {
         print("Move candidates: \(candidates.joined(separator: ", "))")
 
         let preferCaptures = MoveInterpreter.prefersCaptureResolution(
-            from: text,
-            language: currentLanguage
+            from: correctedText,
+            language: currentLanguage,
+            transcriptAlreadyNormalized: true
         )
 
         if let acceptedMove = onMoveCandidatesDetected?(candidates, preferCaptures) {
@@ -782,6 +816,7 @@ class SpeechRecognizer {
             tracer?.printReport(language: currentLanguage, acceptedMove: acceptedMove)
             lastProcessedMove = acceptedMove
             lastAcceptedTranscript = correctedText
+            lastAcceptedSpeechKey = correctedText
             pendingFailure = nil
             prepareForNextMove()
             return
@@ -800,6 +835,7 @@ class SpeechRecognizer {
                 tracer?.printReport(language: currentLanguage, acceptedMove: move)
                 lastProcessedMove = move
                 lastAcceptedTranscript = correctedText
+                lastAcceptedSpeechKey = correctedText
                 pendingFailure = nil
                 prepareForNextMove()
                 return
@@ -827,14 +863,16 @@ class SpeechRecognizer {
     }
 
     @MainActor
-    private func correctedTranscript(for text: String) -> String {
+    private func correctedTranscript(for text: String, tracer: SpeechPipelineTracer? = nil) -> String {
         let normalized = ChessTranscriptNormalizer.normalizeForPhraseMatching(
             text,
-            language: currentLanguage
+            language: currentLanguage,
+            tracer: tracer
         )
         return vocabularyStore?.applyCorrections(
             to: normalized,
-            language: currentLanguage
+            language: currentLanguage,
+            tracer: tracer
         ) ?? normalized
     }
 
@@ -975,7 +1013,8 @@ class SpeechRecognizer {
                 "one", "two", "three", "four", "five", "six", "seven", "eight",
                 "see", "sea", "she", "cee", "bee", "dee", "gee", "aitch",
                 "hey", "ay",
-                "takes", "take", "captures", "capture", "castle",
+                "takes", "take", "captures", "capture", "castle", "castling",
+                "castle kingside", "castle queenside", "castle on kingside", "castle on queenside",
                 "d takes", "d takes c4", "e takes", "e takes d5",
                 "e4", "d4", "nf3", "O-O"
             ])
@@ -987,6 +1026,7 @@ class SpeechRecognizer {
                 "eins", "zwei", "drei", "vier", "funf", "sechs", "sieben", "acht",
                 "springer", "laufer", "läufer", "turm", "dame", "konig", "könig", "bauer",
                 "schlagt", "schlägt", "nimmt", "rochade", "kleine rochade", "große rochade",
+                "lange rochade", "lang rochade", "rochade auf damenseite", "rochade auf königsseite",
                 "zuruck", "zurück", "rückgängig",
                 "e4", "d4", "nf3", "O-O", "O-O-O"
             ])
@@ -1015,6 +1055,7 @@ class SpeechRecognizer {
         lastUndoTime = now
         lastProcessedMove = nil
         lastAcceptedTranscript = nil
+        lastAcceptedSpeechKey = nil
         
         print("Undo command detected: \(undoPhrase)")
         onUndoDetected?()

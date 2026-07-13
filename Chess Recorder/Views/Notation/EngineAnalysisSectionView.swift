@@ -106,16 +106,20 @@ private struct WinProbabilityBarView: View {
 
                 HStack(spacing: 1) {
                     Rectangle()
-                        .fill(Color.primary.opacity(0.88))
+                        .fill(Color.white)
                         .frame(width: whiteWidth)
                     Rectangle()
-                        .fill(Color.secondary.opacity(0.35))
+                        .fill(Color.secondary.opacity(0.25))
                         .frame(width: drawWidth)
                     Rectangle()
-                        .fill(Color.primary.opacity(0.35))
+                        .fill(Color.black)
                         .frame(width: blackWidth)
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 3, style: .continuous)
+                        .stroke(Color.secondary.opacity(0.45), lineWidth: 1)
+                )
             }
             .frame(height: 7)
 

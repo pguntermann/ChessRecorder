@@ -29,19 +29,25 @@ struct RecordedGame: Identifiable {
     var round: Int
     var result: PGNResult
     var date: Date
+    var eco: String?
+    var openingName: String?
 
     init(
         id: UUID = UUID(),
         moves: [ChessMove],
         round: Int,
         result: PGNResult,
-        date: Date = Date()
+        date: Date = Date(),
+        eco: String? = nil,
+        openingName: String? = nil
     ) {
         self.id = id
         self.moves = moves
         self.round = round
         self.result = result
         self.date = date
+        self.eco = eco
+        self.openingName = openingName
     }
 
     var isReviewOnly: Bool {
@@ -145,10 +151,22 @@ final class PGNArchive {
     }
 
     func syncActiveGame(from chessGame: ChessGame) {
+        syncActiveGame(from: chessGame, opening: nil)
+    }
+
+    func syncActiveGame(from chessGame: ChessGame, opening: OpeningDisplay?) {
         if chessGame.moves.isEmpty {
             if let activeGameID,
                let index = games.firstIndex(where: { $0.id == activeGameID }) {
-                games[index].moves = []
+                // Never wipe archived games just because the in-memory board is temporarily empty
+                // (e.g. while replaying a long main line or if a load attempt fails).
+                if games[index].result == .ongoing {
+                    games[index].moves = []
+                }
+                if let opening {
+                    games[index].eco = opening.eco
+                    games[index].openingName = opening.name
+                }
                 if chessGame.isGameOver {
                     games[index].result = chessGame.gameResult
                 }
@@ -161,18 +179,30 @@ final class PGNArchive {
               let index = games.firstIndex(where: { $0.id == activeGameID }) else { return }
 
         games[index].moves = chessGame.moves
+        if let opening {
+            games[index].eco = opening.eco
+            games[index].openingName = opening.name
+        }
         if games[index].result == .ongoing {
             games[index].result = chessGame.gameResult
         }
     }
 
     func finalizeActiveGame(with result: PGNResult, from chessGame: ChessGame) {
+        finalizeActiveGame(with: result, from: chessGame, opening: nil)
+    }
+
+    func finalizeActiveGame(with result: PGNResult, from chessGame: ChessGame, opening: OpeningDisplay?) {
         if !chessGame.moves.isEmpty {
             ensureActiveGameExists()
             if let activeGameID,
                let index = games.firstIndex(where: { $0.id == activeGameID }) {
                 games[index].moves = chessGame.moves
                 games[index].result = result
+                if let opening {
+                    games[index].eco = opening.eco
+                    games[index].openingName = opening.name
+                }
             }
         } else if let activeGameID,
                   let index = games.firstIndex(where: { $0.id == activeGameID }),
@@ -214,8 +244,7 @@ final class PGNArchive {
     }
 
     func displayText(
-        metadata: PGNMetadata,
-        ecoForMoves: ([ChessMove]) -> String? = { _ in nil }
+        metadata: PGNMetadata
     ) -> String {
         games
             .reversed()
@@ -227,7 +256,7 @@ final class PGNArchive {
                     result: $0.result,
                     metadata: metadata,
                     date: $0.date,
-                    eco: ecoForMoves($0.moves)
+                    eco: $0.eco
                 )
             }
             .joined(separator: "\n\n")
@@ -244,7 +273,9 @@ final class PGNArchive {
             id: id,
             moves: [],
             round: games.count + 1,
-            result: .ongoing
+            result: .ongoing,
+            eco: nil,
+            openingName: nil
         ), at: 0)
         activeGameID = id
     }
@@ -258,12 +289,6 @@ final class PGNArchive {
 
 enum PGNExport {
     static func writeTemporaryFile(content: String) throws -> URL {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "yyyy-MM-dd-HHmmss"
-        let filename = "ChessRecorder-\(formatter.string(from: Date())).pgn"
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
-        try content.write(to: url, atomically: true, encoding: .utf8)
-        return url
+        try PGNExportService.writeTemporaryFile(content: content)
     }
 }

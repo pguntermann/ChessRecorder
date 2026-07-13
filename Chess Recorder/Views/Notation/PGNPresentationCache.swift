@@ -22,7 +22,7 @@ enum PGNPresentationBuilder {
         hidePGNHeaderTags: Bool
     ) -> String {
         let gameSignature = games.map {
-            "\($0.id.uuidString):\($0.moves.count):\($0.result.rawValue):\($0.round)"
+            "\($0.id.uuidString):\($0.moves.count):\($0.result.rawValue):\($0.round):\($0.eco ?? "")"
         }.joined(separator: "|")
         return "\(gameSignature)|\(activeGameID?.uuidString ?? "none")|\(activePlyIndex)|\(isAtLatestMove)|\(metadata)|\(hidePGNHeaderTags)"
     }
@@ -33,35 +33,24 @@ enum PGNPresentationBuilder {
         activePlyIndex: Int,
         isAtLatestMove: Bool,
         metadata: PGNMetadata,
-        hidePGNHeaderTags: Bool,
-        ecoForMoves: ([ChessMove]) -> String?
-    ) -> (fullPGN: String, rows: [UUID: GameRowPresentation]) {
+        hidePGNHeaderTags: Bool
+    ) -> [UUID: GameRowPresentation] {
         var rows: [UUID: GameRowPresentation] = [:]
 
-        let fullPGN = games
-            .reversed()
-            .filter { !$0.moves.isEmpty }
-            .map { game in
-                let eco = ecoForMoves(game.moves)
-                rows[game.id] = rowPresentation(
-                    for: game,
-                    eco: eco,
-                    activePlyIndex: activePlyIndex,
-                    isAtLatestMove: isAtLatestMove,
-                    showMoveHighlight: game.id == activeGameID
-                )
-                return PGNFormatter.formatGame(
-                    moves: game.moves,
-                    round: game.round,
-                    result: game.result,
-                    metadata: metadata,
-                    date: game.date,
-                    eco: eco
-                )
-            }
-            .joined(separator: "\n\n")
+        _ = metadata
+        _ = hidePGNHeaderTags
 
-        return (fullPGN, rows)
+        for game in games.reversed() where !game.moves.isEmpty {
+            rows[game.id] = rowPresentation(
+                for: game,
+                eco: game.eco,
+                activePlyIndex: activePlyIndex,
+                isAtLatestMove: isAtLatestMove,
+                showMoveHighlight: game.id == activeGameID
+            )
+        }
+
+        return rows
     }
 
     static func rowPresentation(

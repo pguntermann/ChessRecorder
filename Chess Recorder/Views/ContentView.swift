@@ -119,21 +119,21 @@ struct ContentView: View {
             engineAnalysis.refresh(game: game)
         }
         .onChange(of: game.moves.count) { _, _ in
-            pgnArchive.syncActiveGame(from: game)
+            openingService.refresh(game: game)
+            pgnArchive.syncActiveGame(from: game, opening: openingService.display)
             if game.isGameOver {
                 engineAnalysis.stop()
                 stopRecordingIfNeeded()
             } else {
                 refreshEngineIfAppropriate()
             }
-            openingService.refresh(game: game)
         }
         .onChange(of: game.activePlyIndex) { _, _ in
             refreshEngineIfAppropriate()
             openingService.refresh(game: game)
         }
         .onChange(of: game.gameResult) { _, _ in
-            pgnArchive.syncActiveGame(from: game)
+            pgnArchive.syncActiveGame(from: game, opening: openingService.display)
             if game.isGameOver {
                 engineAnalysis.stop()
                 stopRecordingIfNeeded()
@@ -357,7 +357,6 @@ struct ContentView: View {
                 pgnArchive: pgnArchive,
                 metadata: settingsStore.settings.pgnMetadata,
                 hidePGNHeaderTags: settingsStore.settings.pgnHideHeaderTags,
-                ecoForMoves: { openingService.ecoCode(for: $0) },
                 engineAnalysisVisible: settingsStore.settings.engineAnalysisVisible,
                 engineAnalysisUseAlgebraicNotation: settingsStore.settings.engineAnalysisUseAlgebraicNotation,
                 engineAnalysis: engineAnalysis,
@@ -617,7 +616,7 @@ struct ContentView: View {
 
     private func startNewGame(result: PGNResult) {
         let archiveResult = result == .ongoing ? game.gameResult : result
-        pgnArchive.finalizeActiveGame(with: archiveResult, from: game)
+        pgnArchive.finalizeActiveGame(with: archiveResult, from: game, opening: openingService.display)
         game.resetGame()
         speechRecognizer.resetTranscriptDisplay()
     }

@@ -17,7 +17,6 @@ struct NotationPanelView: View {
     @Bindable var pgnArchive: PGNArchive
     let metadata: PGNMetadata
     var hidePGNHeaderTags: Bool = true
-    let ecoForMoves: ([ChessMove]) -> String?
     let engineAnalysisVisible: Bool
     let engineAnalysisUseAlgebraicNotation: Bool
     @Bindable var engineAnalysis: EngineAnalysisService
@@ -156,28 +155,27 @@ struct NotationPanelView: View {
         let key = presentationInvalidationKey
         guard key != presentationCacheKey else { return }
         presentationCacheKey = key
-        let built = PGNPresentationBuilder.build(
+        let builtRows = PGNPresentationBuilder.build(
             games: pgnArchive.games,
             activeGameID: pgnArchive.activeGameID,
             activePlyIndex: game.activePlyIndex,
             isAtLatestMove: game.isAtLatestMove,
             metadata: metadata,
-            hidePGNHeaderTags: hidePGNHeaderTags,
-            ecoForMoves: ecoForMoves
+            hidePGNHeaderTags: hidePGNHeaderTags
         )
-        cachedFullPGN = built.fullPGN
-        cachedRows = built.rows
+        cachedRows = builtRows
     }
 
     private func fallbackActiveRowPresentation() -> GameRowPresentation {
-        let eco = ecoForMoves(game.moves)
         return PGNPresentationBuilder.rowPresentation(
             for: RecordedGame(
                 moves: game.moves,
                 round: 1,
-                result: game.gameResult
+                result: game.gameResult,
+                eco: nil,
+                openingName: nil
             ),
-            eco: eco,
+            eco: nil,
             activePlyIndex: game.activePlyIndex,
             isAtLatestMove: game.isAtLatestMove,
             showMoveHighlight: true
@@ -185,7 +183,7 @@ struct NotationPanelView: View {
     }
 
     private func copyPGNToClipboard() {
-        refreshPresentationCacheIfNeeded()
+        cachedFullPGN = PGNExportService.fullPGN(for: pgnArchive, metadata: metadata)
         #if os(iOS)
         UIPasteboard.general.string = cachedFullPGN
         #else
@@ -195,10 +193,10 @@ struct NotationPanelView: View {
     }
 
     private func sharePGN() {
-        refreshPresentationCacheIfNeeded()
+        cachedFullPGN = PGNExportService.fullPGN(for: pgnArchive, metadata: metadata)
         guard !cachedFullPGN.isEmpty else { return }
         do {
-            let url = try PGNExport.writeTemporaryFile(content: cachedFullPGN)
+            let url = try PGNExportService.writeTemporaryFile(content: cachedFullPGN)
             exportItem = ShareablePGNExport(url: url)
         } catch {
             print("PGN export failed: \(error.localizedDescription)")

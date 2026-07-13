@@ -108,6 +108,7 @@ final class PersonalVocabularyStore {
     private(set) var phrases: [LearnedPhrase] = []
     private(set) var corrections: [LearnedCorrection] = []
     private var revisions: [String: Int] = [:]
+    private var phraseIndex: [String: Int] = [:]
     
     private let storageURL: URL
     
@@ -130,13 +131,6 @@ final class PersonalVocabularyStore {
             .sorted { $0.updatedAt > $1.updatedAt }
     }
 
-    private func recognitionEntries(for language: RecognitionLanguage) -> [LearnedPhrase] {
-        phrases
-            .filter { $0.languageCode == language.rawValue }
-            .sorted { $0.updatedAt > $1.updatedAt }
-    }
-
-    /// Phrases the user explicitly taught — used for move shortcuts in speech parsing.
     private func userMoveMappingEntries(for language: RecognitionLanguage) -> [LearnedPhrase] {
         phrases
             .filter { $0.languageCode == language.rawValue && $0.source == .user }
@@ -152,6 +146,21 @@ final class PersonalVocabularyStore {
         for language: RecognitionLanguage,
         onProgress: (@MainActor (_ loaded: Int, _ total: Int) -> Void)? = nil
     ) async -> Int {
+        let trainingItems = Self.commonTrainingPhrases(for: language)
+        let recognitionItems = ChessSpeechTrainingPhrases.generatedRecognitionPhraseCounts(for: language)
+        let total = trainingItems.count + recognitionItems.count
+        let trainingDone = Self.trainingSeedUpToDate(for: language, in: phrases)
+        let recognitionDone = Self.recognitionSeedUpToDate(for: language, in: phrases)
+
+        if trainingDone && recognitionDone {
+            if let onProgress {
+                await MainActor.run {
+                    onProgress(total, total)
+                }
+            }
+            return 0
+        }
+
         var changes = 0
 
         for retired in Self.retiredBuiltInMovePhrases(for: language) {
@@ -169,16 +178,16 @@ final class PersonalVocabularyStore {
             phrases.removeAll {
                 $0.source == .recognitionOnly &&
                 $0.languageCode == language.rawValue &&
-                Self.normalizePhrase($0.phrase, language: language) == retired
+                Self.seedPhraseKey($0.phrase) == Self.seedPhraseKey(retired)
             }
             if phrases.count != before { changes += 1 }
         }
 
-        let trainingItems = Self.commonTrainingPhrases(for: language)
-        let recognitionItems = Self.commonRecognitionPhrases(for: language)
-        let total = trainingItems.count + recognitionItems.count
-        var loaded = 0
+        if changes > 0 {
+            rebuildPhraseIndex()
+        }
 
+        var loaded = 0
         if let onProgress {
             await MainActor.run {
                 onProgress(0, total)
@@ -186,40 +195,39 @@ final class PersonalVocabularyStore {
             await Task.yield()
         }
 
-        for item in trainingItems {
-            let changed = upsert(
-                phrase: item.phrase,
-                moveNotation: item.moveNotation,
-                language: language,
-                minimumCount: item.count,
-                source: .builtIn
-            )
-            if changed { changes += 1 }
-            loaded += 1
-            if Self.shouldReportPhraseSeedProgress(loaded: loaded, total: total) {
-                await MainActor.run {
-                    onProgress?(loaded, total)
+        if !trainingDone {
+            for item in trainingItems {
+                let changed = upsert(
+                    phrase: item.phrase,
+                    moveNotation: item.moveNotation,
+                    language: language,
+                    minimumCount: item.count,
+                    source: .builtIn
+                )
+                if changed { changes += 1 }
+                loaded += 1
+                if Self.shouldReportPhraseSeedProgress(loaded: loaded, total: total) {
+                    await MainActor.run {
+                        onProgress?(loaded, total)
+                    }
+                    await Task.yield()
                 }
-                await Task.yield()
             }
+        } else {
+            loaded += trainingItems.count
         }
 
-        for item in recognitionItems {
-            let changed = upsert(
-                phrase: item.phrase,
-                moveNotation: item.phrase,
-                language: language,
-                minimumCount: item.count,
-                source: .recognitionOnly
-            )
-            if changed { changes += 1 }
-            loaded += 1
-            if Self.shouldReportPhraseSeedProgress(loaded: loaded, total: total) {
+        if !recognitionDone {
+            let recognitionChanges = batchUpsertRecognitionPhrases(recognitionItems, language: language)
+            if recognitionChanges > 0 { changes += 1 }
+            loaded += recognitionItems.count
+            if let onProgress {
                 await MainActor.run {
-                    onProgress?(loaded, total)
+                    onProgress(loaded, total)
                 }
-                await Task.yield()
             }
+        } else {
+            loaded += recognitionItems.count
         }
 
         if changes > 0 {
@@ -227,11 +235,75 @@ final class PersonalVocabularyStore {
             save()
         }
 
+        if !trainingDone {
+            UserDefaults.standard.set(Self.currentBundledTrainingSeedRevision, forKey: Self.bundledTrainingSeedRevisionKey)
+        }
+        if !recognitionDone {
+            UserDefaults.standard.set(Self.currentBundledRecognitionSeedRevision, forKey: Self.bundledRecognitionSeedRevisionKey)
+        }
+
         return changes
     }
 
     private static func shouldReportPhraseSeedProgress(loaded: Int, total: Int) -> Bool {
-        loaded == total || loaded % 20 == 0
+        loaded == total || loaded % 200 == 0
+    }
+
+    /// Fast lookup key for bulk recognition seeding (not used for move-phrase matching).
+    private static func seedPhraseKey(_ phrase: String) -> String {
+        phrase
+            .precomposedStringWithCanonicalMapping
+            .lowercased()
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    @discardableResult
+    private func batchUpsertRecognitionPhrases(
+        _ items: [(phrase: String, count: Int)],
+        language: RecognitionLanguage
+    ) -> Int {
+        var changes = 0
+
+        for item in items {
+            let trimmed = item.phrase.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+
+            let normalized = Self.seedPhraseKey(trimmed)
+            let key = phraseIndexKey(
+                language: language,
+                source: .recognitionOnly,
+                normalizedPhrase: normalized
+            )
+            let targetCount = min(max(item.count, 1), 1_000)
+
+            if let index = phraseIndex[key] {
+                var entry = phrases[index]
+                let changed = entry.count != targetCount || entry.phrase != trimmed
+                guard changed else { continue }
+                entry.count = targetCount
+                entry.phrase = trimmed
+                entry.moveNotation = trimmed
+                entry.updatedAt = Date()
+                phrases[index] = entry
+                changes += 1
+                continue
+            }
+
+            let entry = LearnedPhrase(
+                id: UUID(),
+                phrase: trimmed,
+                moveNotation: trimmed,
+                languageCode: language.rawValue,
+                count: targetCount,
+                updatedAt: Date(),
+                source: .recognitionOnly
+            )
+            phraseIndex[key] = phrases.count
+            phrases.append(entry)
+            changes += 1
+        }
+
+        return changes
     }
     
     @discardableResult
@@ -283,6 +355,7 @@ final class PersonalVocabularyStore {
         if let index = phrases.firstIndex(where: { $0.id == id }),
            let language = phrases[index].language {
             phrases.remove(at: index)
+            rebuildPhraseIndex()
             bumpRevision(for: language)
             save()
             return
@@ -301,6 +374,7 @@ final class PersonalVocabularyStore {
         phrases.removeAll { $0.languageCode == language.rawValue && $0.source == .user }
         corrections.removeAll { $0.languageCode == language.rawValue }
         corrections.append(contentsOf: Self.defaultCorrections(for: language))
+        rebuildPhraseIndex()
         bumpRevision(for: language)
         save()
     }
@@ -309,6 +383,7 @@ final class PersonalVocabularyStore {
         phrases.removeAll()
         corrections = Self.bundledVocabulary()?.corrections ?? []
         revisions = Self.bundledVocabulary()?.revisions ?? [:]
+        rebuildPhraseIndex()
         for language in RecognitionLanguage.allCases {
             bumpRevision(for: language)
         }
@@ -316,11 +391,21 @@ final class PersonalVocabularyStore {
     }
     
     func speechPhraseCounts(for language: RecognitionLanguage) -> [(phrase: String, count: Int)] {
-        recognitionEntries(for: language).map { ($0.phrase, $0.count) }
+        phrases
+            .filter { $0.languageCode == language.rawValue }
+            .map { ($0.phrase, $0.count) }
     }
     
+    /// Short hints for live dictation only (Apple limits contextualStrings to 100).
     func contextualStrings(for language: RecognitionLanguage) -> [String] {
-        recognitionEntries(for: language).map(\.phrase) + correctionEntries(for: language).map(\.heard)
+        let user = phrases
+            .filter { $0.languageCode == language.rawValue && $0.source == .user }
+            .map(\.phrase)
+        let builtIn = phrases
+            .filter { $0.languageCode == language.rawValue && $0.source == .builtIn }
+            .map(\.phrase)
+        let corrections = correctionEntries(for: language).map(\.heard)
+        return user + builtIn + corrections
     }
     
     /// Move candidates from user-taught phrase → move mappings (trailing phrase match).
@@ -638,11 +723,13 @@ final class PersonalVocabularyStore {
         minimumCount: Int,
         source: LearnedPhraseSource
     ) -> Bool {
-        let before = phrases.first(where: {
-            $0.languageCode == language.rawValue &&
-            $0.source == source &&
-            Self.normalizePhrase($0.phrase, language: language) == Self.normalizePhrase(phrase, language: language)
-        })
+        let normalizedIncoming = Self.normalizePhrase(phrase, language: language)
+        let key = phraseIndexKey(
+            language: language,
+            source: source,
+            normalizedPhrase: normalizedIncoming
+        )
+        let before = phraseIndex[key].map { phrases[$0] }
 
         let entry = upsertEntry(
             phrase: phrase,
@@ -650,7 +737,8 @@ final class PersonalVocabularyStore {
             language: language,
             minimumCount: minimumCount,
             increment: 0,
-            source: source
+            source: source,
+            normalizedPhrase: normalizedIncoming
         )
 
         guard let before else { return true }
@@ -663,19 +751,17 @@ final class PersonalVocabularyStore {
         language: RecognitionLanguage,
         minimumCount: Int,
         increment: Int,
-        source: LearnedPhraseSource = .user
+        source: LearnedPhraseSource = .user,
+        normalizedPhrase: String? = nil
     ) -> LearnedPhrase {
         let trimmedPhrase = phrase.trimmingCharacters(in: .whitespacesAndNewlines)
         let normalizedMove = moveNotation
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased()
-        let normalizedPhrase = Self.normalizePhrase(trimmedPhrase, language: language)
+        let normalized = normalizedPhrase ?? Self.normalizePhrase(trimmedPhrase, language: language)
+        let key = phraseIndexKey(language: language, source: source, normalizedPhrase: normalized)
 
-        if let index = phrases.firstIndex(where: {
-            $0.languageCode == language.rawValue &&
-            $0.source == source &&
-            Self.normalizePhrase($0.phrase, language: language) == normalizedPhrase
-        }) {
+        if let index = phraseIndex[key] {
             phrases[index].count = min(max(phrases[index].count + increment, minimumCount), 1_000)
             phrases[index].moveNotation = normalizedMove
             phrases[index].phrase = trimmedPhrase
@@ -693,8 +779,30 @@ final class PersonalVocabularyStore {
             updatedAt: Date(),
             source: source
         )
+        phraseIndex[key] = phrases.count
         phrases.append(entry)
         return entry
+    }
+
+    private func phraseIndexKey(
+        language: RecognitionLanguage,
+        source: LearnedPhraseSource,
+        normalizedPhrase: String
+    ) -> String {
+        "\(language.rawValue)|\(source.rawValue)|\(normalizedPhrase)"
+    }
+
+    private func rebuildPhraseIndex() {
+        phraseIndex.removeAll(keepingCapacity: true)
+        for (index, phrase) in phrases.enumerated() {
+            guard let language = phrase.language else { continue }
+            let normalized = Self.normalizePhrase(phrase.phrase, language: language)
+            phraseIndex[phraseIndexKey(
+                language: language,
+                source: phrase.source,
+                normalizedPhrase: normalized
+            )] = index
+        }
     }
 
     private static func retiredBuiltInMovePhrases(for language: RecognitionLanguage) -> [String] {
@@ -706,8 +814,51 @@ final class PersonalVocabularyStore {
         }
     }
 
+    private static let bundledTrainingSeedRevisionKey = "PersonalVocabularyBundledTrainingSeedRevision"
+    private static let currentBundledTrainingSeedRevision = 1
+    private static let bundledRecognitionSeedRevisionKey = "PersonalVocabularyBundledRecognitionSeedRevision"
+    private static let currentBundledRecognitionSeedRevision = 2
+    private static let legacyRecognitionOnlyPurgeKey = "PersonalVocabularyDidPurgeRecognitionOnly"
+
+    private static func trainingSeedUpToDate(
+        for language: RecognitionLanguage,
+        in phrases: [LearnedPhrase]
+    ) -> Bool {
+        guard UserDefaults.standard.integer(forKey: bundledTrainingSeedRevisionKey)
+            >= currentBundledTrainingSeedRevision else {
+            return false
+        }
+
+        let expected = Set(commonTrainingPhrases(for: language).map {
+            normalizePhrase($0.phrase, language: language)
+        })
+        let actual = Set(phrases.filter {
+            $0.languageCode == language.rawValue && $0.source == .builtIn
+        }.map {
+            normalizePhrase($0.phrase, language: language)
+        })
+        return expected.isSubset(of: actual)
+    }
+
+    private static func recognitionSeedUpToDate(
+        for language: RecognitionLanguage,
+        in phrases: [LearnedPhrase]
+    ) -> Bool {
+        guard UserDefaults.standard.integer(forKey: bundledRecognitionSeedRevisionKey)
+            >= currentBundledRecognitionSeedRevision else {
+            return false
+        }
+
+        let expectedCount = ChessSpeechTrainingPhrases.generatedRecognitionPhraseCounts(for: language).count
+        let actualCount = phrases.filter {
+            $0.languageCode == language.rawValue && $0.source == .recognitionOnly
+        }.count
+        return actualCount >= expectedCount
+    }
+
     private static func retiredRecognitionPhrases(for language: RecognitionLanguage) -> [String] {
-        ChessSpeechTrainingPhrases.retiredFileBiasedRecognitionPhrases(for: language) + {
+        ChessSpeechTrainingPhrases.retiredPromotionBiasedRecognitionPhrases(for: language)
+            + ChessSpeechTrainingPhrases.retiredFileBiasedRecognitionPhrases(for: language) + {
             switch language {
             case .english:
                 return ["bishop shop takes d7"]
@@ -781,113 +932,6 @@ final class PersonalVocabularyStore {
         }
     }
 
-    /// Phrases that boost on-device recognition only — excluded from move mapping.
-    private static func commonRecognitionPhrases(for language: RecognitionLanguage) -> [(phrase: String, count: Int)] {
-        let files = Array("abcdefgh").map(String.init)
-        let digits = (1...8).map(String.init)
-
-        var phrases: [(String, Int)] = []
-        for file in files {
-            phrases.append((file, 320))
-        }
-        for digit in digits {
-            phrases.append((digit, 200))
-        }
-
-        switch language {
-        case .english:
-            let spokenRanks = [
-                "one", "two", "three", "four", "five", "six", "seven", "eight"
-            ]
-            let spokenFiles = [
-                "see", "sea", "bee", "dee", "gee", "aitch"
-            ]
-            let pieces = ["knight", "bishop", "rook", "queen", "king", "pawn"]
-            for word in spokenRanks {
-                phrases.append((word, 160))
-            }
-            for word in spokenFiles {
-                phrases.append((word, 220))
-            }
-            for word in ["hey", "ay"] {
-                phrases.append((word, 240))
-            }
-            for piece in pieces {
-                phrases.append((piece, 480))
-            }
-            for (phrase, count) in ChessSpeechTrainingPhrases.balancedFileDigitRankPhrases() {
-                phrases.append((phrase, count))
-            }
-            for (phrase, count) in ChessSpeechTrainingPhrases.balancedFileSpokenRankPhrases(
-                spokenRanks: spokenRanks
-            ) {
-                phrases.append((phrase, count))
-            }
-            for (phrase, count) in ChessTranscriptNormalizer.englishPawnCaptureBoostPhrases(
-                fileCount: 380,
-                misheardCount: 360
-            ) {
-                phrases.append((phrase, count))
-            }
-            for phrase in [
-                "c3", "c 3", "see three", "sea three", "see 3", "sea 3",
-                "bishop b5 check", "knight f3 check", "rook d1 check",
-                "bishop takes d7", "bishop takes 7",
-                "bishop e4 to e5", "bishop f1 to c4", "bishop takes e5",
-                "bishop to e5", "bishop e5", "knight to f3", "knight f3",
-                "knight g1 to f3", "knight f3 to e5", "knight takes d4",
-                "d takes c4", "d takes e4", "c takes d4", "e takes d5", "e takes f5",
-                "he takes d5", "he takes f5",
-                "detects c4", "detects c 4", "detects e4", "de takes c4", "de takes c 4",
-                "knight e5 to d7", "night e5 to d7", "knight e5 to 7",
-                "knight b to d7", "night b to d7", "knight be to d7", "night to be 7",
-                "knight bd7", "night bd7",
-                "rook f to d1", "rook g1 to f3", "rook e1 to e8", "rook to d1",
-                "rook a to d1", "rook a d1", "look at d1", "look at d 1",
-                "queen d1 to h5", "queen to h5", "king e1 to e2", "pawn to e4",
-                "g8 rook", "e8 queen", "f8 knight", "e8 bishop",
-                "rook g8", "queen e8", "f takes e8 rook"
-            ] {
-                phrases.append((phrase, 300))
-            }
-        case .german:
-            let spokenRanks = [
-                "eins", "zwei", "drei", "vier", "funf", "fünf", "sechs", "sieben", "acht"
-            ]
-            let pieces = ["springer", "laufer", "läufer", "turm", "dame", "konig", "könig", "bauer"]
-            for word in spokenRanks {
-                phrases.append((word, 160))
-            }
-            for piece in pieces {
-                phrases.append((piece, 480))
-            }
-            for (phrase, count) in ChessSpeechTrainingPhrases.balancedFileDigitRankPhrases() {
-                phrases.append((phrase, count))
-            }
-            for (phrase, count) in ChessSpeechTrainingPhrases.balancedFileSpokenRankPhrases(
-                spokenRanks: spokenRanks
-            ) {
-                phrases.append((phrase, count))
-            }
-            for phrase in [
-                "turm f auf d1", "springer g1 auf f3", "turm f1 auf d1",
-                "turm h auf g1", "turm h auf h1",
-                "d schlagt e4", "d schlagt e vier",
-                "läufer h auf g5", "springer h auf f3", "h auf f3", "h schlagt g5",
-                "läufer auf e5", "läufer e5", "springer auf f3", "springer f3",
-                "turm auf d1", "dame auf h5",
-                "läufer b5 schach", "springer f3 schach", "turm d1 schach",
-                "läufer auf e5 schach",
-                "g8 turm", "e8 dame", "f8 springer", "e8 läufer", "f1 läufer",
-                "turm g8", "dame e8", "f schlägt e8 turm"
-            ] {
-                phrases.append((phrase, 300))
-            }
-        }
-
-        return phrases
-    }
-    
     private func bumpRevision(for language: RecognitionLanguage) {
         revisions[language.rawValue] = revision(for: language) + 1
     }
@@ -913,6 +957,8 @@ final class PersonalVocabularyStore {
     private func load() {
         if let file = Self.loadVocabulary(from: storageURL) {
             apply(file)
+            rebuildPhraseIndex()
+            migrateLegacyRecognitionOnlyPhrasesIfNeeded()
             migrateBundledDefaultsIfNeeded()
             migrateBundledCorrectionsIfNeeded()
             return
@@ -920,11 +966,28 @@ final class PersonalVocabularyStore {
 
         if let bundled = Self.bundledVocabulary() {
             apply(bundled)
+            rebuildPhraseIndex()
             save()
         }
 
         UserDefaults.standard.set(true, forKey: Self.bundledDefaultsMigrationKey)
         UserDefaults.standard.set(Self.currentBundledCorrectionsRevision, forKey: Self.bundledCorrectionsRevisionKey)
+    }
+
+    /// Drops thousands of legacy `recognitionOnly` rows now covered by runtime generators + CLM templates.
+    private func migrateLegacyRecognitionOnlyPhrasesIfNeeded() {
+        guard !UserDefaults.standard.bool(forKey: Self.legacyRecognitionOnlyPurgeKey) else { return }
+
+        let before = phrases.count
+        phrases.removeAll { $0.source == .recognitionOnly }
+        UserDefaults.standard.set(true, forKey: Self.legacyRecognitionOnlyPurgeKey)
+
+        guard phrases.count != before else { return }
+        rebuildPhraseIndex()
+        for language in RecognitionLanguage.allCases {
+            bumpRevision(for: language)
+        }
+        save()
     }
 
     /// Adds bundled default corrections introduced after the initial install.

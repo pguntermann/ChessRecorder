@@ -98,23 +98,64 @@ nonisolated enum MoveInterpreter {
     }
 
     private static func prioritizeCandidates(_ moves: [String], hasCaptureIntent: Bool) -> [String] {
-        guard !hasCaptureIntent else { return moves }
+        var seen = Set<String>()
 
+        func appendUnique(_ move: String, to bucket: inout [String]) {
+            let key = move.lowercased()
+            guard seen.insert(key).inserted else { return }
+            bucket.append(move)
+        }
+
+        if hasCaptureIntent {
+            var captures: [String] = []
+            var nonCaptures: [String] = []
+            for move in moves {
+                if isCaptureNotation(move) {
+                    appendUnique(move, to: &captures)
+                } else {
+                    appendUnique(move, to: &nonCaptures)
+                }
+            }
+            return captures + nonCaptures
+        }
+
+        var coordinates: [String] = []
         var squares: [String] = []
         var others: [String] = []
-        var seen = Set<String>()
 
         for move in moves {
             let key = move.lowercased()
             guard seen.insert(key).inserted else { continue }
-            if move.count == 2, sanitizeSquare(move) != nil {
+            if sanitizeSourceTarget(move) != nil {
+                coordinates.append(move)
+            } else if move.count == 2, sanitizeSquare(move) != nil {
                 squares.append(move)
             } else {
                 others.append(move)
             }
         }
 
-        return squares + others
+        return coordinates + squares + others
+    }
+
+    static func prefersCaptureResolution(from text: String, language: RecognitionLanguage) -> Bool {
+        let normalized = ChessTranscriptNormalizer.normalizeForPhraseMatching(text, language: language)
+        let tokens = coalesceTokens(tokenize(normalized), language: language)
+        return tokens.contains(where: isCaptureVerb)
+    }
+
+    static func isCaptureNotation(_ move: String) -> Bool {
+        let lowered = move.lowercased()
+        if ChessKitMapping.isPawnFileCaptureSAN(lowered) {
+            return true
+        }
+        guard let xIndex = lowered.firstIndex(of: "x") else { return false }
+        let prefix = lowered[..<xIndex]
+        guard let first = prefix.first else { return false }
+        if "nbrqk".contains(first) {
+            return true
+        }
+        return prefix.count == 1 && "abcdefgh".contains(first)
     }
 
     /// Adds nearby file variants when ASR confuses short vowels (e/g/a, c/e, b/d).
@@ -142,6 +183,17 @@ nonisolated enum MoveInterpreter {
                 let square = String(move.suffix(2))
                 for variant in LegalMoveResolver.squareNotationVariants(for: square) {
                     append(String(first) + variant)
+                }
+                continue
+            }
+
+            if move.count == 4,
+               move.dropFirst().first?.lowercased() == "x",
+               let first = move.first,
+               "NBRQK".contains(String(first).uppercased()) {
+                let square = String(move.suffix(2))
+                for variant in LegalMoveResolver.squareNotationVariants(for: square) {
+                    append(String(first) + "x" + variant)
                 }
             }
         }
@@ -297,6 +349,15 @@ nonisolated enum MoveInterpreter {
                 )
                 if candidates.count == 1 {
                     result.append(candidates[0])
+                    index += 2
+                    continue
+                }
+
+                if let coordinate = combinedCoordinateNotation(
+                    fileToken: words[index],
+                    remainderToken: words[index + 1]
+                ) {
+                    result.append(coordinate)
                     index += 2
                     continue
                 }
@@ -932,6 +993,10 @@ nonisolated enum MoveInterpreter {
         if let coordinateMove = extractCompactCoordinateMove(from: compact) {
             moves.append(coordinateMove)
         }
+
+        if let bareCoordinateMove = extractBareCompactCoordinateMove(from: compact) {
+            moves.append(bareCoordinateMove)
+        }
         
         if allowBareSquares {
             let compactPatterns = [
@@ -959,6 +1024,31 @@ nonisolated enum MoveInterpreter {
         let to = String(match.output.2)
         guard from != to else { return nil }
         return from + to
+    }
+
+    /// Bare UCI-style coordinate moves without a preposition, e.g. "g1f3" from ASR "g 1f3".
+    private static func extractBareCompactCoordinateMove(from compact: String) -> String? {
+        guard let match = compact.firstMatch(of: /([a-h][1-8])([a-h][1-8])/) else {
+            return nil
+        }
+
+        let from = String(match.output.1)
+        let to = String(match.output.2)
+        guard from != to else { return nil }
+        return sanitizeSourceTarget(from + to)
+    }
+
+    private static func combinedCoordinateNotation(fileToken: String, remainderToken: String) -> String? {
+        guard fileToken.count == 1,
+              let file = fileToken.first,
+              "abcdefgh".contains(file) else {
+            return nil
+        }
+
+        let remainder = remainderToken.lowercased().filter { $0.isLetter || $0.isNumber }
+        guard !remainder.isEmpty else { return nil }
+
+        return sanitizeSourceTarget(String(file) + remainder)
     }
     
     private static func pieceToSquareNotation(compact: String, prefix: String, markers: [String]) -> String? {

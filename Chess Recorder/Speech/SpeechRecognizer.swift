@@ -70,6 +70,8 @@ class SpeechRecognizer {
     private var lastScheduledTranscript: String?
     /// ASR sometimes drops the source file on the final hypothesis after a correct partial ("d takes c4" → "takes c4").
     private var lastSeenCaptureFile: Character?
+    /// ASR sometimes revises a capture destination file on the final hypothesis ("dame schlagt a" → "dame schlagt e8").
+    private var lastPartialCaptureDestinationFile: Character?
     private var audioSessionObserverTokens: [NSObjectProtocol] = []
     private var recognitionRecoveryTask: Task<Void, Never>?
     private var recordingSessionStartedAt: Date?
@@ -82,7 +84,7 @@ class SpeechRecognizer {
     var dictationPauseSeconds: Double = 0.9
     
     var onMoveDetected: ((String) -> Bool)?
-    var onMoveCandidatesDetected: (([String]) -> String?)?
+    var onMoveCandidatesDetected: (([String], Bool) -> String?)?
     var onUndoDetected: (() -> Void)?
     
     var isReadyForUse: Bool {
@@ -567,6 +569,7 @@ class SpeechRecognizer {
         lastAcceptedTranscript = nil
         lastProcessedMove = nil
         lastSeenCaptureFile = nil
+        lastPartialCaptureDestinationFile = nil
         clearFailureState()
         stableTranscriptTask?.cancel()
         stableTranscriptTask = nil
@@ -580,6 +583,7 @@ class SpeechRecognizer {
         rawTranscript = ""
         lastAcceptedTranscript = nil
         lastSeenCaptureFile = nil
+        lastPartialCaptureDestinationFile = nil
         clearDictationPauseIndicator()
         stableTranscriptTask?.cancel()
         stableTranscriptTask = nil
@@ -653,7 +657,7 @@ class SpeechRecognizer {
             guard let result else { return }
             let rawASR = result.bestTranscription.formattedString
             self.lastASRTranscriptBeforeMerge = rawASR
-            let newTranscript = self.mergeDroppedCaptureFile(in: rawASR)
+            let newTranscript = self.mergeCaptureTranscriptCorrections(in: rawASR)
             
             Task { @MainActor in
                 guard generation == self.recognitionGeneration else { return }
@@ -768,7 +772,12 @@ class SpeechRecognizer {
         
         print("Move candidates: \(candidates.joined(separator: ", "))")
 
-        if let acceptedMove = onMoveCandidatesDetected?(candidates) {
+        let preferCaptures = MoveInterpreter.prefersCaptureResolution(
+            from: text,
+            language: currentLanguage
+        )
+
+        if let acceptedMove = onMoveCandidatesDetected?(candidates, preferCaptures) {
             print("Accepted move from candidates: \(acceptedMove)")
             tracer?.printReport(language: currentLanguage, acceptedMove: acceptedMove)
             lastProcessedMove = acceptedMove
@@ -829,6 +838,18 @@ class SpeechRecognizer {
         ) ?? normalized
     }
 
+    @MainActor
+    private func mergeCaptureTranscriptCorrections(in raw: String) -> String {
+        let preprocessed: String
+        if currentLanguage == .german {
+            preprocessed = ChessTranscriptNormalizer.repairGermanAFileMishearings(in: raw)
+        } else {
+            preprocessed = raw
+        }
+        let afterDroppedFile = mergeDroppedCaptureFile(in: preprocessed)
+        return stabilizeCaptureDestinationFile(in: afterDroppedFile)
+    }
+
     /// Restores a pawn file letter when ASR revises a partial like "d takes c4" into "takes c4".
     private func mergeDroppedCaptureFile(in raw: String) -> String {
         let lowered = raw
@@ -837,8 +858,16 @@ class SpeechRecognizer {
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard !lowered.isEmpty else { return raw }
 
+        let captureVerbPattern: String
+        switch currentLanguage {
+        case .english:
+            captureVerbPattern = #"takes|take|captures|capture"#
+        case .german:
+            captureVerbPattern = #"schlagt|schlägt|schlaegt|schagt|nimmt"#
+        }
+
         if let regex = try? NSRegularExpression(
-            pattern: #"\b([a-h])\s+(takes|take|captures|capture)\b"#
+            pattern: #"\b([a-h])\s+(\#(captureVerbPattern))\b"#
         ),
            let match = regex.firstMatch(
             in: lowered,
@@ -852,7 +881,7 @@ class SpeechRecognizer {
 
         guard let file = lastSeenCaptureFile else { return raw }
         guard lowered.range(
-            of: #"^\s*(takes|take|captures|capture)\b"#,
+            of: #"^\s*(\#(captureVerbPattern))\b"#,
             options: .regularExpression
         ) != nil else {
             return raw
@@ -860,42 +889,114 @@ class SpeechRecognizer {
 
         return "\(file) \(raw.trimmingCharacters(in: .whitespacesAndNewlines))"
     }
+
+    /// Keeps a capture destination file when ASR revises a partial like "dame schlagt a" into "dame schlagt e8".
+    private func stabilizeCaptureDestinationFile(in raw: String) -> String {
+        let lowered = raw
+            .precomposedStringWithCanonicalMapping
+            .lowercased()
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !lowered.isEmpty else {
+            lastPartialCaptureDestinationFile = nil
+            return raw
+        }
+
+        let piecePattern: String
+        let verbPattern: String
+        switch currentLanguage {
+        case .english:
+            piecePattern = #"knight|night|bishop|rook|rock|look|queen|king|pawn"#
+            verbPattern = #"takes|take|captures|capture"#
+        case .german:
+            piecePattern = #"springer|laufer|laeufer|läufer|turm|dame|konig|könig|bauer"#
+            verbPattern = #"schlagt|schlägt|schlaegt|schagt|nimmt"#
+        }
+
+        let trailingFilePattern = #"(\#(piecePattern))\s+(\#(verbPattern))\s+([a-h])\s*$"#
+        let completeSquarePattern = #"(\#(piecePattern))\s+(\#(verbPattern))\s+([a-h])([1-8])\s*$"#
+
+        if let regex = try? NSRegularExpression(pattern: completeSquarePattern),
+           let match = regex.firstMatch(in: lowered, range: NSRange(lowered.startIndex..., in: lowered)),
+           let fileRange = Range(match.range(at: 3), in: lowered),
+           let rankRange = Range(match.range(at: 4), in: lowered),
+           let partialFile = lastPartialCaptureDestinationFile {
+            let heardFile = lowered[fileRange]
+            let rank = lowered[rankRange]
+            if heardFile != String(partialFile) {
+                let squareRange = NSRange(
+                    location: match.range(at: 3).location,
+                    length: match.range(at: 3).length + match.range(at: 4).length
+                )
+                let replacement = String(partialFile) + rank
+                let stabilized = (raw as NSString).replacingCharacters(in: squareRange, with: replacement)
+                lastPartialCaptureDestinationFile = nil
+                return stabilized
+            }
+            lastPartialCaptureDestinationFile = nil
+            return raw
+        }
+
+        if let regex = try? NSRegularExpression(pattern: trailingFilePattern),
+           let match = regex.firstMatch(in: lowered, range: NSRange(lowered.startIndex..., in: lowered)),
+           let fileRange = Range(match.range(at: 3), in: lowered),
+           let file = lowered[fileRange].first {
+            lastPartialCaptureDestinationFile = file
+            return raw
+        }
+
+        if lowered.range(of: verbPattern, options: .regularExpression) == nil {
+            lastPartialCaptureDestinationFile = nil
+        }
+
+        return raw
+    }
     
+    private static let maxContextualStrings = 100
+
     private func getChessVocabulary(for language: RecognitionLanguage) -> [String] {
-        var words: [String]
+        var seen = Set<String>()
+        var result: [String] = []
+
+        func appendUnique(_ strings: [String]) {
+            for string in strings {
+                let key = string.lowercased()
+                guard seen.insert(key).inserted else { continue }
+                result.append(string)
+                if result.count >= Self.maxContextualStrings { return }
+            }
+        }
+
         switch language {
         case .english:
-            words = [
+            appendUnique([
                 "a", "b", "c", "d", "e", "f", "g", "h",
                 "1", "2", "3", "4", "5", "6", "7", "8",
                 "knight", "bishop", "rook", "queen", "king", "pawn",
                 "one", "two", "three", "four", "five", "six", "seven", "eight",
                 "see", "sea", "she", "cee", "bee", "dee", "gee", "aitch",
-                "hey", "ay", "a3",
+                "hey", "ay",
                 "takes", "take", "captures", "capture", "castle",
-                "d takes", "d takes c4", "d takes e4", "detects", "detects c4",
-                "e takes", "e takes d5", "e takes f5", "he takes", "he takes f5",
-                "knight b to d7", "night to be 7", "knight bd7",
-                "rook a to d1", "rook a d1", "look at d1",
-                "e4", "d4", "exd5", "nf3", "nf6", "nc3", "nc6", "nxd4", "qxb4", "O-O"
-            ]
+                "d takes", "d takes c4", "e takes", "e takes d5",
+                "e4", "d4", "nf3", "O-O"
+            ])
         case .german:
-            words = [
+            appendUnique([
                 "a", "b", "c", "d", "e", "f", "g", "h",
+                "ah",
                 "1", "2", "3", "4", "5", "6", "7", "8",
                 "eins", "zwei", "drei", "vier", "funf", "sechs", "sieben", "acht",
-                "springer", "laufer", "turm", "dame", "konig", "bauer",
-                "schlagt", "schlägt", "nimmt", "rochiert", "rochade", "kleine rochade", "große rochade",
+                "springer", "laufer", "läufer", "turm", "dame", "konig", "könig", "bauer",
+                "schlagt", "schlägt", "nimmt", "rochade", "kleine rochade", "große rochade",
                 "zuruck", "zurück", "rückgängig",
-                "e4", "d4", "exd4", "exd5", "nf3", "nf6", "nc3", "nc6", "nxd4", "sf3", "sxd4", "dxb4", "O-O", "O-O-O"
-            ]
+                "e4", "d4", "nf3", "O-O", "O-O-O"
+            ])
         }
-        
+
         if let vocabularyStore {
-            words.append(contentsOf: vocabularyStore.contextualStrings(for: language))
+            appendUnique(vocabularyStore.contextualStrings(for: language))
         }
-        
-        return words
+
+        return result
     }
     
     @MainActor

@@ -51,8 +51,25 @@ enum LegalMoveResolver {
     /// Picks the best legal move for a ranked list of spoken candidates.
     static func matchBest(
         candidates: [String],
-        among legalMoves: [Move]
+        among legalMoves: [Move],
+        preferCaptures: Bool = false
     ) -> Move? {
+        if preferCaptures {
+            for candidate in candidates {
+                if let move = match(notation: candidate, among: legalMoves, allowConfusedFiles: true),
+                   isCapture(move) {
+                    return move
+                }
+            }
+            for candidate in candidates {
+                if let move = match(notation: candidate, among: legalMoves, allowConfusedFiles: true),
+                   !isCapture(move) {
+                    return move
+                }
+            }
+            return nil
+        }
+
         for candidate in candidates {
             if let move = match(notation: candidate, among: legalMoves, allowConfusedFiles: true) {
                 return move

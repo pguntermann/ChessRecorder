@@ -23,8 +23,8 @@ class ChessEngine {
     }
 
     @discardableResult
-    func executeVoiceCandidates(_ candidates: [String]) -> String? {
-        guard let matched = game.executeVoiceCandidates(candidates) else {
+    func executeVoiceCandidates(_ candidates: [String], preferCaptures: Bool = false) -> String? {
+        guard let matched = game.executeVoiceCandidates(candidates, preferCaptures: preferCaptures) else {
             print("Could not execute voice candidates: \(candidates.joined(separator: ", "))")
             return nil
         }

@@ -13,16 +13,32 @@
 
 /* Begin PBXFileReference section */
 		1760A27E2FFED5F20026DE7C /* Chess Recorder.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Chess Recorder.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		17TEST032FFF00000026DE7C /* Chess RecorderTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Chess RecorderTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 		17F0A1042FFF00000026DE7C /* Version.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Version.xcconfig; sourceTree = "<group>"; };
 		17F0A1052FFF00000026DE7D /* Debug.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Debug.xcconfig; sourceTree = "<group>"; };
 		17F0A1062FFF00000026DE7E /* Release.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Release.xcconfig; sourceTree = "<group>"; };
 		17F0A1072FFF00000026DE7F /* DeveloperMode.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = DeveloperMode.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
+/* Begin PBXContainerItemProxy section */
+		17TEST022FFF00000026DE7C /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 1760A2762FFED5F20026DE7C /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 1760A27D2FFED5F20026DE7C;
+			remoteInfo = "Chess Recorder";
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		1760A2802FFED5F20026DE7C /* Chess Recorder */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = "Chess Recorder";
+			sourceTree = "<group>";
+		};
+		17TEST012FFF00000026DE7C /* Chess RecorderTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "Chess RecorderTests";
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -37,6 +53,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		17TEST062FFF00000026DE7C /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -45,6 +68,7 @@
 			children = (
 				17F0A1032FFF00000026DE7C /* Config */,
 				1760A2802FFED5F20026DE7C /* Chess Recorder */,
+				17TEST012FFF00000026DE7C /* Chess RecorderTests */,
 				1760A27F2FFED5F20026DE7C /* Products */,
 			);
 			sourceTree = "<group>";
@@ -53,6 +77,7 @@
 			isa = PBXGroup;
 			children = (
 				1760A27E2FFED5F20026DE7C /* Chess Recorder.app */,
+				17TEST032FFF00000026DE7C /* Chess RecorderTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -95,6 +120,26 @@
 			productReference = 1760A27E2FFED5F20026DE7C /* Chess Recorder.app */;
 			productType = "com.apple.product-type.application";
 		};
+		17TEST042FFF00000026DE7C /* Chess RecorderTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 17TEST072FFF00000026DE7C /* Build configuration list for PBXNativeTarget "Chess RecorderTests" */;
+			buildPhases = (
+				17TEST052FFF00000026DE7C /* Sources */,
+				17TEST062FFF00000026DE7C /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				17TEST082FFF00000026DE7C /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				17TEST012FFF00000026DE7C /* Chess RecorderTests */,
+			);
+			name = "Chess RecorderTests";
+			productName = "Chess RecorderTests";
+			productReference = 17TEST032FFF00000026DE7C /* Chess RecorderTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -129,6 +174,7 @@
 			projectRoot = "";
 			targets = (
 				1760A27D2FFED5F20026DE7C /* Chess Recorder */,
+				17TEST042FFF00000026DE7C /* Chess RecorderTests */,
 			);
 		};
 /* End PBXProject section */
@@ -151,7 +197,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		17TEST052FFF00000026DE7C /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		17TEST082FFF00000026DE7C /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 1760A27D2FFED5F20026DE7C /* Chess Recorder */;
+			targetProxy = 17TEST022FFF00000026DE7C /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		1760A2872FFED5F20026DE7C /* Debug */ = {
@@ -357,6 +418,40 @@
 			};
 			name = Release;
 		};
+		17TEST092FFF00000026DE7C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 7ZWX577M73;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.pguntermann.Chess-RecorderTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Chess Recorder.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Chess Recorder";
+			};
+			name = Debug;
+		};
+		17TEST0A2FFF00000026DE7C /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 7ZWX577M73;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.5;
+				PRODUCT_BUNDLE_IDENTIFIER = "com.pguntermann.Chess-RecorderTests";
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Chess Recorder.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Chess Recorder";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -374,6 +469,15 @@
 			buildConfigurations = (
 				1760A28A2FFED5F20026DE7C /* Debug */,
 				1760A28B2FFED5F20026DE7C /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		17TEST072FFF00000026DE7C /* Build configuration list for PBXNativeTarget "Chess RecorderTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				17TEST092FFF00000026DE7C /* Debug */,
+				17TEST0A2FFF00000026DE7C /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

@@ -531,8 +531,8 @@ struct ContentView: View {
     private func setupSpeechRecognizer() {
         speechRecognizer.isSpeechPipelineTracingEnabled =
             DeveloperModeStore.isAvailable && developerModeStore.isSpeechPipelineTracingEnabled
-        speechRecognizer.onMoveCandidatesDetected = { candidates in
-            self.processVoiceMoveCandidates(candidates)
+        speechRecognizer.onMoveCandidatesDetected = { candidates, preferCaptures in
+            self.processVoiceMoveCandidates(candidates, preferCaptures: preferCaptures)
         }
 
         speechRecognizer.onMoveDetected = { moveNotation in
@@ -587,10 +587,10 @@ struct ContentView: View {
     }
     
     @discardableResult
-    private func processVoiceMoveCandidates(_ candidates: [String]) -> String? {
+    private func processVoiceMoveCandidates(_ candidates: [String], preferCaptures: Bool = false) -> String? {
         guard canAcceptNewMoves else { return nil }
         print("Processing move candidates: \(candidates.joined(separator: ", "))")
-        guard let matched = chessEngine.executeVoiceCandidates(candidates) else {
+        guard let matched = chessEngine.executeVoiceCandidates(candidates, preferCaptures: preferCaptures) else {
             print("Could not find valid move for \(candidates.joined(separator: ", "))")
             return nil
         }

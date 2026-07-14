@@ -99,16 +99,8 @@ nonisolated enum MoveInterpreter {
             combined,
             hasCaptureIntent: allTokens.contains(where: isCaptureVerb)
         )
-        tracer?.record("Move parsing", "Before file-confusion expansion", ranked.joined(separator: ", "))
-        let expanded = expandFileConfusionCandidates(ranked)
-        if expanded.count > ranked.count {
-            let added = expanded.filter { move in
-                !ranked.contains { $0.caseInsensitiveCompare(move) == .orderedSame }
-            }
-            tracer?.record("Move parsing", "File-confusion variants added", added.joined(separator: ", "))
-        }
-        tracer?.record("Move parsing", "Final candidates", expanded.joined(separator: ", "))
-        return expanded
+        tracer?.record("Move parsing", "Final candidates", ranked.joined(separator: ", "))
+        return ranked
     }
 
     private static func prioritizeCandidates(_ moves: [String], hasCaptureIntent: Bool) -> [String] {
@@ -176,49 +168,6 @@ nonisolated enum MoveInterpreter {
             return true
         }
         return prefix.count == 1 && "abcdefgh".contains(first)
-    }
-
-    /// Adds nearby file variants when ASR confuses short vowels (e/g/a, c/e, b/d).
-    private static func expandFileConfusionCandidates(_ moves: [String]) -> [String] {
-        var expanded = moves
-        var seen = Set(moves.map { $0.lowercased() })
-
-        func append(_ move: String) {
-            let key = move.lowercased()
-            guard seen.insert(key).inserted else { return }
-            expanded.append(move)
-        }
-
-        for move in moves {
-            if move.count == 2 {
-                for variant in LegalMoveResolver.squareNotationVariants(for: move) {
-                    append(variant)
-                }
-                continue
-            }
-
-            if move.count == 3,
-               let first = move.first,
-               "NBRQK".contains(String(first).uppercased()) {
-                let square = String(move.suffix(2))
-                for variant in LegalMoveResolver.squareNotationVariants(for: square) {
-                    append(String(first) + variant)
-                }
-                continue
-            }
-
-            if move.count == 4,
-               move.dropFirst().first?.lowercased() == "x",
-               let first = move.first,
-               "NBRQK".contains(String(first).uppercased()) {
-                let square = String(move.suffix(2))
-                for variant in LegalMoveResolver.squareNotationVariants(for: square) {
-                    append(String(first) + "x" + variant)
-                }
-            }
-        }
-
-        return expanded
     }
 
     private static func deduplicatedMoves(_ moves: [String]) -> [String] {
@@ -849,20 +798,6 @@ nonisolated enum MoveInterpreter {
             }
         }
 
-        for index in 0..<words.count {
-            guard let suffix = promotionSuffix(from: words[index], language: language) else { continue }
-
-            var squareIndex = index + 1
-            while squareIndex < words.count && isMovePreposition(words[squareIndex]) {
-                squareIndex += 1
-            }
-            guard squareIndex < words.count,
-                  let square = sanitizeSquare(words[squareIndex]),
-                  isPromotionRank(square) else { continue }
-
-            moves.append(square + "=" + suffix)
-        }
-
         for verbIndex in stride(from: words.count - 2, through: 1, by: -1) {
             guard isCaptureVerb(words[verbIndex]) else { continue }
 
@@ -1306,14 +1241,6 @@ nonisolated enum MoveInterpreter {
                 let output = String(compact[match.range])
                 if output.count >= 2 {
                     moves.append(String(output.prefix(2)) + "=" + suffix)
-                }
-            }
-
-            let pieceSquare = try! Regex("(?:\(piecePattern))([a-h][18])")
-            for match in compact.matches(of: pieceSquare) {
-                let output = String(compact[match.range])
-                if output.count >= 2 {
-                    moves.append(String(output.suffix(2)) + "=" + suffix)
                 }
             }
         }

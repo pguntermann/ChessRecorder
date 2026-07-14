@@ -72,6 +72,46 @@ final class LegalMoveResolverTests: XCTestCase {
         XCTAssertEqual(matched?.san, "bxc5")
     }
 
+    func testAmbiguousRe8PrefersRookOnDestinationFile() {
+        let fen = "5r2/p5k1/bqn2p2/7p/2Pp4/P3rN1P/3N2P1/Q2RR1K1 b - - 1 26"
+        guard let position = Position(fen: fen) else {
+            return XCTFail("Invalid FEN")
+        }
+
+        let board = Board(position: position)
+        let legalMoves = Self.legalMoves(on: board)
+
+        let matched = LegalMoveResolver.match(notation: "Re8", among: legalMoves)
+        XCTAssertEqual(matched?.san, "Ree8")
+        XCTAssertEqual(matched?.start.notation, "e3")
+    }
+
+    func testFileConfusionUsedOnlyWhenIntendedSquareIsIllegal() {
+        // Rook on f8; e8 blocked by own pawn. Misheard "Re8" should fall back to Rg8.
+        let fen = "4pr1k/8/8/8/8/8/8/8 b - - 0 1"
+        guard let position = Position(fen: fen) else {
+            return XCTFail("Invalid FEN")
+        }
+
+        let board = Board(position: position)
+        let legalMoves = Self.legalMoves(on: board)
+
+        XCTAssertNil(LegalMoveResolver.match(notation: "Re8", among: legalMoves, allowConfusedFiles: false))
+        let matched = LegalMoveResolver.match(notation: "Re8", among: legalMoves)
+        XCTAssertEqual(matched?.san, "Rg8")
+    }
+
+    func testTurmE8DoesNotProducePromotionCandidate() {
+        let candidates = MoveInterpreter.candidates(
+            from: "Turm e8",
+            language: .german,
+            transcriptAlreadyNormalized: false
+        )
+
+        XCTAssertFalse(candidates.contains(where: { $0.contains("=") }))
+        XCTAssertEqual(candidates.first?.lowercased(), "re8")
+    }
+
     private static func legalMoves(on board: Board) -> [Move] {
         var moves: [Move] = []
         let side = board.position.sideToMove

@@ -182,8 +182,8 @@ enum LegalMoveResolver {
             promotion: promotion,
             among: legalMoves
         )
-        if let move = unique(exact) {
-            return move
+        if !exact.isEmpty {
+            return resolveAmbiguousMatches(exact, preferCaptures: capture)
         }
 
         guard allowConfusedFiles, disambiguation == nil else { return nil }
@@ -202,6 +202,43 @@ enum LegalMoveResolver {
         }
 
         return resolveConfusedFileMatches(confusedMatches)
+    }
+
+    /// Picks one move when several pieces can reach the same understood square.
+    private static func resolveAmbiguousMatches(_ moves: [Move], preferCaptures: Bool) -> Move? {
+        guard !moves.isEmpty else { return nil }
+        if moves.count == 1 { return moves[0] }
+
+        var candidates = moves
+        if preferCaptures {
+            let captures = candidates.filter(isCapture)
+            if captures.count == 1 {
+                return captures[0]
+            }
+            if !captures.isEmpty {
+                candidates = captures
+            }
+        }
+
+        let uniqueStarts = Set(candidates.map(\.start))
+        if uniqueStarts.count == 1 {
+            return candidates[0]
+        }
+
+        let destination = candidates[0].end
+        guard candidates.allSatisfy({ $0.end == destination }) else { return nil }
+
+        let fileMatches = candidates.filter { $0.start.file == destination.file }
+        if fileMatches.count == 1 {
+            return fileMatches[0]
+        }
+
+        let rankMatches = candidates.filter { $0.start.rank == destination.rank }
+        if rankMatches.count == 1 {
+            return rankMatches[0]
+        }
+
+        return nil
     }
 
     private static func filterMoves(

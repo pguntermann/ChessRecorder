@@ -38,6 +38,44 @@ final class SpeechPipelineTracer {
         return output
     }
 
+    func formattedReport(
+        language: RecognitionLanguage,
+        acceptedMove: String? = nil,
+        rejectedMoves: [String] = [],
+        failureReason: String? = nil
+    ) -> String {
+        guard isEnabled, !steps.isEmpty else { return "" }
+
+        var lines: [String] = []
+        lines.append("SpeechPipeline: ═══════════════════════════════════════")
+        lines.append("SpeechPipeline: Trace (\(language.displayName))")
+
+        var currentSection = ""
+        for (index, step) in steps.enumerated() {
+            if step.section != currentSection {
+                currentSection = step.section
+                lines.append("SpeechPipeline:")
+                lines.append("SpeechPipeline: [\(currentSection)]")
+            }
+            lines.append("SpeechPipeline:   \(index + 1). \(step.stage): \"\(step.value)\"")
+        }
+
+        lines.append("SpeechPipeline:")
+        lines.append("SpeechPipeline: [Outcome]")
+        if let acceptedMove {
+            lines.append("SpeechPipeline:   Accepted: \(acceptedMove)")
+        } else if let failureReason {
+            lines.append("SpeechPipeline:   Failed: \(failureReason)")
+        } else {
+            lines.append("SpeechPipeline:   No move accepted")
+        }
+        if !rejectedMoves.isEmpty {
+            lines.append("SpeechPipeline:   Rejected: \(rejectedMoves.joined(separator: ", "))")
+        }
+        lines.append("SpeechPipeline: ═══════════════════════════════════════")
+        return lines.joined(separator: "\n")
+    }
+
     func printReport(
         language: RecognitionLanguage,
         acceptedMove: String? = nil,
@@ -45,32 +83,11 @@ final class SpeechPipelineTracer {
         failureReason: String? = nil
     ) {
         guard isEnabled, !steps.isEmpty else { return }
-
-        print("SpeechPipeline: ═══════════════════════════════════════")
-        print("SpeechPipeline: Trace (\(language.displayName))")
-
-        var currentSection = ""
-        for (index, step) in steps.enumerated() {
-            if step.section != currentSection {
-                currentSection = step.section
-                print("SpeechPipeline:")
-                print("SpeechPipeline: [\(currentSection)]")
-            }
-            print("SpeechPipeline:   \(index + 1). \(step.stage): \"\(step.value)\"")
-        }
-
-        print("SpeechPipeline:")
-        print("SpeechPipeline: [Outcome]")
-        if let acceptedMove {
-            print("SpeechPipeline:   Accepted: \(acceptedMove)")
-        } else if let failureReason {
-            print("SpeechPipeline:   Failed: \(failureReason)")
-        } else {
-            print("SpeechPipeline:   No move accepted")
-        }
-        if !rejectedMoves.isEmpty {
-            print("SpeechPipeline:   Rejected: \(rejectedMoves.joined(separator: ", "))")
-        }
-        print("SpeechPipeline: ═══════════════════════════════════════")
+        print(formattedReport(
+            language: language,
+            acceptedMove: acceptedMove,
+            rejectedMoves: rejectedMoves,
+            failureReason: failureReason
+        ))
     }
 }

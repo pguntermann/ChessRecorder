@@ -95,15 +95,25 @@ nonisolated enum MoveInterpreter {
 
         // Prefer parsed moves over learned shortcuts when both are available.
         let combined = deduplicatedMoves([interpreted, results].flatMap { $0 })
+        let hasPieceIntent = hasSpokenPieceIntent(
+            tokens: allTokens,
+            normalized: normalized,
+            language: language
+        )
         let ranked = prioritizeCandidates(
             combined,
-            hasCaptureIntent: allTokens.contains(where: isCaptureVerb)
+            hasCaptureIntent: allTokens.contains(where: isCaptureVerb),
+            hasPieceIntent: hasPieceIntent
         )
         tracer?.record("Move parsing", "Final candidates", ranked.joined(separator: ", "))
         return ranked
     }
 
-    private static func prioritizeCandidates(_ moves: [String], hasCaptureIntent: Bool) -> [String] {
+    private static func prioritizeCandidates(
+        _ moves: [String],
+        hasCaptureIntent: Bool,
+        hasPieceIntent: Bool = false
+    ) -> [String] {
         var seen = Set<String>()
 
         func appendUnique(_ move: String, to bucket: inout [String]) {
@@ -126,6 +136,7 @@ nonisolated enum MoveInterpreter {
         }
 
         var coordinates: [String] = []
+        var pieceMoves: [String] = []
         var squares: [String] = []
         var others: [String] = []
 
@@ -134,11 +145,17 @@ nonisolated enum MoveInterpreter {
             guard seen.insert(key).inserted else { continue }
             if sanitizeSourceTarget(move) != nil {
                 coordinates.append(move)
+            } else if hasPieceIntent && isPiecePrefixedMove(move) {
+                pieceMoves.append(move)
             } else if move.count == 2, sanitizeSquare(move) != nil {
                 squares.append(move)
             } else {
                 others.append(move)
             }
+        }
+
+        if hasPieceIntent {
+            return coordinates + pieceMoves + others + squares
         }
 
         return coordinates + squares + others
@@ -209,14 +226,17 @@ nonisolated enum MoveInterpreter {
         let fullWords = tokenize(normalized)
         let hasCaptureVerb = allTokens.contains(where: isCaptureVerb)
             || fullWords.contains(where: isCaptureVerb)
-        let hasPieceName = allTokens.contains(where: isPieceName)
-            || fullWords.contains(where: isPieceName)
+        let hasPieceIntent = hasSpokenPieceIntent(
+            tokens: allTokens,
+            normalized: normalized,
+            language: language
+        )
 
         add(extractCastle(from: normalized, language: language))
         for move in extractPatterns(
             from: normalized,
             language: language,
-            allowBareSquares: !hasPieceName && !hasCaptureVerb
+            allowBareSquares: !hasPieceIntent && !hasCaptureVerb
         ) {
             add(move)
         }
@@ -245,8 +265,11 @@ nonisolated enum MoveInterpreter {
         let fullWords = tokenize(normalized)
         let hasCaptureVerb = allTokens.contains(where: isCaptureVerb)
             || fullWords.contains(where: isCaptureVerb)
-        let hasPieceName = tokens.contains(where: isPieceName)
-            || fullWords.contains(where: isPieceName)
+        let hasPieceIntent = hasSpokenPieceIntent(
+            tokens: tokens,
+            normalized: normalized,
+            language: language
+        )
         let pawnCaptureTokens = allTokens.contains(where: isCaptureVerb) ? allTokens : tokens
 
         switch language {
@@ -259,7 +282,7 @@ nonisolated enum MoveInterpreter {
             for move in extractImplicitPawnCaptures(from: tokens, language: language) { add(move) }
             for move in extractSquareToSquareMoves(from: tokens, language: language) { add(move) }
             for move in extractPieceToSquare(from: tokens, piecePrefix: englishPiecePrefix) { add(move) }
-            if !hasCaptureVerb && !hasPieceName {
+            if !hasCaptureVerb && !hasPieceIntent {
                 add(latestSquare(from: tokens, normalize: normalizeEnglishToken))
                 add(normalizeEnglishToken(tokens.last ?? ""))
             }
@@ -272,7 +295,7 @@ nonisolated enum MoveInterpreter {
             for move in extractImplicitPawnCaptures(from: tokens, language: language) { add(move) }
             for move in extractSquareToSquareMoves(from: tokens, language: language) { add(move) }
             for move in extractPieceToSquare(from: tokens, piecePrefix: germanPiecePrefix) { add(move) }
-            if !hasCaptureVerb && !hasPieceName {
+            if !hasCaptureVerb && !hasPieceIntent {
                 add(latestSquare(from: tokens, normalize: normalizeGermanToken))
                 add(normalizeGermanToken(tokens.last ?? ""))
             }
@@ -1533,6 +1556,44 @@ nonisolated enum MoveInterpreter {
     
     private static func isPieceName(_ word: String) -> Bool {
         isEnglishPieceName(word) || isGermanPieceName(word)
+    }
+
+    /// True when the utterance names a piece, including ASR-compacted forms like "turmf3" or "rookf3".
+    private static func hasSpokenPieceIntent(
+        tokens: [String],
+        normalized: String,
+        language: RecognitionLanguage
+    ) -> Bool {
+        if tokens.contains(where: isPieceName) {
+            return true
+        }
+        if tokenize(normalized).contains(where: isPieceName) {
+            return true
+        }
+        return hasCompactPieceMarker(in: normalized, language: language)
+    }
+
+    private static func hasCompactPieceMarker(in text: String, language: RecognitionLanguage) -> Bool {
+        let compact = ChessTranscriptNormalizer.stripSpokenArticles(from: text, language: language)
+            .lowercased()
+            .replacingOccurrences(of: " ", with: "")
+
+        let markers: [String]
+        switch language {
+        case .english:
+            markers = ["knight", "night", "bishop", "rook", "rock", "look", "queen", "king"]
+        case .german:
+            markers = ["springer", "laufer", "laeufer", "läufer", "turm", "dame", "konig", "könig"]
+        }
+
+        return markers.contains { compact.contains($0) }
+    }
+
+    private static func isPiecePrefixedMove(_ notation: String) -> Bool {
+        guard let first = notation.first, first.isUppercase, "NBRQK".contains(first) else {
+            return false
+        }
+        return true
     }
     
     private static func isEnglishPieceName(_ word: String) -> Bool {

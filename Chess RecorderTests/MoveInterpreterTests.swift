@@ -227,4 +227,44 @@ final class MoveInterpreterTests: XCTestCase {
         XCTAssertEqual(matched?.lowercased(), "ree8")
         XCTAssertEqual(game.moves.last?.san, "Ree8")
     }
+
+    func testTurmF3CandidatesPreferRf3NotPawnF3() {
+        for utterance in ["Turm f3", "turm f3", "turmf3"] {
+            let candidates = MoveInterpreter.candidates(
+                from: utterance,
+                language: .german,
+                transcriptAlreadyNormalized: false
+            )
+            XCTAssertFalse(candidates.isEmpty, "Expected candidates for \"\(utterance)\"")
+            XCTAssertTrue(
+                candidates.contains(where: { $0 == "Rf3" }),
+                "\"\(utterance)\" should include Rf3, got: \(candidates.joined(separator: ", "))"
+            )
+            XCTAssertEqual(
+                candidates.first,
+                "Rf3",
+                "\"\(utterance)\" should prefer Rf3 over pawn f3, got: \(candidates.prefix(5).joined(separator: ", "))"
+            )
+        }
+    }
+
+    func testRookF3CandidatesPreferRf3NotPawnF3() {
+        for utterance in ["Rook f3", "rook f3", "rookf3"] {
+            let candidates = MoveInterpreter.candidates(
+                from: utterance,
+                language: .english,
+                transcriptAlreadyNormalized: false
+            )
+            XCTAssertFalse(candidates.isEmpty, "Expected candidates for \"\(utterance)\"")
+            XCTAssertTrue(
+                candidates.contains(where: { $0 == "Rf3" }),
+                "\"\(utterance)\" should include Rf3, got: \(candidates.joined(separator: ", "))"
+            )
+            XCTAssertEqual(
+                candidates.first,
+                "Rf3",
+                "\"\(utterance)\" should prefer Rf3 over pawn f3, got: \(candidates.prefix(5).joined(separator: ", "))"
+            )
+        }
+    }
 }

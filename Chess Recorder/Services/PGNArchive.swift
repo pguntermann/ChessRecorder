@@ -269,6 +269,16 @@ final class PGNArchive {
         activeGameID = nil
     }
 
+    func applySessionSnapshot(_ snapshot: SessionSnapshot) {
+        games = snapshot.games
+        if let activeGameID = snapshot.activeGameID,
+           games.contains(where: { $0.id == activeGameID }) {
+            self.activeGameID = activeGameID
+        } else {
+            activeGameID = games.first?.id
+        }
+    }
+
     private func appendNewOngoingGame() {
         let id = UUID()
         games.insert(RecordedGame(

@@ -6,13 +6,16 @@
 import Foundation
 
 enum InitializationContext: Equatable {
-    case startup
+    case startup(includesSessionRestore: Bool)
     case speechModelRebuild
 
     var steps: [InitializationPhase] {
         switch self {
-        case .startup:
-            return InitializationPhase.orderedSteps
+        case .startup(let includesSessionRestore):
+            if includesSessionRestore {
+                return InitializationPhase.orderedSteps
+            }
+            return InitializationPhase.orderedSteps.filter { $0 != .restoringSession }
         case .speechModelRebuild:
             return [
                 .preparingSpeechVocabulary,
@@ -34,6 +37,7 @@ enum InitializationPhase: Equatable, CaseIterable {
     case compilingSpeechModel
     case preparingEngine
     case loadingOpenings
+    case restoringSession
 
     static let orderedSteps: [InitializationPhase] = [
         .requestingPermissions,
@@ -42,7 +46,8 @@ enum InitializationPhase: Equatable, CaseIterable {
         .exportingTrainingData,
         .compilingSpeechModel,
         .preparingEngine,
-        .loadingOpenings
+        .loadingOpenings,
+        .restoringSession
     ]
 
     var title: String {
@@ -61,6 +66,8 @@ enum InitializationPhase: Equatable, CaseIterable {
             return "Starting analysis engine"
         case .loadingOpenings:
             return "Loading openings"
+        case .restoringSession:
+            return "Restoring session"
         }
     }
 
@@ -80,6 +87,8 @@ enum InitializationPhase: Equatable, CaseIterable {
             return "Loading Stockfish for optional position analysis."
         case .loadingOpenings:
             return "Preparing the opening name database."
+        case .restoringSession:
+            return "Recovering your in-progress games from the last session."
         }
     }
 

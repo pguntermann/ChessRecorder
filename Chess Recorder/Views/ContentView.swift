@@ -14,6 +14,7 @@ struct ContentView: View {
     @Bindable var settingsStore: SettingsStore
     @Bindable var vocabularyStore: PersonalVocabularyStore
     @Bindable var developerModeStore: DeveloperModeStore
+    let sessionStore: SessionStore
     @State private var game = ChessGame()
     @State private var pgnArchive = PGNArchive()
     @State private var speechRecognizer: SpeechRecognizer
@@ -26,6 +27,7 @@ struct ContentView: View {
     @State private var engineAnalysis = EngineAnalysisService()
     @State private var openingService = OpeningService()
     @State private var isAppReady = false
+    @State private var startupIncludesSessionRestore = false
     @State private var pendingSpeechModelWork = PendingSpeechModelWork()
     @State private var showSpeechModelRebuildOverlay = false
     @State private var isApplyingArchiveSelection = false
@@ -36,11 +38,13 @@ struct ContentView: View {
     init(
         settingsStore: SettingsStore,
         vocabularyStore: PersonalVocabularyStore,
-        developerModeStore: DeveloperModeStore
+        developerModeStore: DeveloperModeStore,
+        sessionStore: SessionStore
     ) {
         self.settingsStore = settingsStore
         self.vocabularyStore = vocabularyStore
         self.developerModeStore = developerModeStore
+        self.sessionStore = sessionStore
         _speechRecognizer = State(initialValue: SpeechRecognizer(vocabularyStore: vocabularyStore))
     }
     
@@ -68,7 +72,7 @@ struct ContentView: View {
             if !isAppReady {
                 InitializationOverlay(
                     phase: speechRecognizer.initializationPhase,
-                    context: .startup,
+                    context: .startup(includesSessionRestore: startupIncludesSessionRestore),
                     statusDetail: speechRecognizer.initializationStatusDetail
                 )
                 .transition(.opacity)
@@ -82,6 +86,8 @@ struct ContentView: View {
         }
         .animation(.easeInOut(duration: 0.25), value: isAppReady)
         .task {
+            startupIncludesSessionRestore = sessionStore.hasStoredSession
+
             // Allow the initialization overlay to render before startup work blocks the main actor.
             await Task.yield()
             try? await Task.sleep(for: .milliseconds(50))
@@ -97,6 +103,12 @@ struct ContentView: View {
             await engineAnalysis.prepare()
             speechRecognizer.setInitializationPhase(.loadingOpenings)
             await openingService.prepare()
+
+            if startupIncludesSessionRestore {
+                speechRecognizer.setInitializationPhase(.restoringSession)
+                restorePersistedSessionIfAvailable()
+            }
+
             openingService.refresh(game: game)
             isAppReady = true
         }
@@ -125,6 +137,7 @@ struct ContentView: View {
         .onChange(of: game.moves.count) { _, _ in
             openingService.refresh(game: game)
             syncLiveBoardToArchiveIfRecording()
+            scheduleSessionPersist()
             if game.isGameOver {
                 engineAnalysis.stop()
                 stopRecordingIfNeeded()
@@ -138,6 +151,7 @@ struct ContentView: View {
         }
         .onChange(of: game.gameResult) { _, _ in
             syncLiveBoardToArchiveIfRecording()
+            scheduleSessionPersist()
             if game.isGameOver {
                 engineAnalysis.stop()
                 stopRecordingIfNeeded()
@@ -178,6 +192,8 @@ struct ContentView: View {
         .onChange(of: scenePhase) { _, newPhase in
             if newPhase == .active {
                 speechRecognizer.refreshAuthorizationStatus()
+            } else if newPhase == .background || newPhase == .inactive {
+                flushSessionToDisk()
             }
         }
         .alert(
@@ -641,12 +657,14 @@ struct ContentView: View {
         game.resetGame()
         speechRecognizer.resetTranscriptDisplay()
         finishArchiveSelection()
+        scheduleSessionPersist()
     }
     
     private func clearPGN() {
         pgnArchive.resetAll()
         game.resetGame()
         speechRecognizer.resetTranscriptDisplay()
+        sessionStore.clearSession()
     }
 
     private struct PreparedGameSwitch {
@@ -699,6 +717,8 @@ struct ContentView: View {
         if speechRecognizer.isRecording, pgnArchive.activeGameIsReviewOnly {
             speechRecognizer.stopRecording()
         }
+
+        scheduleSessionPersist()
     }
 
     private func activateGame(id: UUID) {
@@ -811,6 +831,8 @@ struct ContentView: View {
         if speechRecognizer.isRecording, pgnArchive.activeGameIsReviewOnly {
             speechRecognizer.stopRecording()
         }
+
+        scheduleSessionPersist()
     }
 
     private func loadActiveGameAfterDeletion(nextActiveID: UUID?) {
@@ -831,6 +853,8 @@ struct ContentView: View {
         if speechRecognizer.isRecording, pgnArchive.activeGameIsReviewOnly {
             speechRecognizer.stopRecording()
         }
+
+        scheduleSessionPersist()
     }
 
     private func beginArchiveSelection() {
@@ -846,6 +870,39 @@ struct ContentView: View {
     private func syncLiveBoardToArchiveIfRecording() {
         guard !isApplyingArchiveSelection, !pgnArchive.activeGameIsReviewOnly else { return }
         pgnArchive.syncActiveGame(from: game, opening: openingService.display)
+    }
+
+    private func restorePersistedSessionIfAvailable() {
+        guard let snapshot = sessionStore.restoreSession() else { return }
+
+        pgnArchive.applySessionSnapshot(snapshot)
+        guard let activeGameID = pgnArchive.activeGameID,
+              let recordedGame = pgnArchive.games.first(where: { $0.id == activeGameID }) else {
+            return
+        }
+
+        let loaded = game.loadMainLine(moves: recordedGame.moves)
+        if !loaded {
+            print("Session restore: failed to replay active game \(activeGameID)")
+            return
+        }
+
+        if recordedGame.result != .ongoing {
+            game.declareResult(recordedGame.result)
+        }
+    }
+
+    private func currentSessionSnapshot() -> SessionSnapshot {
+        syncLiveBoardToArchiveIfRecording()
+        return SessionSnapshot(archive: pgnArchive)
+    }
+
+    private func scheduleSessionPersist() {
+        sessionStore.schedulePersist(snapshot: currentSessionSnapshot())
+    }
+
+    private func flushSessionToDisk() {
+        sessionStore.flush(snapshot: currentSessionSnapshot())
     }
     
     private func undoLastMove() {
@@ -955,6 +1012,7 @@ private struct BoardWithEvaluationLayout: View {
     ContentView(
         settingsStore: SettingsStore(),
         vocabularyStore: PersonalVocabularyStore(),
-        developerModeStore: DeveloperModeStore()
+        developerModeStore: DeveloperModeStore(),
+        sessionStore: SessionStore()
     )
 }

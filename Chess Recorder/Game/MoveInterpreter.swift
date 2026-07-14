@@ -348,7 +348,12 @@ nonisolated enum MoveInterpreter {
             if index + 1 < words.count,
                !isCaptureVerb(words[index + 1]),
                !isCaptureVerb(words[index]),
-               !(index > 0 && isCaptureVerb(words[index - 1])) {
+               !(index > 0 && isCaptureVerb(words[index - 1])),
+               !shouldSkipFileRankCoalesce(
+                   fileToken: words[index],
+                   rankToken: words[index + 1],
+                   previousToken: index > 0 ? words[index - 1] : nil
+               ) {
                 let candidates = fileRankSquareCandidates(
                     fileToken: words[index],
                     rankToken: words[index + 1],
@@ -412,6 +417,25 @@ nonisolated enum MoveInterpreter {
         return result.filter { word in
             !stopWords(for: language).contains(word.lowercased())
         }
+    }
+
+    /// Keeps piece file disambiguation separate from destination squares (e.g. "springer d b5").
+    private static func shouldSkipFileRankCoalesce(
+        fileToken: String,
+        rankToken: String,
+        previousToken: String?
+    ) -> Bool {
+        if sanitizeSquare(rankToken) != nil {
+            return true
+        }
+        if let previousToken,
+           isPieceName(previousToken),
+           fileToken.count == 1,
+           let file = fileToken.first,
+           "abcdefgh".contains(file) {
+            return true
+        }
+        return false
     }
     
     private static func stopWords(for language: RecognitionLanguage) -> Set<String> {
@@ -1426,6 +1450,10 @@ nonisolated enum MoveInterpreter {
         guard file.count == 1,
               let fileChar = file.first,
               "abcdefgh".contains(fileChar) else {
+            return nil
+        }
+
+        if sanitizeSquare(rank) != nil {
             return nil
         }
         

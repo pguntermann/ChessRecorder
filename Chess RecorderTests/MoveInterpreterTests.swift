@@ -4,6 +4,65 @@ import XCTest
 @MainActor
 final class MoveInterpreterTests: XCTestCase {
 
+    /// Position after 33... c4 — white to play; "Läufer schlägt c4" should be Bxc4, not bxc4.
+    private static let lauferSchlaegtC4GameSANs: [String] = [
+        "e4", "c5", "Nf3", "e6", "c4", "Nc6", "d4", "cxd4", "Nxd4", "Nf6",
+        "Nxc6", "bxc6", "Bd3", "d5", "Nd2", "d4", "O-O", "e5", "Qa4", "Bd7",
+        "Nf3", "c5", "Qa6", "Qb8", "Bg5", "Bc8", "Qa4+", "Bd7", "Qa3", "Qd6",
+        "Rae1", "h6", "Bd2", "Be7", "Bc2", "O-O", "Re2", "Rfb8", "Rd1", "Rb7",
+        "Ba5", "Rab8", "Bc3", "Bd8", "b3", "Qc7", "Bd2", "Ne8", "Ra1", "f6",
+        "Rd1", "Nd6", "Rb1", "Nxc4", "Qa6", "Nxd2", "Rxd2", "Bb5", "Qa3", "Rb6",
+        "Rc1", "Ra6", "Qb2", "Qa5", "Bd3", "c4"
+    ]
+
+    private func gameAfterBlack33C4() -> ChessGame {
+        let game = ChessGame()
+        for san in Self.lauferSchlaegtC4GameSANs {
+            XCTAssertTrue(game.executeSAN(san), "Failed to play \(san)")
+        }
+        XCTAssertTrue(game.isAtLatestMove)
+        XCTAssertEqual(game.currentTurn, .white)
+        return game
+    }
+
+    func testLauferSchlaegtC4CandidatesPreferBxc4AfterBlackC4() {
+        let game = gameAfterBlack33C4()
+
+        let candidates = MoveInterpreter.candidates(
+            from: "Läufer schlägt c4",
+            language: .german,
+            transcriptAlreadyNormalized: false
+        )
+
+        XCTAssertFalse(candidates.isEmpty, "Expected move candidates for \"Läufer schlägt c4\"")
+        XCTAssertTrue(
+            candidates.contains(where: { $0 == "Bxc4" }),
+            "Candidates should include Bxc4, got: \(candidates.joined(separator: ", "))"
+        )
+        XCTAssertEqual(
+            candidates.first,
+            "Bxc4",
+            "Bxc4 should be the top candidate, got: \(candidates.prefix(5).joined(separator: ", "))"
+        )
+        XCTAssertNotEqual(
+            candidates.first,
+            "bxc4",
+            "bxc4 must not outrank Bxc4 for \"Läufer schlägt c4\", got: \(candidates.prefix(5).joined(separator: ", "))"
+        )
+
+        let matched = game.executeVoiceCandidates(candidates)
+        XCTAssertEqual(
+            matched?.trimmingCharacters(in: CharacterSet(charactersIn: "+#")),
+            "Bxc4",
+            "Voice execution should play Bxc4, got: \(matched ?? "nil")"
+        )
+        XCTAssertNotEqual(matched, "bxc4", "Voice execution must not play pawn bxc4, got: \(matched ?? "nil")")
+        XCTAssertEqual(
+            game.moves.last?.san.trimmingCharacters(in: CharacterSet(charactersIn: "+#")),
+            "Bxc4"
+        )
+    }
+
     /// Position after 5... Nc6 — white to play; "Springer d b5" should be Ndb5 (d4→b5), not Nd5 (c3→d5).
     private static let springerDB5GameSANs: [String] = [
         "e4", "c5", "Nf3", "e6", "d4", "cxd4", "Nxd4", "Nf6", "Nc3", "Nc6"

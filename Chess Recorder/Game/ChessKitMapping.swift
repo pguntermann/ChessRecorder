@@ -140,7 +140,10 @@ enum ChessKitMapping {
 
     /// True for pawn file captures such as `bxc6` or `exd5`.
     /// Pawns only capture on diagonally adjacent files, so `bxh6` is not a pawn capture.
+    /// Uppercase leading letters (e.g. `Bxc4`) denote pieces, not pawn files.
     static func isPawnFileCaptureSAN(_ notation: String) -> Bool {
+        guard notation.first?.isLowercase == true else { return false }
+
         let chars = Array(notation.lowercased())
         guard chars.count >= 4,
               chars[1] == "x",

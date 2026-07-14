@@ -92,20 +92,22 @@ enum LegalMoveResolver {
     private static func exactMatch(_ notation: String, among legalMoves: [Move]) -> Move? {
         // Pawn file captures use a lowercase file letter (bxc5). Bishop captures use Bxc5.
         // Case-insensitive matching would conflate the two when both are legal.
-        if ChessKitMapping.isPawnFileCaptureSAN(notation),
-           let first = notation.first,
-           first.isLowercase {
+        if ChessKitMapping.isPawnFileCaptureSAN(notation) {
             return legalMoves.first { move in
-                move.piece.kind == .pawn && move.san.lowercased() == notation.lowercased()
+                move.piece.kind == .pawn
+                    && sanWithoutAnnotations(move.san).lowercased() == sanWithoutAnnotations(notation).lowercased()
             }
         }
 
-        if let first = notation.first,
-           "NBRQK".contains(first),
-           notation.dropFirst().contains(where: { $0 == "x" || $0 == "X" }) {
+        if isPieceCaptureSAN(notation), let kind = pieceKind(for: notation.first!) {
+            let base = sanWithoutAnnotations(notation)
             return legalMoves.first { move in
-                move.san == notation
+                move.piece.kind == kind && sanWithoutAnnotations(move.san) == base
             }
+        }
+
+        if isUppercasePieceNotation(notation) {
+            return nil
         }
 
         let lowered = notation.lowercased()
@@ -114,6 +116,24 @@ enum LegalMoveResolver {
                 || move.lan.lowercased() == lowered
                 || coordinateNotation(for: move).lowercased() == lowered
         }
+    }
+
+    private static func isPieceCaptureSAN(_ notation: String) -> Bool {
+        guard let first = notation.first,
+              "NBRQK".contains(first),
+              notation.dropFirst().contains(where: { $0 == "x" || $0 == "X" }) else {
+            return false
+        }
+        return true
+    }
+
+    private static func isUppercasePieceNotation(_ notation: String) -> Bool {
+        guard let first = notation.first, first.isUppercase else { return false }
+        return "NBRQK".contains(first)
+    }
+
+    private static func sanWithoutAnnotations(_ san: String) -> String {
+        san.trimmingCharacters(in: CharacterSet(charactersIn: "+#"))
     }
 
     private static func match(

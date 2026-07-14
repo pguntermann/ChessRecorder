@@ -1,6 +1,6 @@
 // Shared version settings for Chess Recorder.
 // CURRENT_PROJECT_VERSION is generated before each build in BuildNumber.xcconfig.
 
-MARKETING_VERSION = 1.1
+MARKETING_VERSION = 1.2
 
 #include? "../BuildNumber.xcconfig"

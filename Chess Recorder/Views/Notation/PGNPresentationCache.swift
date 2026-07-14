@@ -18,13 +18,12 @@ enum PGNPresentationBuilder {
         activeGameID: UUID?,
         activePlyIndex: Int,
         isAtLatestMove: Bool,
-        metadata: PGNMetadata,
         hidePGNHeaderTags: Bool
     ) -> String {
         let gameSignature = games.map {
-            "\($0.id.uuidString):\($0.moves.count):\($0.result.rawValue):\($0.round):\($0.eco ?? "")"
+            "\($0.id.uuidString):\($0.moves.count):\($0.result.rawValue):\($0.round):\($0.eco ?? ""):\($0.metadata)"
         }.joined(separator: "|")
-        return "\(gameSignature)|\(activeGameID?.uuidString ?? "none")|\(activePlyIndex)|\(isAtLatestMove)|\(metadata)|\(hidePGNHeaderTags)"
+        return "\(gameSignature)|\(activeGameID?.uuidString ?? "none")|\(activePlyIndex)|\(isAtLatestMove)|\(hidePGNHeaderTags)"
     }
 
     static func build(
@@ -32,12 +31,10 @@ enum PGNPresentationBuilder {
         activeGameID: UUID?,
         activePlyIndex: Int,
         isAtLatestMove: Bool,
-        metadata: PGNMetadata,
         hidePGNHeaderTags: Bool
     ) -> [UUID: GameRowPresentation] {
         var rows: [UUID: GameRowPresentation] = [:]
 
-        _ = metadata
         _ = hidePGNHeaderTags
 
         for game in games.reversed() where !game.moves.isEmpty {

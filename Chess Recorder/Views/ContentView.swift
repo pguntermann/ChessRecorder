@@ -391,7 +391,7 @@ struct ContentView: View {
             NotationPanelView(
                 game: game,
                 pgnArchive: pgnArchive,
-                metadata: settingsStore.settings.pgnMetadata,
+                defaultMetadata: settingsStore.settings.pgnMetadata,
                 hidePGNHeaderTags: settingsStore.settings.pgnHideHeaderTags,
                 engineAnalysisVisible: settingsStore.settings.engineAnalysisVisible,
                 engineAnalysisUseAlgebraicNotation: settingsStore.settings.engineAnalysisUseAlgebraicNotation,
@@ -653,7 +653,12 @@ struct ContentView: View {
     private func startNewGame(result: PGNResult) {
         let archiveResult = result == .ongoing ? game.gameResult : result
         beginArchiveSelection()
-        pgnArchive.finalizeActiveGame(with: archiveResult, from: game, opening: openingService.display)
+        pgnArchive.finalizeActiveGame(
+            with: archiveResult,
+            from: game,
+            opening: openingService.display,
+            metadataForNewGame: currentPGNMetadata
+        )
         game.resetGame()
         speechRecognizer.resetTranscriptDisplay()
         finishArchiveSelection()
@@ -674,7 +679,7 @@ struct ContentView: View {
 
     private func syncOutgoingGameToArchive() {
         if !pgnArchive.activeGameIsReviewOnly {
-            pgnArchive.syncActiveGame(from: game, opening: openingService.display)
+            pgnArchive.syncActiveGame(from: game, opening: openingService.display, metadata: currentPGNMetadata)
         }
     }
 
@@ -762,7 +767,7 @@ struct ContentView: View {
         guard !isGameSwitchAnimating else { return }
 
         if !pgnArchive.activeGameIsReviewOnly {
-            pgnArchive.syncActiveGame(from: game, opening: openingService.display)
+            pgnArchive.syncActiveGame(from: game, opening: openingService.display, metadata: currentPGNMetadata)
         }
 
         let previousID = pgnArchive.activeGameID
@@ -807,7 +812,7 @@ struct ContentView: View {
 
     private func applyGameSelection(id: UUID) {
         if !pgnArchive.activeGameIsReviewOnly {
-            pgnArchive.syncActiveGame(from: game, opening: openingService.display)
+            pgnArchive.syncActiveGame(from: game, opening: openingService.display, metadata: currentPGNMetadata)
         }
 
         beginArchiveSelection()
@@ -869,7 +874,11 @@ struct ContentView: View {
 
     private func syncLiveBoardToArchiveIfRecording() {
         guard !isApplyingArchiveSelection, !pgnArchive.activeGameIsReviewOnly else { return }
-        pgnArchive.syncActiveGame(from: game, opening: openingService.display)
+        pgnArchive.syncActiveGame(from: game, opening: openingService.display, metadata: currentPGNMetadata)
+    }
+
+    private var currentPGNMetadata: PGNMetadata {
+        settingsStore.settings.pgnMetadata
     }
 
     private func restorePersistedSessionIfAvailable() {

@@ -4,6 +4,8 @@ import XCTest
 @MainActor
 final class PGNArchiveTests: XCTestCase {
 
+    private let testMetadata = PGNMetadata.placeholder
+
     private func playE4E5(on game: ChessGame) {
         XCTAssertTrue(
             game.performMove(from: ChessPosition(file: 4, rank: 1), to: ChessPosition(file: 4, rank: 3))
@@ -13,16 +15,38 @@ final class PGNArchiveTests: XCTestCase {
         )
     }
 
+    func testFinalizeCapturesMetadataForFinishedGameAndNewSlot() {
+        let firstMetadata = PGNMetadata(event: "Round 1", site: "Hall A", white: "Alice", black: "Bob")
+        let secondMetadata = PGNMetadata(event: "Round 2", site: "Hall B", white: "Bob", black: "Alice")
+
+        let archive = PGNArchive()
+        let game = ChessGame()
+
+        archive.ensureActiveGameExists(metadata: firstMetadata)
+        playE4E5(on: game)
+        archive.syncActiveGame(from: game, metadata: firstMetadata)
+        let firstID = archive.activeGameID!
+
+        archive.finalizeActiveGame(with: .whiteWins, from: game, metadataForNewGame: secondMetadata)
+        game.resetGame()
+
+        let finished = archive.games.first { $0.id == firstID }!
+        let ongoing = archive.games.first { $0.id == archive.activeGameID }!
+
+        XCTAssertEqual(finished.metadata, firstMetadata)
+        XCTAssertEqual(ongoing.metadata, secondMetadata)
+    }
+
     func testSyncActiveGameDoesNotOverwriteArchivedGame() {
         let archive = PGNArchive()
         let game = ChessGame()
 
-        archive.ensureActiveGameExists()
+        archive.ensureActiveGameExists(metadata: testMetadata)
         playE4E5(on: game)
-        archive.syncActiveGame(from: game)
+        archive.syncActiveGame(from: game, metadata: testMetadata)
 
         let archivedID = archive.activeGameID!
-        archive.finalizeActiveGame(with: .draw, from: game)
+        archive.finalizeActiveGame(with: .draw, from: game, metadataForNewGame: testMetadata)
         XCTAssertEqual(archive.games.first { $0.id == archivedID }?.moves.count, 2)
 
         game.resetGame()
@@ -32,7 +56,7 @@ final class PGNArchiveTests: XCTestCase {
         XCTAssertTrue(
             game.performMove(from: ChessPosition(file: 1, rank: 0), to: ChessPosition(file: 2, rank: 2))
         )
-        archive.syncActiveGame(from: game)
+        archive.syncActiveGame(from: game, metadata: testMetadata)
 
         XCTAssertEqual(archive.games.first { $0.id == archivedID }?.moves.count, 2)
         XCTAssertEqual(archive.games.first { $0.id == archivedID }?.moves.first?.san, "e4")
@@ -42,12 +66,12 @@ final class PGNArchiveTests: XCTestCase {
         let archive = PGNArchive()
         let game = ChessGame()
 
-        archive.ensureActiveGameExists()
+        archive.ensureActiveGameExists(metadata: testMetadata)
         playE4E5(on: game)
-        archive.syncActiveGame(from: game)
+        archive.syncActiveGame(from: game, metadata: testMetadata)
         let archivedID = archive.activeGameID!
 
-        archive.finalizeActiveGame(with: .whiteWins, from: game)
+        archive.finalizeActiveGame(with: .whiteWins, from: game, metadataForNewGame: testMetadata)
         game.resetGame()
         let ongoingID = archive.activeGameID!
         XCTAssertNotEqual(archivedID, ongoingID)
@@ -65,7 +89,7 @@ final class PGNArchiveTests: XCTestCase {
         XCTAssertTrue(
             game.performMove(from: ChessPosition(file: 6, rank: 0), to: ChessPosition(file: 5, rank: 2))
         )
-        archive.syncActiveGame(from: game)
+        archive.syncActiveGame(from: game, metadata: testMetadata)
 
         let archivedAfter = archive.games.first { $0.id == archivedID }!
         let ongoingAfter = archive.games.first { $0.id == ongoingID }!
@@ -80,15 +104,15 @@ final class PGNArchiveTests: XCTestCase {
         let archive = PGNArchive()
         let game = ChessGame()
 
-        archive.ensureActiveGameExists()
+        archive.ensureActiveGameExists(metadata: testMetadata)
         playE4E5(on: game)
-        archive.syncActiveGame(from: game)
+        archive.syncActiveGame(from: game, metadata: testMetadata)
         let archivedID = archive.activeGameID!
 
         game.declareResult(.whiteWins)
-        archive.syncActiveGame(from: game)
+        archive.syncActiveGame(from: game, metadata: testMetadata)
 
-        archive.finalizeActiveGame(with: .whiteWins, from: game)
+        archive.finalizeActiveGame(with: .whiteWins, from: game, metadataForNewGame: testMetadata)
         game.resetGame()
 
         let archived = archive.games.first { $0.id == archivedID }!
@@ -108,13 +132,13 @@ final class PGNArchiveTests: XCTestCase {
         let archive = PGNArchive()
         let game = ChessGame()
 
-        archive.ensureActiveGameExists()
+        archive.ensureActiveGameExists(metadata: testMetadata)
         playE4E5(on: game)
-        archive.syncActiveGame(from: game)
+        archive.syncActiveGame(from: game, metadata: testMetadata)
         let archivedID = archive.activeGameID!
 
         game.resetGame()
-        archive.finalizeActiveGame(with: .whiteWins, from: game)
+        archive.finalizeActiveGame(with: .whiteWins, from: game, metadataForNewGame: testMetadata)
 
         let archived = archive.games.first { $0.id == archivedID }!
         XCTAssertEqual(archived.moves.count, 2)
@@ -153,7 +177,7 @@ final class PGNArchiveTests: XCTestCase {
         let archive = PGNArchive()
         let game = ChessGame()
 
-        archive.ensureActiveGameExists()
+        archive.ensureActiveGameExists(metadata: testMetadata)
         playSANLine(sans, on: game, archive: archive)
         XCTAssertEqual(game.moves.count, sans.count)
 
@@ -161,9 +185,9 @@ final class PGNArchiveTests: XCTestCase {
         let archivedMoves = game.moves
 
         game.declareResult(.whiteWins)
-        archive.syncActiveGame(from: game)
+        archive.syncActiveGame(from: game, metadata: testMetadata)
 
-        archive.finalizeActiveGame(with: .whiteWins, from: game)
+        archive.finalizeActiveGame(with: .whiteWins, from: game, metadataForNewGame: testMetadata)
         game.resetGame()
 
         let stored = archive.games.first { $0.id == archivedID }!
@@ -186,7 +210,7 @@ final class PGNArchiveTests: XCTestCase {
     private func playSANLine(_ sans: [String], on game: ChessGame, archive: PGNArchive) {
         for (index, san) in sans.enumerated() {
             XCTAssertTrue(game.executeSAN(san), "Failed to play move \(index + 1): \(san)")
-            archive.syncActiveGame(from: game)
+            archive.syncActiveGame(from: game, metadata: testMetadata)
         }
     }
 

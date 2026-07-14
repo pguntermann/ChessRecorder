@@ -6,10 +6,7 @@
 import Foundation
 
 enum PGNExportService {
-    static func fullPGN(
-        for games: [RecordedGame],
-        metadata: PGNMetadata
-    ) -> String {
+    static func fullPGN(for games: [RecordedGame]) -> String {
         games
             .reversed()
             .filter { !$0.moves.isEmpty }
@@ -18,7 +15,7 @@ enum PGNExportService {
                     moves: game.moves,
                     round: game.round,
                     result: game.result,
-                    metadata: metadata,
+                    metadata: game.metadata,
                     date: game.date,
                     eco: game.eco
                 )
@@ -26,11 +23,8 @@ enum PGNExportService {
             .joined(separator: "\n\n")
     }
 
-    static func fullPGN(
-        for archive: PGNArchive,
-        metadata: PGNMetadata
-    ) -> String {
-        fullPGN(for: archive.games, metadata: metadata)
+    static func fullPGN(for archive: PGNArchive) -> String {
+        fullPGN(for: archive.games)
     }
 
     static func writeTemporaryFile(content: String) throws -> URL {

@@ -16,11 +16,18 @@ enum PGNResult: String {
     }
 }
 
-struct PGNMetadata: Equatable {
+struct PGNMetadata: Equatable, Codable {
     let event: String
     let site: String
     let white: String
     let black: String
+
+    static let placeholder = PGNMetadata(
+        event: AppSettings.defaultPGNEvent,
+        site: "?",
+        white: "?",
+        black: "?"
+    )
 }
 
 struct RecordedGame: Identifiable {
@@ -31,6 +38,7 @@ struct RecordedGame: Identifiable {
     var date: Date
     var eco: String?
     var openingName: String?
+    var metadata: PGNMetadata
 
     init(
         id: UUID = UUID(),
@@ -39,7 +47,8 @@ struct RecordedGame: Identifiable {
         result: PGNResult,
         date: Date = Date(),
         eco: String? = nil,
-        openingName: String? = nil
+        openingName: String? = nil,
+        metadata: PGNMetadata = .placeholder
     ) {
         self.id = id
         self.moves = moves
@@ -48,6 +57,7 @@ struct RecordedGame: Identifiable {
         self.date = date
         self.eco = eco
         self.openingName = openingName
+        self.metadata = metadata
     }
 
     var isReviewOnly: Bool {
@@ -145,17 +155,17 @@ final class PGNArchive {
         activeGame?.isReviewOnly ?? false
     }
 
-    func ensureActiveGameExists() {
+    func ensureActiveGameExists(metadata: PGNMetadata) {
         guard activeGameID == nil || !games.contains(where: { $0.id == activeGameID }) else { return }
-        appendNewOngoingGame()
+        appendNewOngoingGame(metadata: metadata)
     }
 
-    func syncActiveGame(from chessGame: ChessGame) {
-        syncActiveGame(from: chessGame, opening: nil)
+    func syncActiveGame(from chessGame: ChessGame, metadata: PGNMetadata) {
+        syncActiveGame(from: chessGame, opening: nil, metadata: metadata)
     }
 
-    func syncActiveGame(from chessGame: ChessGame, opening: OpeningDisplay?) {
-        ensureActiveGameExists()
+    func syncActiveGame(from chessGame: ChessGame, opening: OpeningDisplay?, metadata: PGNMetadata) {
+        ensureActiveGameExists(metadata: metadata)
         guard let activeGameID,
               let index = games.firstIndex(where: { $0.id == activeGameID }) else { return }
 
@@ -183,13 +193,18 @@ final class PGNArchive {
         games[index].result = chessGame.gameResult
     }
 
-    func finalizeActiveGame(with result: PGNResult, from chessGame: ChessGame) {
-        finalizeActiveGame(with: result, from: chessGame, opening: nil)
+    func finalizeActiveGame(with result: PGNResult, from chessGame: ChessGame, metadataForNewGame: PGNMetadata) {
+        finalizeActiveGame(with: result, from: chessGame, opening: nil, metadataForNewGame: metadataForNewGame)
     }
 
-    func finalizeActiveGame(with result: PGNResult, from chessGame: ChessGame, opening: OpeningDisplay?) {
+    func finalizeActiveGame(
+        with result: PGNResult,
+        from chessGame: ChessGame,
+        opening: OpeningDisplay?,
+        metadataForNewGame: PGNMetadata
+    ) {
         if !chessGame.moves.isEmpty {
-            ensureActiveGameExists()
+            ensureActiveGameExists(metadata: metadataForNewGame)
             if let activeGameID,
                let index = games.firstIndex(where: { $0.id == activeGameID }) {
                 games[index].moves = chessGame.moves
@@ -213,7 +228,7 @@ final class PGNArchive {
             }
         }
 
-        appendNewOngoingGame()
+        appendNewOngoingGame(metadata: metadataForNewGame)
         renumberRounds()
     }
 
@@ -245,9 +260,7 @@ final class PGNArchive {
         return activeGameID
     }
 
-    func displayText(
-        metadata: PGNMetadata
-    ) -> String {
+    func displayText() -> String {
         games
             .reversed()
             .filter { !$0.moves.isEmpty }
@@ -256,7 +269,7 @@ final class PGNArchive {
                     moves: $0.moves,
                     round: $0.round,
                     result: $0.result,
-                    metadata: metadata,
+                    metadata: $0.metadata,
                     date: $0.date,
                     eco: $0.eco
                 )
@@ -279,7 +292,7 @@ final class PGNArchive {
         }
     }
 
-    private func appendNewOngoingGame() {
+    private func appendNewOngoingGame(metadata: PGNMetadata) {
         let id = UUID()
         games.insert(RecordedGame(
             id: id,
@@ -287,7 +300,8 @@ final class PGNArchive {
             round: games.count + 1,
             result: .ongoing,
             eco: nil,
-            openingName: nil
+            openingName: nil,
+            metadata: metadata
         ), at: 0)
         activeGameID = id
     }

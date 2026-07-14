@@ -15,7 +15,7 @@ private struct ShareablePGNExport: Identifiable {
 struct NotationPanelView: View {
     let game: ChessGame
     @Bindable var pgnArchive: PGNArchive
-    let metadata: PGNMetadata
+    let defaultMetadata: PGNMetadata
     var hidePGNHeaderTags: Bool = true
     let engineAnalysisVisible: Bool
     let engineAnalysisUseAlgebraicNotation: Bool
@@ -89,7 +89,6 @@ struct NotationPanelView: View {
                             } content: {
                                 GamePGNRowView(
                                     recordedGame: recordedGame,
-                                    metadata: metadata,
                                     presentation: cachedRows[recordedGame.id],
                                     hideHeaderTags: hidePGNHeaderTags,
                                     isActive: recordedGame.id == pgnArchive.activeGameID,
@@ -107,9 +106,9 @@ struct NotationPanelView: View {
                                 recordedGame: RecordedGame(
                                     moves: game.moves,
                                     round: 1,
-                                    result: game.gameResult
+                                    result: game.gameResult,
+                                    metadata: defaultMetadata
                                 ),
-                                metadata: metadata,
                                 presentation: fallbackActiveRowPresentation(),
                                 hideHeaderTags: hidePGNHeaderTags,
                                 isActive: true,
@@ -146,7 +145,6 @@ struct NotationPanelView: View {
             activeGameID: pgnArchive.activeGameID,
             activePlyIndex: game.activePlyIndex,
             isAtLatestMove: game.isAtLatestMove,
-            metadata: metadata,
             hidePGNHeaderTags: hidePGNHeaderTags
         )
     }
@@ -160,7 +158,6 @@ struct NotationPanelView: View {
             activeGameID: pgnArchive.activeGameID,
             activePlyIndex: game.activePlyIndex,
             isAtLatestMove: game.isAtLatestMove,
-            metadata: metadata,
             hidePGNHeaderTags: hidePGNHeaderTags
         )
         cachedRows = builtRows
@@ -172,8 +169,7 @@ struct NotationPanelView: View {
                 moves: game.moves,
                 round: 1,
                 result: game.gameResult,
-                eco: nil,
-                openingName: nil
+                metadata: defaultMetadata
             ),
             eco: nil,
             activePlyIndex: game.activePlyIndex,
@@ -183,7 +179,7 @@ struct NotationPanelView: View {
     }
 
     private func copyPGNToClipboard() {
-        cachedFullPGN = PGNExportService.fullPGN(for: pgnArchive, metadata: metadata)
+        cachedFullPGN = PGNExportService.fullPGN(for: pgnArchive)
         #if os(iOS)
         UIPasteboard.general.string = cachedFullPGN
         #else
@@ -193,7 +189,7 @@ struct NotationPanelView: View {
     }
 
     private func sharePGN() {
-        cachedFullPGN = PGNExportService.fullPGN(for: pgnArchive, metadata: metadata)
+        cachedFullPGN = PGNExportService.fullPGN(for: pgnArchive)
         guard !cachedFullPGN.isEmpty else { return }
         do {
             let url = try PGNExportService.writeTemporaryFile(content: cachedFullPGN)
@@ -213,7 +209,6 @@ struct NotationPanelView: View {
 
 private struct GamePGNRowView: View {
     let recordedGame: RecordedGame
-    let metadata: PGNMetadata
     let presentation: GameRowPresentation?
     var hideHeaderTags: Bool = true
     let isActive: Bool
@@ -251,7 +246,7 @@ private struct GamePGNRowView: View {
                 Text(PGNFormatter.headers(
                     round: recordedGame.round,
                     result: recordedGame.result,
-                    metadata: metadata,
+                    metadata: recordedGame.metadata,
                     date: recordedGame.date,
                     eco: presentation?.eco
                 ))

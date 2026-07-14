@@ -45,6 +45,10 @@ struct StoredRecordedGame: Codable, Equatable {
     let date: Date
     let eco: String?
     let openingName: String?
+    let event: String?
+    let site: String?
+    let white: String?
+    let black: String?
 }
 
 struct StoredChessMove: Codable, Equatable {
@@ -68,7 +72,11 @@ enum SessionSnapshotCoding {
             result: game.result.rawValue,
             date: game.date,
             eco: game.eco,
-            openingName: game.openingName
+            openingName: game.openingName,
+            event: game.metadata.event,
+            site: game.metadata.site,
+            white: game.metadata.white,
+            black: game.metadata.black
         )
     }
 
@@ -84,7 +92,17 @@ enum SessionSnapshotCoding {
             result: result,
             date: stored.date,
             eco: stored.eco,
-            openingName: stored.openingName
+            openingName: stored.openingName,
+            metadata: metadata(from: stored)
+        )
+    }
+
+    private static func metadata(from stored: StoredRecordedGame) -> PGNMetadata {
+        PGNMetadata(
+            event: stored.event ?? PGNMetadata.placeholder.event,
+            site: stored.site ?? PGNMetadata.placeholder.site,
+            white: stored.white ?? PGNMetadata.placeholder.white,
+            black: stored.black ?? PGNMetadata.placeholder.black
         )
     }
 }

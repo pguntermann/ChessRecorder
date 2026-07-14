@@ -212,7 +212,11 @@ final class SessionStoreTests: XCTestCase {
             result: "not-a-result",
             date: Date(),
             eco: nil,
-            openingName: nil
+            openingName: nil,
+            event: nil,
+            site: nil,
+            white: nil,
+            black: nil
         )
         try SessionTestSupport.writeStoredGame(invalidStored, in: temporaryDirectory)
 
@@ -252,7 +256,11 @@ final class SessionStoreTests: XCTestCase {
             result: PGNResult.ongoing.rawValue,
             date: Date(),
             eco: nil,
-            openingName: nil
+            openingName: nil,
+            event: nil,
+            site: nil,
+            white: nil,
+            black: nil
         )
         try SessionTestSupport.writeStoredGame(invalidStored, in: temporaryDirectory)
 
@@ -334,6 +342,41 @@ final class SessionStoreTests: XCTestCase {
         XCTAssertTrue(store.hasStoredSession)
         XCTAssertEqual(store.restoreSession()?.games.first?.moves.first?.san, "e4")
     }
+
+    func testDecodeGameWithoutMetadataFieldsUsesPlaceholder() {
+        let stored = StoredRecordedGame(
+            id: UUID(),
+            moves: [SessionTestFixtures.storedMove(from: SessionTestFixtures.makeE4Move())],
+            round: 1,
+            result: PGNResult.ongoing.rawValue,
+            date: Date(),
+            eco: nil,
+            openingName: nil,
+            event: nil,
+            site: nil,
+            white: nil,
+            black: nil
+        )
+
+        let decoded = SessionSnapshotCoding.decodeGame(stored)
+        XCTAssertEqual(decoded?.metadata, PGNMetadata.placeholder)
+    }
+
+    func testEncodeDecodeRoundTripsPerGameMetadata() {
+        let metadata = PGNMetadata(event: "Swiss", site: "Berlin", white: "Carlsen", black: "Nepo")
+        let game = RecordedGame(
+            id: UUID(),
+            moves: [SessionTestFixtures.makeE4Move()],
+            round: 3,
+            result: .ongoing,
+            metadata: metadata
+        )
+
+        let stored = SessionSnapshotCoding.encodeGame(game)
+        let decoded = SessionSnapshotCoding.decodeGame(stored)
+
+        XCTAssertEqual(decoded?.metadata, metadata)
+    }
 }
 
 // MARK: - Archive + session integration tests
@@ -344,6 +387,7 @@ final class SessionArchiveIntegrationTests: XCTestCase {
     private var store: SessionStore!
     private var archive: PGNArchive!
     private var game: ChessGame!
+    private let testMetadata = PGNMetadata.placeholder
 
     override func setUpWithError() throws {
         temporaryDirectory = makeTemporaryDirectory()
@@ -432,10 +476,10 @@ final class SessionArchiveIntegrationTests: XCTestCase {
 
     func testNewGamePersistsFinishedAndOngoingGames() throws {
         let firstID = setUpSingleGameArchive()
-        archive.finalizeActiveGame(with: .whiteWins, from: game)
+        archive.finalizeActiveGame(with: .whiteWins, from: game, metadataForNewGame: testMetadata)
         game.resetGame()
         SessionTestFixtures.playSANLine(["Nf3"], on: game)
-        archive.syncActiveGame(from: game)
+        archive.syncActiveGame(from: game, metadata: testMetadata)
         let ongoingID = try XCTUnwrap(archive.activeGameID)
 
         flushArchiveToDisk()
@@ -459,11 +503,11 @@ final class SessionArchiveIntegrationTests: XCTestCase {
     func testTakebackUpdatesStoredMoveList() throws {
         _ = setUpSingleGameArchive()
         SessionTestFixtures.playSANLine(["Nf3", "Nc6"], on: game)
-        archive.syncActiveGame(from: game)
+        archive.syncActiveGame(from: game, metadata: testMetadata)
         flushArchiveToDisk()
 
         XCTAssertTrue(game.undoLastMove())
-        archive.syncActiveGame(from: game)
+        archive.syncActiveGame(from: game, metadata: testMetadata)
         flushArchiveToDisk()
 
         let restored = try XCTUnwrap(store.restoreSession())
@@ -472,6 +516,32 @@ final class SessionArchiveIntegrationTests: XCTestCase {
         let replayGame = ChessGame()
         XCTAssertTrue(replayGame.loadMainLine(moves: restored.games.first!.moves))
         XCTAssertEqual(replayGame.moves.count, 3)
+    }
+
+    func testPerGamePGNMetadataSurvivesSessionRestore() throws {
+        let whiteAsWhite = PGNMetadata(event: "Club Night", site: "Table 1", white: "Alice", black: "Bob")
+        let blackAsWhite = PGNMetadata(event: "Club Night", site: "Table 1", white: "Bob", black: "Alice")
+
+        archive.ensureActiveGameExists(metadata: whiteAsWhite)
+        SessionTestFixtures.playSANLine(["e4", "e5"], on: game)
+        archive.syncActiveGame(from: game, metadata: whiteAsWhite)
+        let firstID = try XCTUnwrap(archive.activeGameID)
+
+        archive.finalizeActiveGame(with: .whiteWins, from: game, metadataForNewGame: blackAsWhite)
+        game.resetGame()
+        let secondID = try XCTUnwrap(archive.activeGameID)
+        SessionTestFixtures.playSANLine(["d4"], on: game)
+        archive.syncActiveGame(from: game, metadata: blackAsWhite)
+
+        flushArchiveToDisk()
+
+        let restored = try XCTUnwrap(store.restoreSession())
+        archive.applySessionSnapshot(restored)
+
+        let firstGame = archive.games.first { $0.id == firstID }
+        let secondGame = archive.games.first { $0.id == secondID }
+        XCTAssertEqual(firstGame?.metadata, whiteAsWhite)
+        XCTAssertEqual(secondGame?.metadata, blackAsWhite)
     }
 
     func testRestoreAfterDeleteRoundTripsArchiveAndBoard() throws {
@@ -523,19 +593,19 @@ final class SessionArchiveIntegrationTests: XCTestCase {
 
     @discardableResult
     private func setUpSingleGameArchive() -> UUID {
-        archive.ensureActiveGameExists()
+        archive.ensureActiveGameExists(metadata: testMetadata)
         SessionTestFixtures.playSANLine(["e4", "e5"], on: game)
-        archive.syncActiveGame(from: game)
+        archive.syncActiveGame(from: game, metadata: testMetadata)
         return archive.activeGameID!
     }
 
     @discardableResult
     private func setUpTwoGameArchive() -> (olderGameID: UUID, activeGameID: UUID) {
         let olderGameID = setUpSingleGameArchive()
-        archive.finalizeActiveGame(with: .ongoing, from: game)
+        archive.finalizeActiveGame(with: .ongoing, from: game, metadataForNewGame: testMetadata)
         game.resetGame()
         SessionTestFixtures.playSANLine(["d4"], on: game)
-        archive.syncActiveGame(from: game)
+        archive.syncActiveGame(from: game, metadata: testMetadata)
         return (olderGameID, archive.activeGameID!)
     }
 

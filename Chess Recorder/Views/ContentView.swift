@@ -649,6 +649,58 @@ struct ContentView: View {
         speechRecognizer.resetTranscriptDisplay()
     }
 
+    private struct PreparedGameSwitch {
+        let staging: ChessGame
+        let recordedGame: RecordedGame?
+    }
+
+    private func syncOutgoingGameToArchive() {
+        if !pgnArchive.activeGameIsReviewOnly {
+            pgnArchive.syncActiveGame(from: game, opening: openingService.display)
+        }
+    }
+
+    private func prepareLoadedGame(for id: UUID?) async -> PreparedGameSwitch {
+        beginArchiveSelection()
+
+        guard let id,
+              let recordedGame = pgnArchive.games.first(where: { $0.id == id }) else {
+            return PreparedGameSwitch(staging: ChessGame(), recordedGame: nil)
+        }
+
+        let moves = recordedGame.moves
+        let result = recordedGame.result
+        let staging = await Task.detached(priority: .userInitiated) {
+            ChessGame.prepared(from: moves, result: result)
+        }.value
+
+        return PreparedGameSwitch(staging: staging, recordedGame: recordedGame)
+    }
+
+    private func commitPreparedGameSwitch(_ prepared: PreparedGameSwitch?) {
+        guard let prepared else {
+            finishArchiveSelection()
+            return
+        }
+
+        if let recordedGame = prepared.recordedGame {
+            game.replaceMainLine(with: prepared.staging)
+            if recordedGame.result != .ongoing {
+                game.declareResult(recordedGame.result)
+            }
+        } else {
+            game.resetGame()
+        }
+
+        openingService.refresh(game: game)
+        refreshEngineIfAppropriate()
+        finishArchiveSelection()
+
+        if speechRecognizer.isRecording, pgnArchive.activeGameIsReviewOnly {
+            speechRecognizer.stopRecording()
+        }
+    }
+
     private func activateGame(id: UUID) {
         guard pgnArchive.activeGameID != id, !isGameSwitchAnimating else { return }
 
@@ -656,6 +708,8 @@ struct ContentView: View {
             applyGameSelection(id: id)
             return
         }
+
+        syncOutgoingGameToArchive()
 
         let previousID = pgnArchive.activeGameID
         let direction = gameSwitchDirection(from: previousID, to: id)
@@ -670,11 +724,16 @@ struct ContentView: View {
             isGameSwitchAnimating = true
             defer { isGameSwitchAnimating = false }
 
+            var prepared: PreparedGameSwitch?
             await GameSwitchSlideAnimator.run(
                 direction: direction,
                 distance: slideDistance,
                 setOffset: { gameSwitchSlideOffset = $0 },
-                swapContent: { applyGameSelection(id: id) }
+                prepareSwap: {
+                    pgnArchive.setActiveGame(id: id)
+                    prepared = await prepareLoadedGame(for: id)
+                },
+                swapContent: { commitPreparedGameSwitch(prepared) }
             )
         }
     }
@@ -707,11 +766,15 @@ struct ContentView: View {
             isGameSwitchAnimating = true
             defer { isGameSwitchAnimating = false }
 
+            var prepared: PreparedGameSwitch?
             await GameSwitchSlideAnimator.run(
                 direction: direction,
                 distance: slideDistance,
                 setOffset: { gameSwitchSlideOffset = $0 },
-                swapContent: { loadActiveGameAfterDeletion(nextActiveID: nextActiveID) }
+                prepareSwap: {
+                    prepared = await prepareLoadedGame(for: nextActiveID)
+                },
+                swapContent: { commitPreparedGameSwitch(prepared) }
             )
         }
     }

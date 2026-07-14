@@ -64,11 +64,13 @@ enum GameSwitchSlideAnimator {
         direction: GameSwitchDirection,
         distance: CGFloat,
         setOffset: @escaping (CGFloat) -> Void,
+        prepareSwap: @escaping () async -> Void,
         swapContent: @escaping () -> Void
     ) async {
         await Task.yield()
 
         guard distance > 0 else {
+            await prepareSwap()
             swapContent()
             return
         }
@@ -83,8 +85,12 @@ enum GameSwitchSlideAnimator {
         }
         await Task.yield()
 
+        async let preparation: Void = prepareSwap()
+
         setOffset(multiplier * distance)
         try? await Task.sleep(for: .seconds(duration))
+
+        await preparation
 
         swapContent()
 

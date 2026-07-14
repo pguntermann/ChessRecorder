@@ -360,6 +360,21 @@ class ChessGame {
         return replayMainLine(recordedMoves)
     }
 
+    /// Builds a fully replayed game for staged archive activation (e.g. during slide transitions).
+    static func prepared(from moves: [ChessMove], result: PGNResult = .ongoing) -> ChessGame {
+        let prepared = ChessGame()
+        _ = prepared.loadMainLine(moves: moves)
+        if result != .ongoing {
+            prepared.declareResult(result)
+        }
+        return prepared
+    }
+
+    /// Replaces this game's main line with another game's replayed state.
+    func replaceMainLine(with source: ChessGame) {
+        restoreSnapshot(source.captureSnapshot())
+    }
+
     var isGameOver: Bool {
         gameResult != .ongoing
     }
@@ -411,7 +426,28 @@ class ChessGame {
     @discardableResult
     private func replayMainLine(_ recordedMoves: [ChessMove]) -> Bool {
         let snapshot = captureSnapshot()
+        resetForMainLineReplay()
 
+        var rebuiltMoves: [ChessMove] = []
+        rebuiltMoves.reserveCapacity(recordedMoves.count)
+
+        for recordedMove in recordedMoves {
+            guard let kitMove = makeReplayKitMove(for: recordedMove) else {
+                restoreSnapshot(snapshot)
+                return false
+            }
+            currentIndex = kitGame.make(move: kitMove, from: currentIndex)
+            rebuiltMoves.append(ChessKitMapping.appMove(from: kitMove))
+        }
+
+        moves = rebuiltMoves
+        activePlyIndex = rebuiltMoves.count
+        invalidateLegalMovesCache()
+        syncBoardFromKit()
+        return true
+    }
+
+    private func resetForMainLineReplay() {
         kitBoard = Board()
         kitGame = ChessKit.Game()
         currentIndex = kitGame.startingIndex
@@ -422,22 +458,90 @@ class ChessGame {
         activeMoveAnimation = nil
         activeTakebackAnimation = nil
         invalidateLegalMovesCache()
-        syncBoardFromKit()
         activePlyIndex = 0
+    }
 
-        for recordedMove in recordedMoves {
-            let applied = applyReplayMove(
-                from: recordedMove.from,
-                to: recordedMove.to,
-                promotion: recordedMove.promotion
-            ) || applyReplaySAN(recordedMove.san)
-
-            guard applied else {
-                restoreSnapshot(snapshot)
-                return false
-            }
+    private func makeReplayKitMove(for recordedMove: ChessMove) -> Move? {
+        if let move = makeReplayKitMove(
+            from: recordedMove.from,
+            to: recordedMove.to,
+            promotion: recordedMove.promotion
+        ) {
+            return move
         }
-        return true
+        return makeReplayKitMoveFromSAN(recordedMove.san)
+    }
+
+    private func makeReplayKitMove(
+        from: ChessPosition,
+        to: ChessPosition,
+        promotion: PieceType?
+    ) -> Move? {
+        let start = ChessKitMapping.kitSquare(from: from)
+        let end = ChessKitMapping.kitSquare(from: to)
+        guard kitBoard.position.piece(at: start) != nil else { return nil }
+
+        guard var kitMove = kitBoard.move(pieceAt: start, to: end) else {
+            return nil
+        }
+
+        if case .promotion(let promoMove) = kitBoard.state {
+            let kind = ChessKitMapping.kitKind(promotion ?? .queen)
+            kitMove = kitBoard.completePromotion(of: promoMove, to: kind)
+        }
+
+        return kitMove
+    }
+
+    private func makeReplayKitMoveFromSAN(_ notation: String) -> Move? {
+        if let coordinateMove = ChessKitMapping.parseCoordinateMove(notation),
+           let move = makeReplayKitMove(
+            from: coordinateMove.from,
+            to: coordinateMove.to,
+            promotion: coordinateMove.promotion
+           ) {
+            return move
+        }
+
+        if LegalMoveResolver.requiresExplicitSourceMatch(notation) {
+            return makeReplayKitMoveViaLegalMatch(notation)
+        }
+
+        let normalized = ChessKitMapping.normalizeSAN(notation)
+        let position = kitBoard.position
+
+        if let parsed = Move(san: normalized, position: position)
+            ?? (ChessKitMapping.isPawnFileCaptureSAN(normalized)
+                ? nil
+                : Move(san: normalized.uppercased(), position: position)),
+           let move = applyKitMoveOnBoard(parsed) {
+            return move
+        }
+
+        return makeReplayKitMoveViaLegalMatch(notation)
+    }
+
+    private func makeReplayKitMoveViaLegalMatch(_ notation: String) -> Move? {
+        let legalMoves = enumerateLegalKitMoves()
+        guard let matched = LegalMoveResolver.match(notation: notation, among: legalMoves) else {
+            return nil
+        }
+        return applyKitMoveOnBoard(matched)
+    }
+
+    private func applyKitMoveOnBoard(_ parsed: Move) -> Move? {
+        guard kitBoard.position.piece(at: parsed.start) != nil else { return nil }
+
+        guard var kitMove = kitBoard.move(pieceAt: parsed.start, to: parsed.end) else {
+            return nil
+        }
+
+        if case .promotion(let promoMove) = kitBoard.state {
+            let kind = parsed.promotedPiece?.kind ?? .queen
+            kitMove = kitBoard.completePromotion(of: promoMove, to: kind)
+        }
+
+        return kitMove
     }
 
     /// Removes the last main-line move by rebuilding a shorter ChessKit tree from stored `Move`s.

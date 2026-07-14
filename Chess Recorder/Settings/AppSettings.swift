@@ -48,6 +48,7 @@ struct AppSettings: Codable, Equatable {
     var showCoordinates: Bool
     var coordinatesOutsideBoard: Bool
     var moveAnimationDuration: Double
+    var gameSwitchAnimationEnabled: Bool
     var dictationPauseSeconds: Double
     var touchInputEnabled: Bool
     var touchInputHighlightColor: CodableColor
@@ -80,6 +81,7 @@ struct AppSettings: Codable, Equatable {
         case showCoordinates
         case coordinatesOutsideBoard
         case moveAnimationDuration
+        case gameSwitchAnimationEnabled
         case dictationPauseSeconds
         case touchInputEnabled
         case touchInputHighlightColor
@@ -111,6 +113,7 @@ struct AppSettings: Codable, Equatable {
         showCoordinates: Bool = true,
         coordinatesOutsideBoard: Bool = true,
         moveAnimationDuration: Double,
+        gameSwitchAnimationEnabled: Bool = true,
         dictationPauseSeconds: Double = 0.9,
         touchInputEnabled: Bool = true,
         touchInputHighlightColor: CodableColor = CodableColor(red: 0, green: 0.478, blue: 1),
@@ -140,6 +143,7 @@ struct AppSettings: Codable, Equatable {
         self.showCoordinates = showCoordinates
         self.coordinatesOutsideBoard = coordinatesOutsideBoard
         self.moveAnimationDuration = moveAnimationDuration
+        self.gameSwitchAnimationEnabled = gameSwitchAnimationEnabled
         self.dictationPauseSeconds = dictationPauseSeconds
         self.touchInputEnabled = touchInputEnabled
         self.touchInputHighlightColor = touchInputHighlightColor
@@ -172,6 +176,7 @@ struct AppSettings: Codable, Equatable {
         showCoordinates = try container.decodeIfPresent(Bool.self, forKey: .showCoordinates) ?? true
         coordinatesOutsideBoard = try container.decodeIfPresent(Bool.self, forKey: .coordinatesOutsideBoard) ?? true
         moveAnimationDuration = try container.decodeIfPresent(Double.self, forKey: .moveAnimationDuration) ?? 0.35
+        gameSwitchAnimationEnabled = try container.decodeIfPresent(Bool.self, forKey: .gameSwitchAnimationEnabled) ?? true
         dictationPauseSeconds = try container.decodeIfPresent(Double.self, forKey: .dictationPauseSeconds) ?? 0.9
         touchInputEnabled = try container.decodeIfPresent(Bool.self, forKey: .touchInputEnabled) ?? true
         touchInputHighlightColor = try container.decodeIfPresent(CodableColor.self, forKey: .touchInputHighlightColor)
@@ -222,6 +227,7 @@ struct AppSettings: Codable, Equatable {
         showCoordinates: true,
         coordinatesOutsideBoard: true,
         moveAnimationDuration: 0.35,
+        gameSwitchAnimationEnabled: true,
         dictationPauseSeconds: 0.9,
         touchInputEnabled: true,
         touchInputHighlightColor: CodableColor(red: 0, green: 0.478, blue: 1),

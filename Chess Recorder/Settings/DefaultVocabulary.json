@@ -50,6 +50,13 @@
       "updatedAt" : "2026-01-01T00:00:00Z"
     },
     {
+      "heard" : "ich",
+      "id" : "D5E6F7A8-B9C0-1234-DEF1-456789012345",
+      "languageCode" : "de-DE",
+      "replacement" : "e",
+      "updatedAt" : "2026-01-01T00:00:00Z"
+    },
+    {
       "heard" : "zeh",
       "id" : "C4D5E6F7-A8B9-0123-CDEF-345678901234",
       "languageCode" : "de-DE",

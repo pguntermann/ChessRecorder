@@ -944,7 +944,7 @@ final class PersonalVocabularyStore {
     
     private static let bundledDefaultsMigrationKey = "PersonalVocabularyDidMigrateBundledDefaults"
     private static let bundledCorrectionsRevisionKey = "PersonalVocabularyBundledCorrectionsRevision"
-    private static let currentBundledCorrectionsRevision = 4
+    private static let currentBundledCorrectionsRevision = 5
 
     private func load() {
         if let file = Self.loadVocabulary(from: storageURL) {

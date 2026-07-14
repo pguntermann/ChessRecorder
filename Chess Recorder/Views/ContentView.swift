@@ -29,6 +29,9 @@ struct ContentView: View {
     @State private var pendingSpeechModelWork = PendingSpeechModelWork()
     @State private var showSpeechModelRebuildOverlay = false
     @State private var isApplyingArchiveSelection = false
+    @State private var gameSwitchSlideOffset: CGFloat = 0
+    @State private var isGameSwitchAnimating = false
+    @State private var gameSwitchContainerWidth: CGFloat = 0
     
     init(
         settingsStore: SettingsStore,
@@ -300,35 +303,51 @@ struct ContentView: View {
         )
         let boardDimensions = BoardLayoutMetrics.Dimensions(boardSide: footprint.boardSide)
 
-        return VStack(alignment: .leading, spacing: compactOpening ? 6 : 10) {
-            OpeningNameView(
-                display: openingService.display,
-                isVisible: settings.openingNameVisible,
-                isLoaded: openingService.isLoaded,
-                hasMoves: !game.moves.isEmpty,
-                compact: compactOpening
-            )
+        return GameSwitchSlideContainer(
+            offset: $gameSwitchSlideOffset,
+            measuredWidth: $gameSwitchContainerWidth
+        ) {
+            VStack(alignment: .leading, spacing: compactOpening ? 6 : 10) {
+                OpeningNameView(
+                    display: openingService.display,
+                    isVisible: settings.openingNameVisible,
+                    isLoaded: openingService.isLoaded,
+                    hasMoves: !game.moves.isEmpty,
+                    compact: compactOpening
+                )
 
-            boardLayout(boardSide: boardDimensions.side)
-                .frame(maxWidth: .infinity)
-                .frame(height: footprint.totalHeight)
+                boardLayout(boardSide: boardDimensions.side)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: footprint.totalHeight)
 
-            MoveNavigationBar(
-                game: game,
-                iconHitSize: iconHitSize,
-                onGoToFirst: navigateToFirst,
-                onGoToPrevious: navigateBack,
-                onGoToNext: navigateForward,
-                onGoToLatest: navigateToLatest,
-                onGoToPly: navigateToPly,
-                onFlipBoard: {
-                    withAnimation(.easeInOut(duration: 0.25)) {
-                        boardOrientation.toggle()
+                MoveNavigationBar(
+                    game: game,
+                    iconHitSize: iconHitSize,
+                    onGoToFirst: navigateToFirst,
+                    onGoToPrevious: navigateBack,
+                    onGoToNext: navigateForward,
+                    onGoToLatest: navigateToLatest,
+                    onGoToPly: navigateToPly,
+                    onFlipBoard: {
+                        withAnimation(.easeInOut(duration: 0.25)) {
+                            boardOrientation.toggle()
+                        }
                     }
-                }
-            )
+                )
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .allowsHitTesting(!isGameSwitchAnimating)
+        .onAppear {
+            if availableWidth > 0 {
+                gameSwitchContainerWidth = availableWidth
+            }
+        }
+        .onChange(of: availableWidth) { _, width in
+            if width > 0 {
+                gameSwitchContainerWidth = width
+            }
+        }
     }
 
     private func boardLayout(boardSide: CGFloat) -> some View {
@@ -631,8 +650,79 @@ struct ContentView: View {
     }
 
     private func activateGame(id: UUID) {
-        guard pgnArchive.activeGameID != id else { return }
+        guard pgnArchive.activeGameID != id, !isGameSwitchAnimating else { return }
 
+        guard settingsStore.settings.gameSwitchAnimationEnabled else {
+            applyGameSelection(id: id)
+            return
+        }
+
+        let previousID = pgnArchive.activeGameID
+        let direction = gameSwitchDirection(from: previousID, to: id)
+        Task { @MainActor in
+            await Task.yield()
+            let slideDistance = gameSwitchContainerWidth
+            guard slideDistance > 0 else {
+                applyGameSelection(id: id)
+                return
+            }
+
+            isGameSwitchAnimating = true
+            defer { isGameSwitchAnimating = false }
+
+            await GameSwitchSlideAnimator.run(
+                direction: direction,
+                distance: slideDistance,
+                setOffset: { gameSwitchSlideOffset = $0 },
+                swapContent: { applyGameSelection(id: id) }
+            )
+        }
+    }
+
+    private func deleteGame(id: UUID) {
+        guard !isGameSwitchAnimating else { return }
+
+        if !pgnArchive.activeGameIsReviewOnly {
+            pgnArchive.syncActiveGame(from: game, opening: openingService.display)
+        }
+
+        let previousID = pgnArchive.activeGameID
+        let nextActiveID = pgnArchive.removeGame(id: id)
+
+        guard settingsStore.settings.gameSwitchAnimationEnabled else {
+            loadActiveGameAfterDeletion(nextActiveID: nextActiveID)
+            return
+        }
+
+        let direction = gameSwitchDirection(from: previousID, to: nextActiveID)
+
+        Task { @MainActor in
+            await Task.yield()
+            let slideDistance = gameSwitchContainerWidth
+            guard slideDistance > 0 else {
+                loadActiveGameAfterDeletion(nextActiveID: nextActiveID)
+                return
+            }
+
+            isGameSwitchAnimating = true
+            defer { isGameSwitchAnimating = false }
+
+            await GameSwitchSlideAnimator.run(
+                direction: direction,
+                distance: slideDistance,
+                setOffset: { gameSwitchSlideOffset = $0 },
+                swapContent: { loadActiveGameAfterDeletion(nextActiveID: nextActiveID) }
+            )
+        }
+    }
+
+    private func gameSwitchDirection(from oldID: UUID?, to newID: UUID?) -> GameSwitchDirection {
+        let oldIndex = oldID.flatMap { id in pgnArchive.games.firstIndex { $0.id == id } }
+        let newIndex = newID.flatMap { id in pgnArchive.games.firstIndex { $0.id == id } }
+        return GameSwitchDirection.between(oldIndex: oldIndex, newIndex: newIndex)
+    }
+
+    private func applyGameSelection(id: UUID) {
         if !pgnArchive.activeGameIsReviewOnly {
             pgnArchive.syncActiveGame(from: game, opening: openingService.display)
         }
@@ -651,19 +741,16 @@ struct ContentView: View {
         if recordedGame.result != .ongoing {
             game.declareResult(recordedGame.result)
         }
+        openingService.refresh(game: game)
+        refreshEngineIfAppropriate()
+        finishArchiveSelection()
 
         if speechRecognizer.isRecording, pgnArchive.activeGameIsReviewOnly {
             speechRecognizer.stopRecording()
         }
-        finishArchiveSelection()
     }
 
-    private func deleteGame(id: UUID) {
-        if !pgnArchive.activeGameIsReviewOnly {
-            pgnArchive.syncActiveGame(from: game, opening: openingService.display)
-        }
-        let nextActiveID = pgnArchive.removeGame(id: id)
-
+    private func loadActiveGameAfterDeletion(nextActiveID: UUID?) {
         beginArchiveSelection()
         if let nextActiveID,
            let recordedGame = pgnArchive.games.first(where: { $0.id == nextActiveID }) {
@@ -674,11 +761,13 @@ struct ContentView: View {
         } else {
             game.resetGame()
         }
+        openingService.refresh(game: game)
+        refreshEngineIfAppropriate()
+        finishArchiveSelection()
 
         if speechRecognizer.isRecording, pgnArchive.activeGameIsReviewOnly {
             speechRecognizer.stopRecording()
         }
-        finishArchiveSelection()
     }
 
     private func beginArchiveSelection() {

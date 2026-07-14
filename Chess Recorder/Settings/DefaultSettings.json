@@ -36,6 +36,7 @@
     "red" : 0.86
   },
   "moveAnimationDuration" : 0.35,
+  "gameSwitchAnimationEnabled" : true,
   "pgnBlack" : "?",
   "pgnEvent" : "Chess Recorder",
   "pgnHideHeaderTags" : true,

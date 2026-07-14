@@ -210,6 +210,13 @@ struct SettingsView: View {
                             }
                         ), in: 0...1.0, step: 0.05)
                     }
+
+                    Toggle("Play animation when switching games", isOn: Binding(
+                        get: { settingsStore.settings.gameSwitchAnimationEnabled },
+                        set: { newValue in
+                            settingsStore.update { $0.gameSwitchAnimationEnabled = newValue }
+                        }
+                    ))
                     
                     ColorPicker("Light squares", selection: $lightColor, supportsOpacity: false)
                         .onChange(of: lightColor) { _, color in

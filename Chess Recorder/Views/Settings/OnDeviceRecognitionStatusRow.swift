@@ -10,7 +10,7 @@ struct OnDeviceRecognitionStatusRow: View {
     let language: RecognitionLanguage
     /// Custom chess language model is ready for this language.
     var isLanguageModelReady: Bool = false
-    /// Custom model preparation failed or was skipped after a prior failure.
+    /// Custom model preparation failed for this session (next cold boot may retry).
     var languageModelCompilationFailed: Bool = false
 
     @State private var supportsOnDevice: Bool?

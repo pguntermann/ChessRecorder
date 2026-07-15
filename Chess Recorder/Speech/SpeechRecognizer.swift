@@ -46,7 +46,7 @@ class SpeechRecognizer {
     var isAuthorized = false
     var isMicrophoneAuthorized = false
     var isLanguageModelReady = false
-    /// True when the custom language model is missing after prepare (compile failed or skipped).
+    /// True when the custom language model is missing after prepare for this session.
     var languageModelCompilationFailed = false
     /// Set when recognition cannot be recovered for this recording session.
     var recognitionSessionError: String?

@@ -48,22 +48,6 @@ enum ChessLanguageModel {
             return restored
         }
 
-        let directory = storageDirectory()
-        if PreparedLanguageModelDiskCache.shouldSkipCompileDueToPriorFailure(
-            for: language,
-            baseModelVersion: baseModelVersion,
-            in: directory
-        ) {
-            print(
-                "ChessLanguageModel: skipping compile for \(language.rawValue) — prior failure for model \(baseModelVersion)"
-            )
-            await reportStatus(
-                "Custom chess language model unavailable — using standard recognition.",
-                onStatusChange: onStatusChange
-            )
-            return nil
-        }
-
         logDiskRestore("not used for \(language.rawValue); performing full compile")
 
         await reportPhase(.preparingSpeechVocabulary, onPhaseChange: onPhaseChange)
@@ -254,16 +238,10 @@ enum ChessLanguageModel {
             }
             
             registerPreparedConfiguration(config, for: language, revision: revision)
-            PreparedLanguageModelDiskCache.clearCompileFailure(for: language, in: directory)
             print("ChessLanguageModel: ready for \(language.rawValue) (model \(baseModelVersion), vocab revision \(revision), \(personalPhrases.count) seeded phrases)")
             return config
         } catch {
             PreparedLanguageModelDiskCache.removeArtifacts(for: language, in: directory)
-            PreparedLanguageModelDiskCache.markCompileFailure(
-                for: language,
-                baseModelVersion: baseModelVersion,
-                in: directory
-            )
             print("ChessLanguageModel: preparation failed — \(error.localizedDescription)")
             return nil
         }
@@ -557,50 +535,6 @@ enum PreparedLanguageModelDiskCache {
 
     static func manifestURL(for language: RecognitionLanguage, in directory: URL) -> URL {
         directory.appendingPathComponent("\(language.rawValue)-manifest.json")
-    }
-
-    static func compileFailureURL(for language: RecognitionLanguage, in directory: URL) -> URL {
-        directory.appendingPathComponent("\(language.rawValue)-compile-failed.json")
-    }
-
-    private struct CompileFailureMarker: Codable, Equatable {
-        let baseModelVersion: String
-    }
-
-    /// After `prepareCustomLanguageModel` fails for a locale, calling it again is avoided for
-    /// this model version so startup can use recognition without a custom language model.
-    static func shouldSkipCompileDueToPriorFailure(
-        for language: RecognitionLanguage,
-        baseModelVersion: String,
-        in directory: URL,
-        fileManager: FileManager = .default
-    ) -> Bool {
-        guard let data = try? Data(contentsOf: compileFailureURL(for: language, in: directory)),
-              let marker = try? JSONDecoder().decode(CompileFailureMarker.self, from: data) else {
-            return false
-        }
-        return marker.baseModelVersion == baseModelVersion
-    }
-
-    static func markCompileFailure(
-        for language: RecognitionLanguage,
-        baseModelVersion: String,
-        in directory: URL,
-        fileManager: FileManager = .default
-    ) {
-        let marker = CompileFailureMarker(baseModelVersion: baseModelVersion)
-        guard let data = try? JSONEncoder().encode(marker) else { return }
-        let url = compileFailureURL(for: language, in: directory)
-        try? data.write(to: url, options: .atomic)
-        excludeFromBackup(url: url)
-    }
-
-    static func clearCompileFailure(
-        for language: RecognitionLanguage,
-        in directory: URL,
-        fileManager: FileManager = .default
-    ) {
-        try? fileManager.removeItem(at: compileFailureURL(for: language, in: directory))
     }
 
     static func canRestore(

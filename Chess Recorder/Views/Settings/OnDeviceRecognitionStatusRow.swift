@@ -57,7 +57,7 @@ struct OnDeviceRecognitionStatusRow: View {
 
     private var statusColor: Color {
         switch supportsOnDevice {
-        case true: .secondary
+        case true: .green
         case false: .orange
         case nil: .secondary
         }

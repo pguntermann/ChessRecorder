@@ -11,12 +11,33 @@ struct MicrophoneTestSettingsSection: View {
 
     @State private var monitor = MicrophoneLevelMonitor()
     @State private var permissionDenied = false
+    @State private var isStarting = false
 
     var body: some View {
         Group {
-            Button(monitor.isMonitoring ? "Stop microphone test" : "Test microphone") {
+            Button {
                 toggleMicrophoneTest()
+            } label: {
+                HStack(spacing: 8) {
+                    if isStarting {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("Starting test…")
+                    } else {
+                        Image(systemName: monitor.isMonitoring ? "stop.fill" : "mic")
+                            .imageScale(.medium)
+                            .frame(width: 20)
+                        Text(monitor.isMonitoring ? "Stop microphone test" : "Test microphone")
+                    }
+                }
+                .foregroundStyle(buttonForegroundColor)
             }
+            .disabled(isStarting)
+            .accessibilityLabel(
+                isStarting
+                    ? "Starting microphone test"
+                    : (monitor.isMonitoring ? "Stop microphone test" : "Test microphone")
+            )
 
             if monitor.isMonitoring {
                 HStack {
@@ -51,45 +72,68 @@ struct MicrophoneTestSettingsSection: View {
             }
         }
         .onDisappear {
+            isStarting = false
             monitor.stop()
         }
+    }
+
+    private var buttonForegroundColor: Color {
+        if isStarting {
+            return .secondary
+        }
+        if monitor.isMonitoring {
+            return .red
+        }
+        return .blue
     }
 
     private func toggleMicrophoneTest() {
         if monitor.isMonitoring {
             monitor.stop()
+            isStarting = false
             return
         }
+
+        guard !isStarting else { return }
 
         permissionDenied = false
 
         switch AVAudioApplication.shared.recordPermission {
         case .granted:
-            break
+            beginMicrophoneTest()
         case .denied:
             permissionDenied = true
-            return
         case .undetermined:
+            isStarting = true
             AVAudioApplication.requestRecordPermission { granted in
                 Task { @MainActor in
                     if granted {
-                        startMicrophoneTest()
+                        await runMicrophoneTestStartup()
                     } else {
                         permissionDenied = true
+                        isStarting = false
                     }
                 }
             }
-            return
         @unknown default:
             permissionDenied = true
-            return
         }
-
-        startMicrophoneTest()
     }
 
-    private func startMicrophoneTest() {
+    private func beginMicrophoneTest() {
+        isStarting = true
+        Task { @MainActor in
+            await runMicrophoneTestStartup()
+        }
+    }
+
+    @MainActor
+    private func runMicrophoneTestStartup() async {
+        defer { isStarting = false }
+
         onStopRecording()
+        await Task.yield()
+
         do {
             try monitor.start()
         } catch {

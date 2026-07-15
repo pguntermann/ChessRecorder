@@ -684,12 +684,18 @@ nonisolated enum MoveInterpreter {
 
         guard start + 2 < words.count else { return [] }
 
-        let disambiguator = words[start + 1]
+        var disambigIndex = start + 1
+        if disambigIndex < words.count && isSourcePreposition(words[disambigIndex]) {
+            disambigIndex += 1
+        }
+        guard disambigIndex < words.count else { return [] }
+
+        let disambiguator = words[disambigIndex]
         guard let suffix = disambiguationSuffix(forToken: disambiguator, language: language) else {
             return []
         }
 
-        var cursor = start + 2
+        var cursor = disambigIndex + 1
         if cursor < words.count && isMovePreposition(words[cursor]) {
             cursor += 1
         }
@@ -762,6 +768,10 @@ nonisolated enum MoveInterpreter {
     
     private static func isMovePreposition(_ word: String) -> Bool {
         ["auf", "nach", "to", "too", "two", "2"].contains(word.lowercased())
+    }
+
+    private static func isSourcePreposition(_ word: String) -> Bool {
+        ["von", "from"].contains(word.lowercased())
     }
     
     private static func extractPieceToSquare(

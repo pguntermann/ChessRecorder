@@ -267,4 +267,104 @@ final class MoveInterpreterTests: XCTestCase {
             )
         }
     }
+
+    /// Position after 27. Bc5 — black to play; "Springer e d5" should be Ned5 (e7→d5), not another knight move.
+    private static let springerED5GameSANs: [String] = [
+        "e4", "e5", "Nf3", "Nc6", "Bc4", "Nf6", "d4", "exd4", "e5", "Ne4", "O-O", "Be7",
+        "Bd5", "Nc5", "c3", "dxc3", "Nxc3", "O-O", "Be3", "d6", "exd6", "cxd6", "Qe2", "Ne6",
+        "Rad1", "Nc7", "Bf4", "Re8", "Be4", "Ne6", "Be3", "Bf8", "a3", "g6", "b4", "Ne7",
+        "Nb5", "d5", "Nxa7", "dxe4", "Rxd8", "exf3", "Rxe8", "fxe2", "Re1", "Nc7", "Rd8", "Bf5",
+        "Rxa8", "Nxa8", "Rxe2", "Nc7", "Bc5"
+    ]
+
+    private func gameAfterWhite27Bc5() -> ChessGame {
+        let game = ChessGame()
+        for san in Self.springerED5GameSANs {
+            XCTAssertTrue(game.executeSAN(san), "Failed to play \(san)")
+        }
+        XCTAssertTrue(game.isAtLatestMove)
+        XCTAssertEqual(game.currentTurn, .black)
+        return game
+    }
+
+    func testSpringerED5CandidatesPreferNed5AfterBc5() {
+        let game = gameAfterWhite27Bc5()
+
+        let candidates = MoveInterpreter.candidates(
+            from: "Springer e d5",
+            language: .german,
+            transcriptAlreadyNormalized: false
+        )
+
+        XCTAssertFalse(candidates.isEmpty, "Expected move candidates for \"Springer e d5\"")
+        XCTAssertTrue(
+            candidates.contains(where: { $0.caseInsensitiveCompare("Ned5") == .orderedSame }),
+            "Candidates should include Ned5, got: \(candidates.joined(separator: ", "))"
+        )
+        XCTAssertEqual(
+            candidates.first?.lowercased(),
+            "ned5",
+            "Ned5 should be the top candidate, got: \(candidates.prefix(5).joined(separator: ", "))"
+        )
+        XCTAssertFalse(
+            candidates.first?.lowercased() == "ncd5",
+            "Ncd5 must not outrank Ned5 for \"Springer e d5\", got: \(candidates.prefix(5).joined(separator: ", "))"
+        )
+
+        let matched = game.executeVoiceCandidates(candidates)
+        XCTAssertEqual(matched?.lowercased(), "ned5", "Voice execution should play Ned5, got: \(matched ?? "nil")")
+        XCTAssertEqual(game.moves.last?.san, "Ned5")
+        XCTAssertEqual(game.moves.last?.from.notation, "e7")
+    }
+
+    /// Diagnostic: replays the pipeline with tracing enabled. Run alone in Xcode to inspect console output.
+    func testSpringerED5PipelineTrace() {
+        let game = gameAfterWhite27Bc5()
+        let tracer = SpeechPipelineTracer(enabled: true)
+
+        let normalized = ChessTranscriptNormalizer.normalizeForPhraseMatching(
+            "Springer von e auf d5",
+            language: .german,
+            tracer: tracer
+        )
+        let candidates = MoveInterpreter.candidates(
+            from: normalized,
+            language: .german,
+            transcriptAlreadyNormalized: true,
+            tracer: tracer
+        )
+        let matched = game.executeVoiceCandidates(candidates)
+
+        tracer.printReport(
+            language: .german,
+            acceptedMove: matched,
+            rejectedMoves: candidates.filter { $0 != matched }
+        )
+    }
+
+    func testSpringerVonEAufD5CandidatesPreferNed5AfterBc5() {
+        let game = gameAfterWhite27Bc5()
+
+        let candidates = MoveInterpreter.candidates(
+            from: "Springer von e auf d5",
+            language: .german,
+            transcriptAlreadyNormalized: false
+        )
+
+        XCTAssertFalse(candidates.isEmpty, "Expected move candidates for \"Springer von e auf d5\"")
+        XCTAssertTrue(
+            candidates.contains(where: { $0.caseInsensitiveCompare("Ned5") == .orderedSame }),
+            "Candidates should include Ned5, got: \(candidates.joined(separator: ", "))"
+        )
+        XCTAssertEqual(
+            candidates.first?.lowercased(),
+            "ned5",
+            "Ned5 should be the top candidate, got: \(candidates.prefix(5).joined(separator: ", "))"
+        )
+
+        let matched = game.executeVoiceCandidates(candidates)
+        XCTAssertEqual(matched?.lowercased(), "ned5", "Voice execution should play Ned5, got: \(matched ?? "nil")")
+        XCTAssertEqual(game.moves.last?.san, "Ned5")
+        XCTAssertEqual(game.moves.last?.from.notation, "e7")
+    }
 }

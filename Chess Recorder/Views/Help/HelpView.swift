@@ -10,6 +10,12 @@ struct HelpView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openURL) private var openURL
 
+    private static let alternativePhrasingTips = [
+        "\"Knight from e to d5\" — file disambiguation with prepositions",
+        "\"Knight from e7 to d5\" — full source square",
+        "\"e7 to d5\" — coordinates only (when unambiguous)"
+    ]
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -60,13 +66,31 @@ struct HelpView: View {
                         ]
                     )
 
-                    helpSection(
-                        title: "Tips",
-                        cardStyle: true,
-                        body: """
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Tips")
+                            .font(.headline)
+
+                        Text("""
                         If a phrase is not recognized, use Teach phrase after a failed attempt or add custom phrases in Settings. Corrections can fix recurring mis-hearings such as \"9\" → \"knight\".
-                        """
-                    )
+
+                        When a specific wording fails — for example \"Knight e d5\" for a knight from the e-file to d5 — try other phrasings that spell out the move more explicitly:
+                        """)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
+                        VStack(alignment: .leading, spacing: 6) {
+                            ForEach(Self.alternativePhrasingTips, id: \.self) { example in
+                                Text("• \(example)")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                        .padding(.top, 4)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .helpSectionCard()
                 }
                 .padding()
             }

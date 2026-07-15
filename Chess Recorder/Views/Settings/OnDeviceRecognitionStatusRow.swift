@@ -20,13 +20,11 @@ struct OnDeviceRecognitionStatusRow: View {
                     .foregroundStyle(statusColor)
             }
 
-            if supportsOnDevice == false {
-                Text(
-                    "Recognition accuracy is limited. Cloud recognition does not support the custom chess language model. Download Dictation for \(language.displayName) in iOS Settings → General → Keyboard if available."
-                )
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+            if let explanation {
+                Text(explanation)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .accessibilityElement(children: .combine)
@@ -43,6 +41,17 @@ struct OnDeviceRecognitionStatusRow: View {
         case true: "Available"
         case false: "Unavailable"
         case nil: "Checking…"
+        }
+    }
+
+    private var explanation: String? {
+        switch supportsOnDevice {
+        case true:
+            "The app uses on-device recognition for \(language.displayName), including the custom chess language model. No extra setup is required."
+        case false:
+            "Recognition accuracy is limited. Cloud recognition does not support the custom chess language model. Download Dictation for \(language.displayName) in iOS Settings → General → Keyboard if available."
+        case nil:
+            nil
         }
     }
 

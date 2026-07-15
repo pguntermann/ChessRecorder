@@ -10,6 +10,7 @@ struct SettingsView: View {
     @Bindable var settingsStore: SettingsStore
     @Bindable var vocabularyStore: PersonalVocabularyStore
     @Bindable var developerModeStore: DeveloperModeStore
+    @Bindable var speechRecognizer: SpeechRecognizer
     @Binding var pendingSpeechModelWork: PendingSpeechModelWork
     let onStopRecording: () -> Void
     
@@ -28,12 +29,14 @@ struct SettingsView: View {
         settingsStore: SettingsStore,
         vocabularyStore: PersonalVocabularyStore,
         developerModeStore: DeveloperModeStore,
+        speechRecognizer: SpeechRecognizer,
         pendingSpeechModelWork: Binding<PendingSpeechModelWork>,
         onStopRecording: @escaping () -> Void = {}
     ) {
         self.settingsStore = settingsStore
         self.vocabularyStore = vocabularyStore
         self.developerModeStore = developerModeStore
+        self.speechRecognizer = speechRecognizer
         self.onStopRecording = onStopRecording
         _pendingSpeechModelWork = pendingSpeechModelWork
         let settings = settingsStore.settings
@@ -92,7 +95,15 @@ struct SettingsView: View {
                         ), in: 0.3...2.0, step: 0.05)
                     }
 
-                    OnDeviceRecognitionStatusRow(language: selectedLanguage)
+                    OnDeviceRecognitionStatusRow(
+                        language: selectedLanguage,
+                        isLanguageModelReady:
+                            speechRecognizer.currentLanguage == selectedLanguage
+                            && speechRecognizer.isLanguageModelReady,
+                        languageModelCompilationFailed:
+                            speechRecognizer.currentLanguage == selectedLanguage
+                            && speechRecognizer.languageModelCompilationFailed
+                    )
 
                     MicrophoneTestSettingsSection(onStopRecording: onStopRecording)
                 } header: {

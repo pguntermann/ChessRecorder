@@ -19,7 +19,7 @@ struct LiveTranscriptSection: View {
 
             Text(displayTranscript)
                 .font(.caption)
-                .foregroundStyle(speechRecognizer.transcript.isEmpty ? .secondary : .primary)
+                .foregroundStyle(transcriptForegroundStyle)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .animation(nil, value: speechRecognizer.transcript)
 
@@ -46,6 +46,9 @@ struct LiveTranscriptSection: View {
     }
 
     private var displayTranscript: String {
+        if let recognitionSessionError = speechRecognizer.recognitionSessionError {
+            return recognitionSessionError
+        }
         if !speechRecognizer.transcript.isEmpty {
             return speechRecognizer.transcript
         }
@@ -53,6 +56,13 @@ struct LiveTranscriptSection: View {
             return "Updating speech model…"
         }
         return speechRecognizer.isRecording ? "Listening..." : "Tap Record to start"
+    }
+
+    private var transcriptForegroundStyle: Color {
+        if speechRecognizer.recognitionSessionError != nil {
+            return .orange
+        }
+        return speechRecognizer.transcript.isEmpty ? .secondary : .primary
     }
 }
 

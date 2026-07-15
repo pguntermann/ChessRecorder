@@ -46,6 +46,10 @@ class SpeechRecognizer {
     var isAuthorized = false
     var isMicrophoneAuthorized = false
     var isLanguageModelReady = false
+    /// True when the custom language model is missing after prepare (compile failed or skipped).
+    var languageModelCompilationFailed = false
+    /// Set when recognition cannot be recovered for this recording session.
+    var recognitionSessionError: String?
     var isInitializing = true
     var isRebuildingLanguageModel = false
     var initializationPhase: InitializationPhase = .requestingPermissions
@@ -85,6 +89,8 @@ class SpeechRecognizer {
     private var audioSessionObserverTokens: [NSObjectProtocol] = []
     private var recognitionRecoveryTask: Task<Void, Never>?
     private var recordingSessionStartedAt: Date?
+    private var consecutiveTerminalRecognitionFailures = 0
+    private let maxTerminalRecognitionRecoveries = 2
     private var lastPartialLoggedGeneration = 0
     private var lastASRTranscriptBeforeMerge = ""
     var isSpeechPipelineTracingEnabled = false
@@ -274,6 +280,7 @@ class SpeechRecognizer {
     @MainActor
     private func prepareLanguageModel(for language: RecognitionLanguage) async {
         isLanguageModelReady = false
+        languageModelCompilationFailed = false
         guard let vocabularyStore else { return }
 
         setInitializationPhase(.preparingSpeechVocabulary)
@@ -297,6 +304,9 @@ class SpeechRecognizer {
         }
         await yieldForSpeechModelUI()
 
+        let supportsOnDevice =
+            SFSpeechRecognizer(locale: Locale(identifier: language.rawValue))?.supportsOnDeviceRecognition == true
+
         if await ChessLanguageModel.prepare(
             for: language,
             vocabulary: vocabularyStore,
@@ -311,6 +321,17 @@ class SpeechRecognizer {
             }
         ) != nil {
             isLanguageModelReady = true
+            languageModelCompilationFailed = false
+        } else if supportsOnDevice {
+            // Custom model missing/failed — use cloud/standard recognition (no CLM).
+            // Recreate the recognizer after a failed system compile attempt.
+            languageModelCompilationFailed = true
+            speechRecognizer = SFSpeechRecognizer(locale: Locale(identifier: language.rawValue))
+            logSpeechDiagnostic(
+                "CLM not ready for \(language.rawValue) — using recognition without custom language model"
+            )
+        } else {
+            languageModelCompilationFailed = false
         }
     }
     
@@ -386,6 +407,8 @@ class SpeechRecognizer {
         logSpeechDiagnostic("startRecording() called")
         recognitionRecoveryTask?.cancel()
         recognitionRecoveryTask = nil
+        consecutiveTerminalRecognitionFailures = 0
+        recognitionSessionError = nil
         stopRecognitionTask()
         clearLiveTranscriptDisplay()
         rawTranscript = ""
@@ -426,6 +449,7 @@ class SpeechRecognizer {
         logSpeechDiagnostic("stopRecording() called")
         isRecording = false
         recordingSessionStartedAt = nil
+        recognitionSessionError = nil
         
         recognitionRecoveryTask?.cancel()
         recognitionRecoveryTask = nil
@@ -664,9 +688,16 @@ class SpeechRecognizer {
         }
         
         let isAvailable = speechRecognizer.isAvailable
-        let supportsOnDevice = speechRecognizer.supportsOnDeviceRecognition
+        let appleSupportsOnDevice = speechRecognizer.supportsOnDeviceRecognition
+        // Only use CLM when compile succeeded and Apple reports on-device support.
+        let canUseCustomLanguageModel =
+            !languageModelCompilationFailed
+            && appleSupportsOnDevice
+            && ChessLanguageModel.configuration(for: currentLanguage) != nil
         logSpeechDiagnostic(
-            "beginRecognitionTask(\(context)) generation=\(generation) isAvailable=\(isAvailable) supportsOnDevice=\(supportsOnDevice)"
+            "beginRecognitionTask(\(context)) generation=\(generation) isAvailable=\(isAvailable)"
+                + " supportsOnDevice=\(appleSupportsOnDevice)"
+                + " customLanguageModel=\(canUseCustomLanguageModel)"
         )
         
         recognitionRequest = SFSpeechAudioBufferRecognitionRequest()
@@ -677,7 +708,8 @@ class SpeechRecognizer {
         recognitionRequest.shouldReportPartialResults = true
         recognitionRequest.contextualStrings = getChessVocabulary(for: currentLanguage)
         
-        if let config = ChessLanguageModel.configuration(for: currentLanguage) {
+        if canUseCustomLanguageModel,
+           let config = ChessLanguageModel.configuration(for: currentLanguage) {
             recognitionRequest.requiresOnDeviceRecognition = true
             recognitionRequest.customizedLanguageModel = config
             logSpeechDiagnostic("beginRecognitionTask(\(context)) using customized on-device language model")
@@ -709,8 +741,18 @@ class SpeechRecognizer {
                     
                     if Self.isRetryRecognitionError(error) {
                         self.logSpeechDiagnostic("recognition session ended (203 Retry) — recovering (generation=\(generation))")
-                    } else {
-                        self.logSpeechDiagnostic("recognition error: \(Self.errorDescription(error)) (generation=\(generation))")
+                        self.consecutiveTerminalRecognitionFailures = 0
+                        self.scheduleRecognitionRecovery(reason: "recognitionError:\(Self.errorDescription(error))")
+                        return
+                    }
+
+                    self.logSpeechDiagnostic("recognition error: \(Self.errorDescription(error)) (generation=\(generation))")
+                    self.consecutiveTerminalRecognitionFailures += 1
+                    if self.consecutiveTerminalRecognitionFailures > self.maxTerminalRecognitionRecoveries {
+                        self.abandonRecognitionRecovery(
+                            message: "Speech recognition unavailable. Try again later."
+                        )
+                        return
                     }
                     self.scheduleRecognitionRecovery(reason: "recognitionError:\(Self.errorDescription(error))")
                 }
@@ -724,6 +766,10 @@ class SpeechRecognizer {
             
             Task { @MainActor in
                 guard generation == self.recognitionGeneration else { return }
+                if !newTranscript.isEmpty {
+                    self.consecutiveTerminalRecognitionFailures = 0
+                    self.recognitionSessionError = nil
+                }
                 if self.lastPartialLoggedGeneration != generation, !newTranscript.isEmpty {
                     self.lastPartialLoggedGeneration = generation
                     self.logSpeechDiagnostic(
@@ -755,6 +801,20 @@ class SpeechRecognizer {
         let nsError = error as NSError
         // 203 = "Retry" — task ended; start a fresh recognition request while still recording
         return nsError.domain == "kAFAssistantErrorDomain" && nsError.code == 203
+    }
+
+    @MainActor
+    private func abandonRecognitionRecovery(message: String) {
+        recognitionRecoveryTask?.cancel()
+        recognitionRecoveryTask = nil
+        logSpeechDiagnostic("abandoning recognition recovery — \(message)")
+        if isRecording {
+            stopRecording()
+        } else {
+            stopRecognitionTask(endAudio: false)
+        }
+        // stopRecording clears this; restore so the live transcript can show the failure.
+        recognitionSessionError = message
     }
     
     @MainActor

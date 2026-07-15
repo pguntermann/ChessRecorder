@@ -60,6 +60,24 @@ struct ContentView: View {
     private var recordButtonEnabled: Bool {
         speechRecognizer.isReadyForUse && (speechRecognizer.isRecording || canAcceptNewMoves)
     }
+
+    private var recordButtonLooksActive: Bool {
+        speechRecognizer.isRecording || recordButtonEnabled
+    }
+
+    private var recordButtonForegroundColor: Color {
+        if speechRecognizer.isRecording {
+            return .red
+        }
+        return recordButtonLooksActive ? .blue : .secondary
+    }
+
+    private var recordButtonBackgroundColor: Color {
+        if speechRecognizer.isRecording {
+            return Color.red.opacity(0.1)
+        }
+        return recordButtonLooksActive ? Color.blue.opacity(0.1) : Color.secondary.opacity(0.1)
+    }
     
     var body: some View {
         GeometryReader { geometry in
@@ -163,6 +181,7 @@ struct ContentView: View {
                 settingsStore: settingsStore,
                 vocabularyStore: vocabularyStore,
                 developerModeStore: developerModeStore,
+                speechRecognizer: speechRecognizer,
                 pendingSpeechModelWork: $pendingSpeechModelWork,
                 onStopRecording: {
                     speechRecognizer.stopRecording()
@@ -461,7 +480,7 @@ struct ContentView: View {
                         speechRecognizer.isRecording ? "mic.fill" : "mic",
                         hitSize: iconHitSize
                     )
-                    .foregroundColor(speechRecognizer.isRecording ? .red : (canAcceptNewMoves ? .blue : .secondary))
+                    .foregroundColor(recordButtonForegroundColor)
                 }
                 .disabled(!recordButtonEnabled)
                 .accessibilityLabel(speechRecognizer.isRecording ? "Stop recording" : "Record")
@@ -479,14 +498,12 @@ struct ContentView: View {
                     }
                     .fixedSize(horizontal: true, vertical: false)
                     .frame(minWidth: recordButtonWidth)
-                    .foregroundColor(speechRecognizer.isRecording ? .red : (canAcceptNewMoves ? .blue : .secondary))
+                    .foregroundColor(recordButtonForegroundColor)
                     .padding(.horizontal, compact ? 8 : 6)
                     .padding(.vertical, 6)
                     .background(
                         RoundedRectangle(cornerRadius: 8)
-                            .fill(speechRecognizer.isRecording
-                                ? Color.red.opacity(0.1)
-                                : (canAcceptNewMoves ? Color.blue.opacity(0.1) : Color.secondary.opacity(0.1)))
+                            .fill(recordButtonBackgroundColor)
                     )
                 }
                 .layoutPriority(1)

@@ -92,6 +92,8 @@ struct SettingsView: View {
                         ), in: 0.3...2.0, step: 0.05)
                     }
 
+                    OnDeviceRecognitionStatusRow(language: selectedLanguage)
+
                     MicrophoneTestSettingsSection(onStopRecording: onStopRecording)
                 } header: {
                     Text("Speech")

@@ -11,8 +11,20 @@ struct TeachCorrectionView: View {
     let language: RecognitionLanguage
     let onSave: (String, String) -> Void
 
-    @State private var heard = ""
-    @State private var replacement = ""
+    @State private var heard: String
+    @State private var replacement: String
+
+    init(
+        language: RecognitionLanguage,
+        initialHeard: String = "",
+        initialReplacement: String = "",
+        onSave: @escaping (String, String) -> Void
+    ) {
+        self.language = language
+        self.onSave = onSave
+        _heard = State(initialValue: initialHeard)
+        _replacement = State(initialValue: initialReplacement)
+    }
 
     var body: some View {
         NavigationStack {

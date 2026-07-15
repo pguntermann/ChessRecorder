@@ -13,7 +13,7 @@ struct HelpView: View {
     private static let alternativePhrasingTips = [
         "\"Knight from e to d5\" — file disambiguation with prepositions",
         "\"Knight from e7 to d5\" — full source square",
-        "\"e7 to d5\" — coordinates only (when unambiguous)"
+        "\"e7 to d5\" — coordinates only"
     ]
 
     var body: some View {
@@ -71,8 +71,6 @@ struct HelpView: View {
                             .font(.headline)
 
                         Text("""
-                        If a phrase is not recognized, use Teach phrase after a failed attempt or add custom phrases in Settings. Corrections can fix recurring mis-hearings such as \"9\" → \"knight\".
-
                         When a specific wording fails — for example \"Knight e d5\" for a knight from the e-file to d5 — try other phrasings that spell out the move more explicitly:
                         """)
                         .font(.subheadline)
@@ -88,6 +86,57 @@ struct HelpView: View {
                             }
                         }
                         .padding(.top, 4)
+
+                        (
+                            Text("You can also correct persisting misinterpretations. After a failed recognition attempt, use ")
+                            + Text("Teach phrase").bold()
+                            + Text(" or ")
+                            + Text("Add correction").bold()
+                            + Text(" from the live transcript. Both options are always available under ")
+                            + Text(Image(systemName: "gearshape"))
+                            + Text(" ")
+                            + Text("Settings").bold()
+                            + Text(":")
+                        )
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 8)
+
+                        VStack(alignment: .leading, spacing: 6) {
+                            (
+                                Text("• ")
+                                + Text("Teach phrase").bold()
+                                + Text(" — maps a spoken phrase to one concrete move (for example \"knight gee one eff three\" → Nf3). Use it when you want a specific utterance to mean a specific move.")
+                            )
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+
+                            (
+                                Text("• ")
+                                + Text("Corrections").bold()
+                                + Text(" — fix recurring mis-hearings of words or partial phrases before move parsing (for example \"9\" → \"knight\", or \"gee\" → \"g\"). They apply wherever that token appears, not just for one move.")
+                            )
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .padding(.top, 4)
+
+                        (
+                            Text("If ")
+                            + Text("Record").bold()
+                            + Text(" cannot be started, check that the active game is not already finished. Start a new game from the ")
+                            + Text(Image(systemName: "ellipsis.circle"))
+                            + Text(" menu with ")
+                            + Text("New Game").bold()
+                            + Text(".")
+                        )
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 8)
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .helpSectionCard()

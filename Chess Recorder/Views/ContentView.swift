@@ -21,6 +21,7 @@ struct ContentView: View {
     @State private var showingSettings = false
     @State private var showingHelp = false
     @State private var showingTeachPhrase = false
+    @State private var showingAddCorrection = false
     @State private var showingRecordingPermissionAlert = false
     @State private var recordingPermissionIssue: RecordingPermissionIssue?
     @State private var boardOrientation: BoardOrientation = .whiteAtBottom
@@ -186,6 +187,18 @@ struct ContentView: View {
                 ) { phrase, move in
                     await speechRecognizer.learnPhrase(phrase, moveNotation: move)
                     _ = processMoveFromSpeech(move)
+                }
+            }
+        }
+        .sheet(isPresented: $showingAddCorrection) {
+            if let context = speechRecognizer.pendingFailure {
+                TeachCorrectionView(
+                    language: speechRecognizer.currentLanguage,
+                    initialHeard: context.transcript
+                ) { heard, replacement in
+                    Task {
+                        await speechRecognizer.learnCorrection(heard: heard, replacement: replacement)
+                    }
                 }
             }
         }
@@ -385,7 +398,8 @@ struct ContentView: View {
         VStack(spacing: 16) {
             LiveTranscriptSection(
                 speechRecognizer: speechRecognizer,
-                onTeachPhrase: { showingTeachPhrase = true }
+                onTeachPhrase: { showingTeachPhrase = true },
+                onAddCorrection: { showingAddCorrection = true }
             )
 
             NotationPanelView(

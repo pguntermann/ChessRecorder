@@ -132,6 +132,25 @@ class SpeechRecognizer {
             prepareForNextMove()
         }
     }
+
+    @MainActor
+    func learnCorrection(heard: String, replacement: String) async {
+        guard let vocabularyStore else { return }
+
+        beginLanguageModelRebuild()
+        await yieldForSpeechModelUI()
+        defer { endLanguageModelRebuild() }
+
+        vocabularyStore.learnCorrection(heard: heard, replacement: replacement, language: currentLanguage)
+        pendingFailure = nil
+
+        ChessLanguageModel.invalidate(for: currentLanguage)
+        await prepareLanguageModel(for: currentLanguage)
+
+        if isRecording {
+            prepareForNextMove()
+        }
+    }
     
     @MainActor
     func reloadLanguageModel(for language: RecognitionLanguage) async {

@@ -9,6 +9,7 @@ import SwiftUI
 struct LiveTranscriptSection: View {
     @Bindable var speechRecognizer: SpeechRecognizer
     var onTeachPhrase: (() -> Void)?
+    var onAddCorrection: (() -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -35,6 +36,7 @@ struct LiveTranscriptSection: View {
                 LiveTranscriptFailureView(
                     pendingFailure: pendingFailure,
                     onTeachPhrase: onTeachPhrase,
+                    onAddCorrection: onAddCorrection,
                     onDismiss: { speechRecognizer.clearPendingFailure() }
                 )
             }
@@ -57,6 +59,7 @@ struct LiveTranscriptSection: View {
 private struct LiveTranscriptFailureView: View {
     let pendingFailure: RecognitionFailureContext
     var onTeachPhrase: (() -> Void)?
+    var onAddCorrection: (() -> Void)?
     var onDismiss: () -> Void
 
     var body: some View {
@@ -65,18 +68,13 @@ private struct LiveTranscriptFailureView: View {
                 .font(.caption)
                 .foregroundStyle(.orange)
 
-            HStack {
-                Button("Teach phrase") {
-                    onTeachPhrase?()
+            ViewThatFits(in: .horizontal) {
+                HStack {
+                    failureActionButtons
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
-
-                Button("Dismiss") {
-                    onDismiss()
+                VStack(alignment: .leading, spacing: 8) {
+                    failureActionButtons
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.small)
             }
 
             if !pendingFailure.attemptedMoves.isEmpty {
@@ -86,6 +84,27 @@ private struct LiveTranscriptFailureView: View {
             }
         }
         .padding(.top, 4)
+    }
+
+    @ViewBuilder
+    private var failureActionButtons: some View {
+        Button("Teach phrase") {
+            onTeachPhrase?()
+        }
+        .buttonStyle(.borderedProminent)
+        .controlSize(.small)
+
+        Button("Add correction") {
+            onAddCorrection?()
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+
+        Button("Dismiss") {
+            onDismiss()
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
     }
 }
 

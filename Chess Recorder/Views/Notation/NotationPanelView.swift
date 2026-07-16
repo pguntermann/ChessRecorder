@@ -106,12 +106,9 @@ struct NotationPanelView: View {
                                     showAccuracySummary: showAccuracySummary,
                                     assessmentColors: assessmentColors,
                                     activePlyIndex: game.activePlyIndex,
-                                    isAtLatestMove: game.isAtLatestMove
+                                    isAtLatestMove: game.isAtLatestMove,
+                                    onActivate: { onActivateGame?(recordedGame.id) }
                                 )
-                                .contentShape(Rectangle())
-                                .onTapGesture {
-                                    onActivateGame?(recordedGame.id)
-                                }
                             }
                         }
 
@@ -251,6 +248,7 @@ private struct GamePGNRowView: View {
     var assessmentColors: MoveAssessmentColors = .defaults
     var activePlyIndex: Int = 0
     var isAtLatestMove: Bool = true
+    var onActivate: (() -> Void)? = nil
 
     @State private var showingAccuracySummary = false
 
@@ -301,67 +299,78 @@ private struct GamePGNRowView: View {
 
                 Spacer()
             }
+            .contentShape(Rectangle())
+            .onTapGesture { onActivate?() }
 
             if let accuracySummary {
-                Button {
-                    showingAccuracySummary = true
-                } label: {
-                    HStack(alignment: .center, spacing: 6) {
-                        Spacer(minLength: 0)
-                        GameAccuracyCompactTable(summary: accuracySummary)
+                HStack(alignment: .center, spacing: 0) {
+                    GameAccuracyCompactTable(summary: accuracySummary)
+                        .frame(maxWidth: .infinity)
+                        .contentShape(Rectangle())
+                        .onTapGesture { onActivate?() }
+
+                    Button {
+                        showingAccuracySummary = true
+                    } label: {
                         Image(systemName: "chevron.right")
                             .font(.caption2.weight(.semibold))
-                            .foregroundStyle(.tertiary)
-                        Spacer(minLength: 0)
+                            .foregroundStyle(Color.accentColor)
+                            .frame(width: 36, height: 36)
+                            .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(accuracyAccessibilityLabel(accuracySummary))
+                    .accessibilityHint("Shows accuracy details")
                 }
-                .buttonStyle(.plain)
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(accuracyAccessibilityLabel(accuracySummary))
-                .accessibilityHint("Shows accuracy details")
+                .padding(.top, 4)
+                .padding(.bottom, 8)
             }
 
-            if !hideHeaderTags {
-                Text(PGNFormatter.headers(
-                    round: recordedGame.round,
-                    result: recordedGame.result,
-                    metadata: recordedGame.metadata,
-                    date: recordedGame.date,
-                    eco: presentation?.eco
-                ))
-                .font(.system(.caption, design: .monospaced))
-                .foregroundStyle(.secondary)
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-
-            if recordedGame.moves.isEmpty {
-                Text("No moves yet")
-                    .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(.secondary)
-            } else if usesAssessedTokenLayout {
-                PGNAssessedMovetextView(
-                    moves: recordedGame.moves,
-                    result: recordedGame.result,
-                    showMoveHighlight: showMoveHighlight,
-                    activePlyIndex: activePlyIndex,
-                    isAtLatestMove: isAtLatestMove,
-                    assessingMoveIndex: assessingMoveIndex,
-                    showMoveAssessments: showMoveAssessments,
-                    assessmentColors: assessmentColors
-                )
-            } else if showMoveHighlight, let presentation {
-                Text(presentation.highlightedMovetext)
-                    .font(.system(.caption, design: .monospaced))
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            } else {
-                Text(presentation?.plainMovetext ?? PGNFormatter.movetext(from: recordedGame.moves, result: recordedGame.result))
+            Group {
+                if !hideHeaderTags {
+                    Text(PGNFormatter.headers(
+                        round: recordedGame.round,
+                        result: recordedGame.result,
+                        metadata: recordedGame.metadata,
+                        date: recordedGame.date,
+                        eco: presentation?.eco
+                    ))
                     .font(.system(.caption, design: .monospaced))
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                if recordedGame.moves.isEmpty {
+                    Text("No moves yet")
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                } else if usesAssessedTokenLayout {
+                    PGNAssessedMovetextView(
+                        moves: recordedGame.moves,
+                        result: recordedGame.result,
+                        showMoveHighlight: showMoveHighlight,
+                        activePlyIndex: activePlyIndex,
+                        isAtLatestMove: isAtLatestMove,
+                        assessingMoveIndex: assessingMoveIndex,
+                        showMoveAssessments: showMoveAssessments,
+                        assessmentColors: assessmentColors
+                    )
+                } else if showMoveHighlight, let presentation {
+                    Text(presentation.highlightedMovetext)
+                        .font(.system(.caption, design: .monospaced))
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    Text(presentation?.plainMovetext ?? PGNFormatter.movetext(from: recordedGame.moves, result: recordedGame.result))
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
+            .contentShape(Rectangle())
+            .onTapGesture { onActivate?() }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)

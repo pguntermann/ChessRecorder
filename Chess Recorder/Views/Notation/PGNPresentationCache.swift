@@ -24,7 +24,9 @@ enum PGNPresentationBuilder {
         assessmentColorsCacheKey: String
     ) -> String {
         let gameSignature = games.map {
-            let qualitySignature = $0.moves.map { $0.quality?.rawValue ?? "" }.joined(separator: ",")
+            let qualitySignature = $0.moves.map {
+                "\($0.quality?.rawValue ?? ""):\($0.centipawnLoss.map(String.init) ?? "")"
+            }.joined(separator: ",")
             return "\($0.id.uuidString):\($0.moves.count):\($0.result.rawValue):\($0.round):\($0.eco ?? ""):\(qualitySignature):\($0.metadata)"
         }.joined(separator: "|")
         let assessmentKey = activeAssessment.map { "\($0.gameID.uuidString):\($0.moveIndex)" } ?? "none"

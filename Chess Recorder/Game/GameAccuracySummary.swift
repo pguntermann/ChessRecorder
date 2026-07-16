@@ -7,8 +7,8 @@ import Foundation
 
 /// Aggregated move-quality stats for a recorded game.
 ///
-/// Accuracy averages scored moves only (excludes book). Book moves are reported
-/// separately so opening theory does not inflate or dilute the percentage.
+/// Accuracy uses average centipawn loss: `clamp(100 - avgCPL / 3.5, 5, 100)`.
+/// Book moves are excluded from the average and reported separately.
 struct GameAccuracySummary: Equatable, Sendable {
     enum Side: String, Equatable, Hashable, Sendable, CaseIterable {
         case white
@@ -217,8 +217,8 @@ struct GameAccuracySummary: Equatable, Sendable {
     init(moves: [ChessMove]) {
         var white = SideStats()
         var black = SideStats()
-        var whiteScore = 0.0
-        var blackScore = 0.0
+        var whiteCPL = 0.0
+        var blackCPL = 0.0
         var progress: [AccuracyProgressPoint] = []
 
         for (index, move) in moves.enumerated() {
@@ -227,23 +227,23 @@ struct GameAccuracySummary: Equatable, Sendable {
             let moveNumber = index / 2 + 1
 
             if side == .white {
-                Self.apply(quality, to: &white, scoreSum: &whiteScore)
+                Self.apply(move, quality: quality, to: &white, cplSum: &whiteCPL)
                 if let point = Self.progressPoint(
                     side: .white,
                     moveNumber: moveNumber,
-                    quality: quality,
-                    totalScore: whiteScore,
+                    contributedToAccuracy: quality != .book,
+                    totalCPL: whiteCPL,
                     scoredMoves: white.scoredMoveCount
                 ) {
                     progress.append(point)
                 }
             } else {
-                Self.apply(quality, to: &black, scoreSum: &blackScore)
+                Self.apply(move, quality: quality, to: &black, cplSum: &blackCPL)
                 if let point = Self.progressPoint(
                     side: .black,
                     moveNumber: moveNumber,
-                    quality: quality,
-                    totalScore: blackScore,
+                    contributedToAccuracy: quality != .book,
+                    totalCPL: blackCPL,
                     scoredMoves: black.scoredMoveCount
                 ) {
                     progress.append(point)
@@ -251,16 +251,38 @@ struct GameAccuracySummary: Equatable, Sendable {
             }
         }
 
-        white.accuracyPercent = Self.percent(totalScore: whiteScore, scoredMoves: white.scoredMoveCount)
-        black.accuracyPercent = Self.percent(totalScore: blackScore, scoredMoves: black.scoredMoveCount)
+        white.accuracyPercent = Self.percent(totalCPL: whiteCPL, scoredMoves: white.scoredMoveCount)
+        black.accuracyPercent = Self.percent(totalCPL: blackCPL, scoredMoves: black.scoredMoveCount)
 
         self.white = white
         self.black = black
         self.accuracyProgress = progress
     }
 
-    /// Point contribution used for the accuracy average (book excluded).
-    static func score(for quality: MoveQuality) -> Double? {
+    /// Divisor used by `100 - averageCPL / divisor`, matching common CPL accuracy curves.
+    static let averageCPLDivisor: Double = 3.5
+    /// Per-move CPL cap before averaging (same as CARA) so mate-scale losses don't floor accuracy at 5%.
+    static let averageCPLCap: Double = 500
+    static let minimumAccuracyPercent: Double = 5
+    static let maximumAccuracyPercent: Double = 100
+
+    /// Effective CPL for accuracy. Book is excluded. Values are capped at `averageCPLCap`.
+    /// Legacy qualities without stored CPL map from the previous point scores via `(100 - points) * 3.5`.
+    static func effectiveCentipawnLoss(for move: ChessMove, quality: MoveQuality) -> Double? {
+        guard quality != .book else { return nil }
+        let uncapped: Double
+        if let cpl = move.centipawnLoss {
+            uncapped = Double(max(0, cpl))
+        } else if let points = legacyPointScore(for: quality) {
+            uncapped = (maximumAccuracyPercent - points) * averageCPLDivisor
+        } else {
+            return nil
+        }
+        return min(uncapped, averageCPLCap)
+    }
+
+    /// Former discrete point scores, kept only for legacy moves that lack stored CPL.
+    static func legacyPointScore(for quality: MoveQuality) -> Double? {
         switch quality {
         case .book: return nil
         case .good: return 100
@@ -274,12 +296,12 @@ struct GameAccuracySummary: Equatable, Sendable {
     private static func progressPoint(
         side: Side,
         moveNumber: Int,
-        quality: MoveQuality,
-        totalScore: Double,
+        contributedToAccuracy: Bool,
+        totalCPL: Double,
         scoredMoves: Int
     ) -> AccuracyProgressPoint? {
-        guard score(for: quality) != nil,
-              let accuracy = percent(totalScore: totalScore, scoredMoves: scoredMoves) else {
+        guard contributedToAccuracy,
+              let accuracy = percent(totalCPL: totalCPL, scoredMoves: scoredMoves) else {
             return nil
         }
         return AccuracyProgressPoint(
@@ -289,35 +311,37 @@ struct GameAccuracySummary: Equatable, Sendable {
         )
     }
 
-    private static func apply(_ quality: MoveQuality, to side: inout SideStats, scoreSum: inout Double) {
+    private static func apply(
+        _ move: ChessMove,
+        quality: MoveQuality,
+        to side: inout SideStats,
+        cplSum: inout Double
+    ) {
         switch quality {
         case .book:
             side.bookCount += 1
         case .good:
             side.goodCount += 1
-            side.scoredMoveCount += 1
-            scoreSum += 100
         case .inaccuracy:
             side.inaccuracyCount += 1
-            side.scoredMoveCount += 1
-            scoreSum += 80
         case .miss:
             side.missCount += 1
-            side.scoredMoveCount += 1
-            scoreSum += 70
         case .mistake:
             side.mistakeCount += 1
-            side.scoredMoveCount += 1
-            scoreSum += 50
         case .blunder:
             side.blunderCount += 1
-            side.scoredMoveCount += 1
-            scoreSum += 20
         }
+
+        guard let cpl = effectiveCentipawnLoss(for: move, quality: quality) else { return }
+        side.scoredMoveCount += 1
+        cplSum += cpl
     }
 
-    private static func percent(totalScore: Double, scoredMoves: Int) -> Int? {
+    /// `clamp(100 - averageCPL / 3.5, 5, 100)`, rounded to nearest int.
+    static func percent(totalCPL: Double, scoredMoves: Int) -> Int? {
         guard scoredMoves > 0 else { return nil }
-        return Int((totalScore / Double(scoredMoves)).rounded())
+        let averageCPL = totalCPL / Double(scoredMoves)
+        let raw = maximumAccuracyPercent - (averageCPL / averageCPLDivisor)
+        return Int(max(minimumAccuracyPercent, min(maximumAccuracyPercent, raw)).rounded())
     }
 }

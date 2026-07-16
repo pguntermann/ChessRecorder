@@ -217,6 +217,7 @@ final class PGNArchive {
         gameID: UUID,
         moveIndex: Int,
         quality: MoveQuality,
+        centipawnLoss: Int? = nil,
         expectedSAN: String
     ) -> Bool {
         guard let index = games.firstIndex(where: { $0.id == gameID }),
@@ -226,7 +227,10 @@ final class PGNArchive {
             return false
         }
 
-        games[index].moves[moveIndex] = games[index].moves[moveIndex].withQuality(quality)
+        games[index].moves[moveIndex] = games[index].moves[moveIndex].withQuality(
+            quality,
+            centipawnLoss: quality == .book ? nil : centipawnLoss
+        )
         return true
     }
 
@@ -238,7 +242,10 @@ final class PGNArchive {
                   let quality = oldMoves[index].quality else {
                 break
             }
-            merged[index] = merged[index].withQuality(quality)
+            merged[index] = merged[index].withQuality(
+                quality,
+                centipawnLoss: oldMoves[index].centipawnLoss
+            )
         }
         return merged
     }

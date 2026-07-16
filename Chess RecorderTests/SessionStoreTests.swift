@@ -250,7 +250,8 @@ final class SessionStoreTests: XCTestCase {
                     isCheckmate: false,
                     promotion: nil,
                     castling: nil,
-                    quality: nil
+                    quality: nil,
+                    centipawnLoss: nil
                 )
             ],
             round: 1,
@@ -717,7 +718,8 @@ private enum SessionTestFixtures {
             isCheckmate: move.isCheckmate,
             promotion: move.promotion?.rawValue.isEmpty == false ? move.promotion?.rawValue : nil,
             castling: move.castling,
-            quality: move.quality?.rawValue
+            quality: move.quality?.rawValue,
+            centipawnLoss: move.centipawnLoss
         )
     }
 }

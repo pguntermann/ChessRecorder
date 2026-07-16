@@ -102,6 +102,7 @@ final class MoveAssessmentService {
                         gameID: game.id,
                         moveIndex: moveIndex,
                         quality: .book,
+                        centipawnLoss: nil,
                         expectedSAN: playedSAN
                     ) {
                         onAssessmentApplied?()
@@ -181,6 +182,7 @@ final class MoveAssessmentService {
                             gameID: job.gameID,
                             moveIndex: job.moveIndex,
                             quality: .book,
+                            centipawnLoss: nil,
                             expectedSAN: job.playedMoveSAN
                         ) {
                             self.onAssessmentApplied?()
@@ -210,6 +212,7 @@ final class MoveAssessmentService {
                             gameID: job.gameID,
                             moveIndex: job.moveIndex,
                             quality: result.quality,
+                            centipawnLoss: result.centipawnLoss,
                             expectedSAN: job.playedMoveSAN
                         ) {
                             self.onAssessmentApplied?()

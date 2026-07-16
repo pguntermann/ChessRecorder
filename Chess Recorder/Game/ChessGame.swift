@@ -89,6 +89,8 @@ struct ChessMove {
     let promotion: PieceType?
     let castling: String?
     let quality: MoveQuality?
+    /// Centipawn loss vs best move for this ply (nil for book / unassessed / legacy).
+    let centipawnLoss: Int?
 
     var algebraicNotation: String { san }
 
@@ -102,7 +104,8 @@ struct ChessMove {
         isCheckmate: Bool,
         promotion: PieceType?,
         castling: String?,
-        quality: MoveQuality? = nil
+        quality: MoveQuality? = nil,
+        centipawnLoss: Int? = nil
     ) {
         self.san = san
         self.piece = piece
@@ -114,6 +117,7 @@ struct ChessMove {
         self.promotion = promotion
         self.castling = castling
         self.quality = quality
+        self.centipawnLoss = centipawnLoss
     }
 
     func matchesPositionally(_ other: ChessMove) -> Bool {
@@ -125,7 +129,7 @@ struct ChessMove {
             && castling == other.castling
     }
 
-    func withQuality(_ quality: MoveQuality?) -> ChessMove {
+    func withQuality(_ quality: MoveQuality?, centipawnLoss: Int? = nil) -> ChessMove {
         ChessMove(
             san: san,
             piece: piece,
@@ -136,7 +140,8 @@ struct ChessMove {
             isCheckmate: isCheckmate,
             promotion: promotion,
             castling: castling,
-            quality: quality
+            quality: quality,
+            centipawnLoss: centipawnLoss
         )
     }
 }

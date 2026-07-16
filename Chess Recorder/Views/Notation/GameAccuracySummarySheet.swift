@@ -22,7 +22,7 @@ struct GameAccuracySummarySheet: View {
                 } header: {
                     Text("Accuracy")
                 } footer: {
-                    Text("Accuracy averages each side’s assessed moves and excludes book moves.")
+                    Text("Accuracy is based on average centipawn loss (book moves excluded).")
                 }
 
                 if summary.white.hasContent || summary.black.hasContent {

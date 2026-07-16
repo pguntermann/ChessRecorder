@@ -67,6 +67,8 @@ struct AppSettings: Codable, Equatable {
     var moveAssessmentBlunderColor: CodableColor
     var moveAssessmentMissColor: CodableColor
     var openingNameVisible: Bool
+    var openingBookMiniBoardSide: Double
+    var openingBookMiniBoardFollowsOrientation: Bool
     var pgnEvent: String
     var pgnSite: String
     var pgnWhite: String
@@ -107,6 +109,8 @@ struct AppSettings: Codable, Equatable {
         case moveAssessmentBlunderColor
         case moveAssessmentMissColor
         case openingNameVisible
+        case openingBookMiniBoardSide
+        case openingBookMiniBoardFollowsOrientation
         case pgnEvent
         case pgnSite
         case pgnWhite
@@ -146,6 +150,8 @@ struct AppSettings: Codable, Equatable {
         moveAssessmentBlunderColor: CodableColor = AppSettings.defaultMoveAssessmentBlunderColor,
         moveAssessmentMissColor: CodableColor = AppSettings.defaultMoveAssessmentMissColor,
         openingNameVisible: Bool = true,
+        openingBookMiniBoardSide: Double = AppSettings.defaultOpeningBookMiniBoardSide,
+        openingBookMiniBoardFollowsOrientation: Bool = true,
         pgnEvent: String = AppSettings.defaultPGNEvent,
         pgnSite: String = "?",
         pgnWhite: String = "?",
@@ -183,6 +189,8 @@ struct AppSettings: Codable, Equatable {
         self.moveAssessmentBlunderColor = moveAssessmentBlunderColor
         self.moveAssessmentMissColor = moveAssessmentMissColor
         self.openingNameVisible = openingNameVisible
+        self.openingBookMiniBoardSide = openingBookMiniBoardSide
+        self.openingBookMiniBoardFollowsOrientation = openingBookMiniBoardFollowsOrientation
         self.pgnEvent = pgnEvent
         self.pgnSite = pgnSite
         self.pgnWhite = pgnWhite
@@ -234,6 +242,12 @@ struct AppSettings: Codable, Equatable {
         moveAssessmentMissColor = try container.decodeIfPresent(CodableColor.self, forKey: .moveAssessmentMissColor)
             ?? Self.defaultMoveAssessmentMissColor
         openingNameVisible = try container.decodeIfPresent(Bool.self, forKey: .openingNameVisible) ?? true
+        openingBookMiniBoardSide = try container.decodeIfPresent(Double.self, forKey: .openingBookMiniBoardSide)
+            ?? Self.defaultOpeningBookMiniBoardSide
+        openingBookMiniBoardFollowsOrientation = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .openingBookMiniBoardFollowsOrientation
+        ) ?? true
         pgnEvent = try container.decodeIfPresent(String.self, forKey: .pgnEvent) ?? Self.defaultPGNEvent
         pgnSite = try container.decodeIfPresent(String.self, forKey: .pgnSite) ?? "?"
         pgnWhite = try container.decodeIfPresent(String.self, forKey: .pgnWhite) ?? "?"
@@ -285,6 +299,8 @@ struct AppSettings: Codable, Equatable {
         moveAssessmentBlunderColor: defaultMoveAssessmentBlunderColor,
         moveAssessmentMissColor: defaultMoveAssessmentMissColor,
         openingNameVisible: true,
+        openingBookMiniBoardSide: defaultOpeningBookMiniBoardSide,
+        openingBookMiniBoardFollowsOrientation: true,
         pgnEvent: defaultPGNEvent,
         pgnSite: "?",
         pgnWhite: "?",
@@ -373,6 +389,7 @@ extension AppSettings {
     static let defaultMoveAssessmentMistakeColor = CodableColor(red: 0.95, green: 0.45, blue: 0.2)
     static let defaultMoveAssessmentBlunderColor = CodableColor(red: 0.9, green: 0.2, blue: 0.2)
     static let defaultMoveAssessmentMissColor = CodableColor(red: 1.0, green: 0.45, blue: 0.75)
+    static let defaultOpeningBookMiniBoardSide = 72.0
 
     static let uncappedEngineAnalysisDepth = 31.0
 
@@ -401,6 +418,10 @@ extension AppSettings {
         ]
         .map { "\($0.red),\($0.green),\($0.blue),\($0.alpha)" }
         .joined(separator: "|")
+    }
+
+    var cappedOpeningBookMiniBoardSide: CGFloat {
+        CGFloat(min(max(openingBookMiniBoardSide, 48), 144))
     }
 
     var usesOutsideCoordinates: Bool {

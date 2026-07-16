@@ -20,6 +20,7 @@ struct ContentView: View {
     @State private var speechRecognizer: SpeechRecognizer
     @State private var showingSettings = false
     @State private var showingHelp = false
+    @State private var showingOpeningBook = false
     @State private var showingTeachPhrase = false
     @State private var showingAddCorrection = false
     @State private var showingRecordingPermissionAlert = false
@@ -232,6 +233,20 @@ struct ContentView: View {
         .sheet(isPresented: $showingHelp) {
             HelpView()
         }
+        .sheet(isPresented: $showingOpeningBook) {
+            OpeningBookSheet(
+                rootDisplay: openingService.display,
+                rootFEN: openingService.currentBookFEN,
+                isInBook: openingService.isInBook,
+                pathToCurrent: openingService.pathToCurrent,
+                miniBoardSide: settingsStore.settings.cappedOpeningBookMiniBoardSide,
+                boardOrientation: settingsStore.settings.openingBookMiniBoardFollowsOrientation
+                    ? boardOrientation
+                    : .whiteAtBottom,
+                moveHighlightColor: settingsStore.settings.lastMoveArrowColor.color,
+                openingService: openingService
+            )
+        }
         .sheet(isPresented: $showingTeachPhrase) {
             if let context = speechRecognizer.pendingFailure {
                 TeachPhraseView(
@@ -394,8 +409,9 @@ struct ContentView: View {
                     display: openingService.display,
                     isVisible: settings.openingNameVisible,
                     isLoaded: openingService.isLoaded,
-                    hasMoves: !game.moves.isEmpty,
-                    compact: compactOpening
+                    isInBook: openingService.isInBook,
+                    compact: compactOpening,
+                    onTap: openingService.isLoaded ? { showingOpeningBook = true } : nil
                 )
 
                 boardLayout(boardSide: boardDimensions.side)

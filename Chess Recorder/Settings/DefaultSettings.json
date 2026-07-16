@@ -29,6 +29,8 @@
   "engineAnalysisUseAlgebraicNotation" : true,
   "engineAnalysisVisible" : true,
   "openingNameVisible" : true,
+  "openingBookMiniBoardSide" : 72,
+  "openingBookMiniBoardFollowsOrientation" : true,
   "lightSquareColor" : {
     "alpha" : 1,
     "blue" : 0.98,

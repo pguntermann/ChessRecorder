@@ -3,10 +3,11 @@
 //  Chess Recorder
 //
 
+import ChessKit
 import Foundation
 import UIKit
 
-struct OpeningDisplay: Equatable {
+struct OpeningDisplay: Equatable, Hashable {
     var eco: String
     var name: String
 
@@ -18,12 +19,35 @@ struct OpeningDisplay: Equatable {
     }
 }
 
+/// A book continuation from a position: one legal move that lands on another known opening.
+struct OpeningBookContinuation: Identifiable, Equatable, Hashable {
+    let san: String
+    let from: ChessPosition
+    let to: ChessPosition
+    let display: OpeningDisplay
+    let fenAfter: String
+
+    var id: String { fenAfter + "|" + san }
+}
+
+/// One step in the played opening progression up to the current position.
+struct OpeningBookPathStep: Identifiable, Equatable, Hashable {
+    /// Move that reached this opening label; `nil` for the starting position.
+    let moveSAN: String?
+    let display: OpeningDisplay
+    let fen: String
+
+    var id: String { "\(fen)|\(moveSAN ?? "")|\(display.label)" }
+}
+
 private struct EcoEntry: Decodable {
     let eco: String?
     let name: String?
 }
 
 private enum OpeningDataLoader {
+    private final class BundleToken {}
+
     static func load() -> (base: [String: EcoEntry], interpolated: [String: EcoEntry]) {
         let decoder = JSONDecoder()
         return (
@@ -33,7 +57,9 @@ private enum OpeningDataLoader {
     }
 
     private static func loadDatabase(named name: String, decoder: JSONDecoder) -> [String: EcoEntry] {
-        guard let asset = NSDataAsset(name: name),
+        // Bundle.main can be the test bundle under XCTest; use the app module bundle instead.
+        let bundle = Bundle(for: BundleToken.self)
+        guard let asset = NSDataAsset(name: name, bundle: bundle),
               let database = try? decoder.decode([String: EcoEntry].self, from: asset.data) else {
             return [:]
         }
@@ -44,17 +70,43 @@ private enum OpeningDataLoader {
 @Observable
 @MainActor
 final class OpeningService {
+    static let maxContinuationsPerNode = 12
+    static let maxTreeDepth = 8
+
+    /// Common first / reply moves shown before rarer book sidelines.
+    private static let preferredMoveOrder: [String: Int] = {
+        let preferred = [
+            "e4", "d4", "Nf3", "c4", "g3", "b3", "f4", "Nc3", "e3", "d3", "c3",
+            "e5", "c5", "e6", "c6", "d5", "d6", "Nf6", "g6", "Nc6", "a6", "b6", "f5"
+        ]
+        return Dictionary(uniqueKeysWithValues: preferred.enumerated().map { ($1, $0) })
+    }()
+
     private(set) var isLoaded = false
     private(set) var display = OpeningDisplay.starting
+    /// True when the currently displayed board position is still a known book position.
+    private(set) var isInBook = true
+    /// FEN of the current board position when `isInBook`; otherwise nil.
+    private(set) var currentBookFEN: String?
+    /// Opening labels encountered along the played line up to the current position.
+    private(set) var pathToCurrent: [OpeningBookPathStep] = [
+        OpeningBookPathStep(moveSAN: nil, display: .starting, fen: Position.standard.fen)
+    ]
 
     private var ecoBase: [String: EcoEntry] = [:]
     private var ecoInterpolated: [String: EcoEntry] = [:]
     /// Openings keyed by placement + side-to-move (ignores en passant / clocks).
     private var openingsByBookKey: [String: EcoEntry] = [:]
 
+    /// Number of indexed book positions (for tests / diagnostics).
+    var indexedBookPositionCount: Int {
+        openingsByBookKey.count
+    }
+
     func prepare() async {
         guard !isLoaded else { return }
 
+        // Load on a background task that still resolves the app bundle via BundleToken.
         let loaded = await Task.detached(priority: .userInitiated) {
             OpeningDataLoader.load()
         }.value
@@ -76,12 +128,68 @@ final class OpeningService {
     func refresh(game: ChessGame) {
         guard isLoaded else { return }
 
+        let fen = game.fen()
+        let path = buildPath(to: game)
+        pathToCurrent = path
+
         if game.moves.isEmpty {
             display = .starting
+            isInBook = true
+            currentBookFEN = fen
             return
         }
 
-        display = openingDisplay(forFens: game.fensAfterMoves()) ?? .unknown
+        display = path.last?.display ?? openingDisplay(forFens: game.fensAfterMoves()) ?? .unknown
+        if let match = lookupOpening(fen: fen) {
+            display = match
+            isInBook = true
+            currentBookFEN = fen
+        } else {
+            isInBook = false
+            currentBookFEN = nil
+        }
+    }
+
+    /// Builds the sequence of distinct opening labels reached along the main line to `game`'s current ply.
+    func buildPath(to game: ChessGame) -> [OpeningBookPathStep] {
+        guard isLoaded else { return [] }
+
+        let fens = game.fenSequenceFromStart()
+        let moves = Array(game.moves.prefix(max(fens.count - 1, 0)))
+        var steps: [OpeningBookPathStep] = []
+        var lastDisplay: OpeningDisplay?
+
+        for (index, fen) in fens.enumerated() {
+            let match: OpeningDisplay?
+            if index == 0 {
+                match = lookupOpening(fen: fen) ?? .starting
+            } else {
+                match = lookupOpening(fen: fen)
+            }
+            guard let match else { continue }
+            guard match != lastDisplay else { continue }
+
+            let moveSAN: String?
+            if index == 0 {
+                moveSAN = nil
+            } else if index - 1 < moves.count {
+                moveSAN = moves[index - 1].san
+            } else {
+                moveSAN = nil
+            }
+
+            steps.append(OpeningBookPathStep(moveSAN: moveSAN, display: match, fen: fen))
+            lastDisplay = match
+        }
+
+        if steps.isEmpty {
+            steps = [OpeningBookPathStep(moveSAN: nil, display: .starting, fen: fens.first ?? fenFallback)]
+        }
+        return steps
+    }
+
+    private var fenFallback: String {
+        Position.standard.fen
     }
 
     func opening(for moves: [ChessMove]) -> OpeningDisplay? {
@@ -107,6 +215,78 @@ final class OpeningService {
         return openingsByBookKey[Self.bookKey(for: fen)] != nil
             || ecoInterpolated[fen] != nil
             || ecoBase[fen] != nil
+    }
+
+    func opening(forFEN fen: String) -> OpeningDisplay? {
+        lookupOpening(fen: fen)
+    }
+
+    /// Legal moves from `fen` that land on another known book position, capped for UI.
+    func continuations(
+        from fen: String,
+        limit: Int = OpeningService.maxContinuationsPerNode
+    ) -> [OpeningBookContinuation] {
+        guard isLoaded, let position = Position(fen: fen) else { return [] }
+
+        var results: [OpeningBookContinuation] = []
+        let board = Board(position: position)
+        let side = board.position.sideToMove
+
+        for piece in board.position.pieces where piece.color == side {
+            let start = piece.square
+            for end in board.legalMoves(forPieceAt: start) {
+                var trial = board
+                guard let move = trial.move(pieceAt: start, to: end) else { continue }
+
+                if case .promotion = trial.state {
+                    for kind in [Piece.Kind.queen, .rook, .bishop, .knight] {
+                        var promotionBoard = board
+                        guard promotionBoard.move(pieceAt: start, to: end) != nil else { continue }
+                        guard case .promotion(let promotionMove) = promotionBoard.state else { continue }
+                        let completed = promotionBoard.completePromotion(of: promotionMove, to: kind)
+                        if let continuation = bookContinuation(after: completed, on: promotionBoard) {
+                            results.append(continuation)
+                        }
+                    }
+                } else {
+                    if let continuation = bookContinuation(after: move, on: trial) {
+                        results.append(continuation)
+                    }
+                }
+            }
+        }
+
+        return Array(
+            results
+                .sorted { lhs, rhs in
+                    let leftRank = Self.preferredMoveOrder[Self.normalizedSAN(lhs.san)] ?? Int.max
+                    let rightRank = Self.preferredMoveOrder[Self.normalizedSAN(rhs.san)] ?? Int.max
+                    if leftRank != rightRank {
+                        return leftRank < rightRank
+                    }
+                    if lhs.display.eco != rhs.display.eco {
+                        return lhs.display.eco < rhs.display.eco
+                    }
+                    return lhs.san < rhs.san
+                }
+                .prefix(max(limit, 0))
+        )
+    }
+
+    private static func normalizedSAN(_ san: String) -> String {
+        san.trimmingCharacters(in: CharacterSet(charactersIn: "+#"))
+    }
+
+    private func bookContinuation(after move: Move, on board: Board) -> OpeningBookContinuation? {
+        let fenAfter = board.position.fen
+        guard let display = lookupOpening(fen: fenAfter) else { return nil }
+        return OpeningBookContinuation(
+            san: move.san,
+            from: ChessKitMapping.appPosition(from: move.start),
+            to: ChessKitMapping.appPosition(from: move.end),
+            display: display,
+            fenAfter: fenAfter
+        )
     }
 
     private func openingDisplay(forFens fens: [String]) -> OpeningDisplay? {

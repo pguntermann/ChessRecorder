@@ -29,6 +29,7 @@ Chess Recorder is an iOS app for recording chess games by voice. Speak your move
 - Interactive board with optional touch input for entering moves manually
 - Move navigation with scrubbing and jump controls
 - ECO code and opening name in the toolbar
+- Interactive opening book: browse expandable continuations from the current position
 - Flip board orientation
 - Customizable board colors, coordinates, piece size, and more…
 - Multi-Game PGN export
@@ -105,6 +106,7 @@ In-app help (**?** in the toolbar) lists supported phrase patterns for English a
 - Move assessment on/off, search depth, and quality colors (including miss)
 - Whether assessment symbols are included in PGN export
 - Board appearance, piece size, and touch-input highlight color
+- Opening name visibility and explorer mini-board size
 - Default PGN header fields and learned phrase management
 
 ## Project layout

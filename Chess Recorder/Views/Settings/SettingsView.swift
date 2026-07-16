@@ -238,13 +238,6 @@ struct SettingsView: View {
                         .onChange(of: lastMoveArrowColor) { _, color in
                             settingsStore.update { $0.lastMoveArrowColor = CodableColor(color) }
                         }
-
-                    Toggle("Show opening name", isOn: Binding(
-                        get: { settingsStore.settings.openingNameVisible },
-                        set: { newValue in
-                            settingsStore.update { $0.openingNameVisible = newValue }
-                        }
-                    ))
                     
                     VStack(alignment: .leading) {
                         Text("Board size: \(Int(settingsStore.settings.boardSizePercent * 100))%")
@@ -294,6 +287,38 @@ struct SettingsView: View {
                         }
                 } header: {
                     Text("Board")
+                }
+
+                Section {
+                    Toggle("Show opening name", isOn: Binding(
+                        get: { settingsStore.settings.openingNameVisible },
+                        set: { newValue in
+                            settingsStore.update { $0.openingNameVisible = newValue }
+                        }
+                    ))
+
+                    Toggle("Miniature boards follow main board rotation", isOn: Binding(
+                        get: { settingsStore.settings.openingBookMiniBoardFollowsOrientation },
+                        set: { newValue in
+                            settingsStore.update { $0.openingBookMiniBoardFollowsOrientation = newValue }
+                        }
+                    ))
+                    .disabled(!settingsStore.settings.openingNameVisible)
+
+                    VStack(alignment: .leading) {
+                        Text("Explorer mini-board size: \(Int(settingsStore.settings.openingBookMiniBoardSide)) pt")
+                        Slider(value: Binding(
+                            get: { settingsStore.settings.openingBookMiniBoardSide },
+                            set: { newValue in
+                                settingsStore.update { $0.openingBookMiniBoardSide = newValue.rounded() }
+                            }
+                        ), in: 48...144, step: 4)
+                    }
+                    .disabled(!settingsStore.settings.openingNameVisible)
+                } header: {
+                    Text("Openings")
+                } footer: {
+                    Text("When the opening name is shown above the board, tap it to open the opening explorer and browse book lines from the current position.")
                 }
 
                 Section {

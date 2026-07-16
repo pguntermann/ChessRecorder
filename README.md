@@ -112,6 +112,7 @@ In-app help (**?** in the toolbar) lists supported phrase patterns for English a
 | Path | Purpose |
 |------|---------|
 | `Chess Recorder/` | App source (SwiftUI views, speech, game logic, services) |
+| `Chess RecorderTests/` | Unit tests for game logic, speech, archive, and session |
 | `Chess Recorder.xcodeproj` | Xcode project and SPM package references |
 | `Scripts/` | NNUE download and LucidEngine preparation scripts |
 | `StockfishNNUE/` | Stockfish neural network files (not in git; fetched by script) |

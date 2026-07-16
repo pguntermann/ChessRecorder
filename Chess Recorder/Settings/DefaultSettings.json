@@ -42,20 +42,8 @@
     "green" : 0.2,
     "red" : 0.9
   },
-  "moveAssessmentBrilliantColor" : {
-    "alpha" : 1,
-    "blue" : 0.95,
-    "green" : 0.72,
-    "red" : 0
-  },
   "moveAssessmentDepth" : 14,
   "moveAssessmentEnabled" : true,
-  "moveAssessmentGreatColor" : {
-    "alpha" : 1,
-    "blue" : 0.45,
-    "green" : 0.75,
-    "red" : 0.2
-  },
   "moveAssessmentInaccuracyColor" : {
     "alpha" : 1,
     "blue" : 0.2,

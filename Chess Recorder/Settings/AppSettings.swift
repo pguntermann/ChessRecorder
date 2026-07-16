@@ -62,8 +62,6 @@ struct AppSettings: Codable, Equatable {
     var engineAnalysisArrowColor: CodableColor
     var moveAssessmentEnabled: Bool
     var moveAssessmentDepth: Double
-    var moveAssessmentBrilliantColor: CodableColor
-    var moveAssessmentGreatColor: CodableColor
     var moveAssessmentInaccuracyColor: CodableColor
     var moveAssessmentMistakeColor: CodableColor
     var moveAssessmentBlunderColor: CodableColor
@@ -103,8 +101,6 @@ struct AppSettings: Codable, Equatable {
         case engineAnalysisArrowColor
         case moveAssessmentEnabled
         case moveAssessmentDepth
-        case moveAssessmentBrilliantColor
-        case moveAssessmentGreatColor
         case moveAssessmentInaccuracyColor
         case moveAssessmentMistakeColor
         case moveAssessmentBlunderColor
@@ -143,8 +139,6 @@ struct AppSettings: Codable, Equatable {
         engineAnalysisArrowColor: CodableColor = CodableColor(red: 0, green: 0.478, blue: 1),
         moveAssessmentEnabled: Bool = true,
         moveAssessmentDepth: Double = 14,
-        moveAssessmentBrilliantColor: CodableColor = AppSettings.defaultMoveAssessmentBrilliantColor,
-        moveAssessmentGreatColor: CodableColor = AppSettings.defaultMoveAssessmentGreatColor,
         moveAssessmentInaccuracyColor: CodableColor = AppSettings.defaultMoveAssessmentInaccuracyColor,
         moveAssessmentMistakeColor: CodableColor = AppSettings.defaultMoveAssessmentMistakeColor,
         moveAssessmentBlunderColor: CodableColor = AppSettings.defaultMoveAssessmentBlunderColor,
@@ -181,8 +175,6 @@ struct AppSettings: Codable, Equatable {
         self.engineAnalysisArrowColor = engineAnalysisArrowColor
         self.moveAssessmentEnabled = moveAssessmentEnabled
         self.moveAssessmentDepth = moveAssessmentDepth
-        self.moveAssessmentBrilliantColor = moveAssessmentBrilliantColor
-        self.moveAssessmentGreatColor = moveAssessmentGreatColor
         self.moveAssessmentInaccuracyColor = moveAssessmentInaccuracyColor
         self.moveAssessmentMistakeColor = moveAssessmentMistakeColor
         self.moveAssessmentBlunderColor = moveAssessmentBlunderColor
@@ -229,10 +221,6 @@ struct AppSettings: Codable, Equatable {
             ?? CodableColor(red: 0, green: 0.478, blue: 1)
         moveAssessmentEnabled = try container.decodeIfPresent(Bool.self, forKey: .moveAssessmentEnabled) ?? true
         moveAssessmentDepth = try container.decodeIfPresent(Double.self, forKey: .moveAssessmentDepth) ?? 14
-        moveAssessmentBrilliantColor = try container.decodeIfPresent(CodableColor.self, forKey: .moveAssessmentBrilliantColor)
-            ?? Self.defaultMoveAssessmentBrilliantColor
-        moveAssessmentGreatColor = try container.decodeIfPresent(CodableColor.self, forKey: .moveAssessmentGreatColor)
-            ?? Self.defaultMoveAssessmentGreatColor
         moveAssessmentInaccuracyColor = try container.decodeIfPresent(CodableColor.self, forKey: .moveAssessmentInaccuracyColor)
             ?? Self.defaultMoveAssessmentInaccuracyColor
         moveAssessmentMistakeColor = try container.decodeIfPresent(CodableColor.self, forKey: .moveAssessmentMistakeColor)
@@ -286,8 +274,6 @@ struct AppSettings: Codable, Equatable {
         engineAnalysisArrowColor: CodableColor(red: 0, green: 0.478, blue: 1),
         moveAssessmentEnabled: true,
         moveAssessmentDepth: 14,
-        moveAssessmentBrilliantColor: defaultMoveAssessmentBrilliantColor,
-        moveAssessmentGreatColor: defaultMoveAssessmentGreatColor,
         moveAssessmentInaccuracyColor: defaultMoveAssessmentInaccuracyColor,
         moveAssessmentMistakeColor: defaultMoveAssessmentMistakeColor,
         moveAssessmentBlunderColor: defaultMoveAssessmentBlunderColor,
@@ -376,8 +362,6 @@ private extension JSONEncoder {
 }
 
 extension AppSettings {
-    static let defaultMoveAssessmentBrilliantColor = CodableColor(red: 0.0, green: 0.72, blue: 0.95)
-    static let defaultMoveAssessmentGreatColor = CodableColor(red: 0.2, green: 0.75, blue: 0.45)
     static let defaultMoveAssessmentInaccuracyColor = CodableColor(red: 0.95, green: 0.78, blue: 0.2)
     static let defaultMoveAssessmentMistakeColor = CodableColor(red: 0.95, green: 0.45, blue: 0.2)
     static let defaultMoveAssessmentBlunderColor = CodableColor(red: 0.9, green: 0.2, blue: 0.2)
@@ -402,8 +386,6 @@ extension AppSettings {
 
     var moveAssessmentColorsCacheKey: String {
         [
-            moveAssessmentBrilliantColor,
-            moveAssessmentGreatColor,
             moveAssessmentInaccuracyColor,
             moveAssessmentMistakeColor,
             moveAssessmentBlunderColor

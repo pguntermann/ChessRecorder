@@ -130,7 +130,7 @@ private extension StoredChessMove {
 
         let pieceType = PieceType(rawValue: piece) ?? .pawn
         let promotionType = promotion.flatMap { PieceType(rawValue: $0) }
-        let moveQuality = quality.flatMap(MoveQuality.init(rawValue:))
+        let moveQuality = quality.flatMap(MoveQuality.init(persistedRawValue:))
 
         return ChessMove(
             san: san,

@@ -6,14 +6,12 @@
 import LucidEngine
 import SwiftUI
 
-enum MoveQuality: String, Codable, Equatable, Sendable, CaseIterable {
+enum MoveQuality: String, Equatable, Sendable, CaseIterable {
     case blunder
     case mistake
     case inaccuracy
     case book
     case good
-    case great
-    case brilliant
 
     init(_ classification: MoveClassification) {
         switch classification {
@@ -21,17 +19,13 @@ enum MoveQuality: String, Codable, Equatable, Sendable, CaseIterable {
         case .mistake: self = .mistake
         case .inaccuracy: self = .inaccuracy
         case .book: self = .book
-        case .good: self = .good
-        case .great: self = .great
-        case .brilliant: self = .brilliant
+        case .good, .great, .brilliant: self = .good
         }
     }
 
-    /// Classic PGN assessment suffix (e.g. `!`, `?!`, `??`).
+    /// Classic PGN assessment suffix (e.g. `?!`, `??`).
     var annotationSymbol: String {
         switch self {
-        case .brilliant: return "!!"
-        case .great: return "!"
         case .good, .book: return ""
         case .inaccuracy: return "?!"
         case .mistake: return "?"
@@ -46,20 +40,49 @@ enum MoveQuality: String, Codable, Equatable, Sendable, CaseIterable {
         }
     }
 
-    static let configurableCases: [MoveQuality] = [.brilliant, .great, .inaccuracy, .mistake, .blunder]
+    /// Restores qualities from persisted session data, including legacy great/brilliant values.
+    init?(persistedRawValue: String) {
+        switch persistedRawValue {
+        case "great", "brilliant":
+            self = .good
+        default:
+            guard let value = MoveQuality(rawValue: persistedRawValue) else { return nil }
+            self = value
+        }
+    }
+}
+
+extension MoveQuality: Codable {
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let raw = try container.decode(String.self)
+        switch raw {
+        case "great", "brilliant":
+            // Legacy values from earlier builds; treat as undecorated good moves.
+            self = .good
+        case let value where MoveQuality(rawValue: value) != nil:
+            self = MoveQuality(rawValue: value)!
+        default:
+            throw DecodingError.dataCorruptedError(
+                in: container,
+                debugDescription: "Unknown MoveQuality: \(raw)"
+            )
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
 }
 
 struct MoveAssessmentColors: Equatable {
-    let brilliant: Color
-    let great: Color
     let inaccuracy: Color
     let mistake: Color
     let blunder: Color
 
     func underlineColor(for quality: MoveQuality) -> Color {
         switch quality {
-        case .brilliant: return brilliant
-        case .great: return great
         case .inaccuracy: return inaccuracy
         case .mistake: return mistake
         case .blunder: return blunder
@@ -68,14 +91,10 @@ struct MoveAssessmentColors: Equatable {
     }
 
     init(
-        brilliant: Color,
-        great: Color,
         inaccuracy: Color,
         mistake: Color,
         blunder: Color
     ) {
-        self.brilliant = brilliant
-        self.great = great
         self.inaccuracy = inaccuracy
         self.mistake = mistake
         self.blunder = blunder
@@ -83,8 +102,6 @@ struct MoveAssessmentColors: Equatable {
 
     init(settings: AppSettings) {
         self.init(
-            brilliant: settings.moveAssessmentBrilliantColor.color,
-            great: settings.moveAssessmentGreatColor.color,
             inaccuracy: settings.moveAssessmentInaccuracyColor.color,
             mistake: settings.moveAssessmentMistakeColor.color,
             blunder: settings.moveAssessmentBlunderColor.color
@@ -92,8 +109,6 @@ struct MoveAssessmentColors: Equatable {
     }
 
     static let defaults = MoveAssessmentColors(
-        brilliant: Color(red: 0.0, green: 0.72, blue: 0.95),
-        great: Color(red: 0.2, green: 0.75, blue: 0.45),
         inaccuracy: Color(red: 0.95, green: 0.78, blue: 0.2),
         mistake: Color(red: 0.95, green: 0.45, blue: 0.2),
         blunder: Color(red: 0.9, green: 0.2, blue: 0.2)

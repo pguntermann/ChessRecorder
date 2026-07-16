@@ -238,11 +238,11 @@ final class PGNArchiveTests: XCTestCase {
             archive.applyMoveAssessment(
                 gameID: gameID,
                 moveIndex: 0,
-                quality: .great,
+                quality: .good,
                 expectedSAN: "e4"
             )
         )
-        XCTAssertEqual(archive.games.first { $0.id == gameID }?.moves[0].quality, .great)
+        XCTAssertEqual(archive.games.first { $0.id == gameID }?.moves[0].quality, .good)
     }
 
     func testSyncActiveGamePreservesExistingMoveQualities() {

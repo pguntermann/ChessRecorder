@@ -20,8 +20,6 @@ struct SettingsView: View {
     @State private var analysisArrowColor: Color
     @State private var touchInputHighlightColor: Color
     @State private var lastMoveArrowColor: Color
-    @State private var moveAssessmentBrilliantColor: Color
-    @State private var moveAssessmentGreatColor: Color
     @State private var moveAssessmentInaccuracyColor: Color
     @State private var moveAssessmentMistakeColor: Color
     @State private var moveAssessmentBlunderColor: Color
@@ -51,8 +49,6 @@ struct SettingsView: View {
         _analysisArrowColor = State(initialValue: settings.engineAnalysisArrowColor.color)
         _touchInputHighlightColor = State(initialValue: settings.touchInputHighlightColor.color)
         _lastMoveArrowColor = State(initialValue: settings.lastMoveArrowColor.color)
-        _moveAssessmentBrilliantColor = State(initialValue: settings.moveAssessmentBrilliantColor.color)
-        _moveAssessmentGreatColor = State(initialValue: settings.moveAssessmentGreatColor.color)
         _moveAssessmentInaccuracyColor = State(initialValue: settings.moveAssessmentInaccuracyColor.color)
         _moveAssessmentMistakeColor = State(initialValue: settings.moveAssessmentMistakeColor.color)
         _moveAssessmentBlunderColor = State(initialValue: settings.moveAssessmentBlunderColor.color)
@@ -184,18 +180,6 @@ struct SettingsView: View {
                         ), in: 1...30, step: 1)
                     }
                     .disabled(!settingsStore.settings.moveAssessmentEnabled)
-
-                    ColorPicker("Brilliant (!!)", selection: $moveAssessmentBrilliantColor, supportsOpacity: false)
-                        .disabled(!settingsStore.settings.moveAssessmentEnabled)
-                        .onChange(of: moveAssessmentBrilliantColor) { _, color in
-                            settingsStore.update { $0.moveAssessmentBrilliantColor = CodableColor(color) }
-                        }
-
-                    ColorPicker("Great (!)", selection: $moveAssessmentGreatColor, supportsOpacity: false)
-                        .disabled(!settingsStore.settings.moveAssessmentEnabled)
-                        .onChange(of: moveAssessmentGreatColor) { _, color in
-                            settingsStore.update { $0.moveAssessmentGreatColor = CodableColor(color) }
-                        }
 
                     ColorPicker("Inaccuracy (?!)", selection: $moveAssessmentInaccuracyColor, supportsOpacity: false)
                         .disabled(!settingsStore.settings.moveAssessmentEnabled)
@@ -415,7 +399,7 @@ struct SettingsView: View {
                 } header: {
                     Text("PGN")
                 } footer: {
-                    Text("Event, Site, and player names are used in exported PGN headers. [ECO] is added automatically when an opening is recognized. Use Switch to swap sides between games. Hiding header tags affects the notation panel only; Copy and Share still include full PGN headers. Move assessment symbols (!, ?!, ??, etc.) are added to exported movetext when enabled and assessments are available.")
+                    Text("Event, Site, and player names are used in exported PGN headers. [ECO] is added automatically when an opening is recognized. Use Switch to swap sides between games. Hiding header tags affects the notation panel only; Copy and Share still include full PGN headers. Move assessment symbols (?!, ?, ??) are added to exported movetext when enabled and assessments are available.")
                 }
                 
                 Section {
@@ -626,8 +610,6 @@ struct SettingsView: View {
         analysisArrowColor = settings.engineAnalysisArrowColor.color
         touchInputHighlightColor = settings.touchInputHighlightColor.color
         lastMoveArrowColor = settings.lastMoveArrowColor.color
-        moveAssessmentBrilliantColor = settings.moveAssessmentBrilliantColor.color
-        moveAssessmentGreatColor = settings.moveAssessmentGreatColor.color
         moveAssessmentInaccuracyColor = settings.moveAssessmentInaccuracyColor.color
         moveAssessmentMistakeColor = settings.moveAssessmentMistakeColor.color
         moveAssessmentBlunderColor = settings.moveAssessmentBlunderColor.color

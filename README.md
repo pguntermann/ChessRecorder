@@ -6,7 +6,7 @@
 
 **Version 1.2**
 
-Chess Recorder is an iOS app for recording chess games by voice. Speak your moves in plain language — square names, piece names, captures, castling, and undo — and the app updates the board, builds the move list, and can export the game as PGN. Optional on-device engine analysis shows evaluation, a principal variation, and a best-move arrow while you record.
+Chess Recorder is an iOS app for recording chess games by voice. Speak your moves in plain language — square names, piece names, captures, castling, and undo — and the app updates the board, builds the move list, and can export games as PGN. Optional on-device engine analysis and background move assessment provide instant feedback while you record and review.
 
 ![Chess Recorder on iPad and iPhone — landscape and portrait views with board, live transcript, and engine analysis](Chess%20Recorder/Resources/Screenshots/multi_device_view1.PNG)
 
@@ -26,20 +26,28 @@ Chess Recorder is an iOS app for recording chess games by voice. Speak your move
 
 ### Board and notation
 
-- Interactive board with optional touch input for manual moves
-- Move list and PGN export (share sheet)
+- Interactive board with optional touch input for entering moves manually
+- Move navigation with scrubbing and jump controls
+- ECO code and opening name in the toolbar
 - Flip board orientation
-- Customizable board colors, coordinates, and piece size
+- Customizable board colors, coordinates, piece size, and more…
+- Multi-Game PGN export
 
 ### Engine analysis
 
 - Integrated **Stockfish** analysis via [LucidEngine](https://github.com/CarlosDanielDev/lucid-engine)
-- Evaluation bar, algebraic main line, and best-move arrow (each optional)
+- Evaluation, win probability, algebraic main line, and best-move arrow (each optional)
+
+### Move assessment
+
+- Background Stockfish review of played moves (separate from live analysis)
+- Inaccuracy, mistake, and blunder marks in the move list and PGN notation
+- Optional assessment symbols in exported PGN
 
 ### Rules and game state
 
 - Move validation and game logic via [ChessKit](https://github.com/chesskit-app/chesskit-swift)
-- Undo, new game, and PGN archive support
+- Undo, new game, multi-game archive, and session restore
 
 ## Requirements
 
@@ -92,10 +100,12 @@ In-app help (**?** in the toolbar) lists supported phrase patterns for English a
 
 ### Settings highlights
 
-- Speech language (English / Deutsch) and dictation pause
-- Engine analysis visibility, depth, evaluation bar, algebraic line, and arrow
-- Board appearance and touch input
-- Learned phrases and corrections
+- Speech language (English / Deutsch) and dictation pause length
+- Engine depth and which analysis overlays to show (including arrow color)
+- Move assessment on/off, search depth, and quality colors
+- Whether assessment symbols are included in PGN export
+- Board appearance, piece size, and touch-input highlight color
+- Default PGN header fields and learned phrase management
 
 ## Project layout
 

@@ -71,18 +71,29 @@ struct RecordedGame: Identifiable {
 }
 
 enum PGNFormatter {
-    static func movetext(from moves: [ChessMove], result: PGNResult = .ongoing) -> String {
+    static func movetext(
+        from moves: [ChessMove],
+        result: PGNResult = .ongoing,
+        includeAssessmentSymbols: Bool = false
+    ) -> String {
         var pgn = ""
         for (index, move) in moves.enumerated() {
             if index % 2 == 0 {
                 pgn += "\(index / 2 + 1). "
             }
-            pgn += move.algebraicNotation + " "
+            pgn += exportedMoveText(for: move, includeAssessmentSymbols: includeAssessmentSymbols) + " "
         }
         if result != .ongoing {
             pgn += result.rawValue
         }
         return pgn.trimmingCharacters(in: .whitespaces)
+    }
+
+    static func exportedMoveText(for move: ChessMove, includeAssessmentSymbols: Bool) -> String {
+        guard includeAssessmentSymbols, let quality = move.quality else {
+            return move.algebraicNotation
+        }
+        return move.algebraicNotation + quality.annotationSymbol
     }
 
     static func headers(
@@ -113,7 +124,8 @@ enum PGNFormatter {
         result: PGNResult = .ongoing,
         metadata: PGNMetadata,
         date: Date = Date(),
-        eco: String? = nil
+        eco: String? = nil,
+        includeAssessmentSymbols: Bool = false
     ) -> String {
         let headers = Self.headers(
             round: round,
@@ -122,7 +134,11 @@ enum PGNFormatter {
             date: date,
             eco: eco
         )
-        let moveText = Self.movetext(from: moves, result: result)
+        let moveText = Self.movetext(
+            from: moves,
+            result: result,
+            includeAssessmentSymbols: includeAssessmentSymbols
+        )
         guard !moves.isEmpty else { return headers }
         return headers + "\n\n" + moveText
     }
@@ -185,12 +201,46 @@ final class PGNArchive {
             return
         }
 
-        games[index].moves = chessGame.moves
+        games[index].moves = mergedMoves(
+            preservingQualitiesFrom: games[index].moves,
+            newMoves: chessGame.moves
+        )
         if let opening {
             games[index].eco = opening.eco
             games[index].openingName = opening.name
         }
         games[index].result = chessGame.gameResult
+    }
+
+    @discardableResult
+    func applyMoveAssessment(
+        gameID: UUID,
+        moveIndex: Int,
+        quality: MoveQuality,
+        expectedSAN: String
+    ) -> Bool {
+        guard let index = games.firstIndex(where: { $0.id == gameID }),
+              moveIndex >= 0,
+              moveIndex < games[index].moves.count,
+              games[index].moves[moveIndex].san == expectedSAN else {
+            return false
+        }
+
+        games[index].moves[moveIndex] = games[index].moves[moveIndex].withQuality(quality)
+        return true
+    }
+
+    private func mergedMoves(preservingQualitiesFrom oldMoves: [ChessMove], newMoves: [ChessMove]) -> [ChessMove] {
+        var merged = newMoves
+        for index in merged.indices {
+            guard index < oldMoves.count,
+                  oldMoves[index].matchesPositionally(newMoves[index]),
+                  let quality = oldMoves[index].quality else {
+                break
+            }
+            merged[index] = merged[index].withQuality(quality)
+        }
+        return merged
     }
 
     func finalizeActiveGame(with result: PGNResult, from chessGame: ChessGame, metadataForNewGame: PGNMetadata) {
@@ -207,7 +257,10 @@ final class PGNArchive {
             ensureActiveGameExists(metadata: metadataForNewGame)
             if let activeGameID,
                let index = games.firstIndex(where: { $0.id == activeGameID }) {
-                games[index].moves = chessGame.moves
+                games[index].moves = mergedMoves(
+                    preservingQualitiesFrom: games[index].moves,
+                    newMoves: chessGame.moves
+                )
                 games[index].result = result
                 if let opening {
                     games[index].eco = opening.eco

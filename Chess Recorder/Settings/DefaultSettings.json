@@ -36,10 +36,43 @@
     "red" : 0.86
   },
   "moveAnimationDuration" : 0.35,
+  "moveAssessmentBlunderColor" : {
+    "alpha" : 1,
+    "blue" : 0.2,
+    "green" : 0.2,
+    "red" : 0.9
+  },
+  "moveAssessmentBrilliantColor" : {
+    "alpha" : 1,
+    "blue" : 0.95,
+    "green" : 0.72,
+    "red" : 0
+  },
+  "moveAssessmentDepth" : 14,
+  "moveAssessmentEnabled" : true,
+  "moveAssessmentGreatColor" : {
+    "alpha" : 1,
+    "blue" : 0.45,
+    "green" : 0.75,
+    "red" : 0.2
+  },
+  "moveAssessmentInaccuracyColor" : {
+    "alpha" : 1,
+    "blue" : 0.2,
+    "green" : 0.78,
+    "red" : 0.95
+  },
+  "moveAssessmentMistakeColor" : {
+    "alpha" : 1,
+    "blue" : 0.2,
+    "green" : 0.45,
+    "red" : 0.95
+  },
   "gameSwitchAnimationEnabled" : true,
   "pgnBlack" : "?",
   "pgnEvent" : "Chess Recorder",
   "pgnHideHeaderTags" : true,
+  "pgnIncludeMoveAssessmentSymbols" : false,
   "pgnSite" : "?",
   "pgnWhite" : "?",
   "boardSizePercent" : 1,

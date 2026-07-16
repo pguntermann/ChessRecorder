@@ -18,12 +18,17 @@ enum PGNPresentationBuilder {
         activeGameID: UUID?,
         activePlyIndex: Int,
         isAtLatestMove: Bool,
-        hidePGNHeaderTags: Bool
+        hidePGNHeaderTags: Bool,
+        activeAssessment: MoveAssessmentProgress?,
+        showMoveAssessments: Bool,
+        assessmentColorsCacheKey: String
     ) -> String {
         let gameSignature = games.map {
-            "\($0.id.uuidString):\($0.moves.count):\($0.result.rawValue):\($0.round):\($0.eco ?? ""):\($0.metadata)"
+            let qualitySignature = $0.moves.map { $0.quality?.rawValue ?? "" }.joined(separator: ",")
+            return "\($0.id.uuidString):\($0.moves.count):\($0.result.rawValue):\($0.round):\($0.eco ?? ""):\(qualitySignature):\($0.metadata)"
         }.joined(separator: "|")
-        return "\(gameSignature)|\(activeGameID?.uuidString ?? "none")|\(activePlyIndex)|\(isAtLatestMove)|\(hidePGNHeaderTags)"
+        let assessmentKey = activeAssessment.map { "\($0.gameID.uuidString):\($0.moveIndex)" } ?? "none"
+        return "\(gameSignature)|\(activeGameID?.uuidString ?? "none")|\(activePlyIndex)|\(isAtLatestMove)|\(hidePGNHeaderTags)|\(assessmentKey)|\(showMoveAssessments)|\(assessmentColorsCacheKey)"
     }
 
     static func build(
@@ -31,11 +36,17 @@ enum PGNPresentationBuilder {
         activeGameID: UUID?,
         activePlyIndex: Int,
         isAtLatestMove: Bool,
-        hidePGNHeaderTags: Bool
+        hidePGNHeaderTags: Bool,
+        activeAssessment: MoveAssessmentProgress?,
+        showMoveAssessments: Bool,
+        assessmentColors: MoveAssessmentColors
     ) -> [UUID: GameRowPresentation] {
         var rows: [UUID: GameRowPresentation] = [:]
 
         _ = hidePGNHeaderTags
+        _ = showMoveAssessments
+        _ = assessmentColors
+        _ = activeAssessment
 
         for game in games.reversed() where !game.moves.isEmpty {
             rows[game.id] = rowPresentation(

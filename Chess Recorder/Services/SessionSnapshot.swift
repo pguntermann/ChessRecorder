@@ -61,6 +61,7 @@ struct StoredChessMove: Codable, Equatable {
     let isCheckmate: Bool
     let promotion: String?
     let castling: String?
+    let quality: String?
 }
 
 enum SessionSnapshotCoding {
@@ -118,6 +119,7 @@ private extension StoredChessMove {
         isCheckmate = move.isCheckmate
         promotion = move.promotion?.rawValue.nilIfEmpty
         castling = move.castling
+        quality = move.quality?.rawValue
     }
 
     func makeChessMove() -> ChessMove? {
@@ -128,6 +130,7 @@ private extension StoredChessMove {
 
         let pieceType = PieceType(rawValue: piece) ?? .pawn
         let promotionType = promotion.flatMap { PieceType(rawValue: $0) }
+        let moveQuality = quality.flatMap(MoveQuality.init(rawValue:))
 
         return ChessMove(
             san: san,
@@ -138,7 +141,8 @@ private extension StoredChessMove {
             isCheck: isCheck,
             isCheckmate: isCheckmate,
             promotion: promotionType,
-            castling: castling
+            castling: castling,
+            quality: moveQuality
         )
     }
 }

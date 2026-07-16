@@ -224,4 +224,69 @@ final class PGNArchiveTests: XCTestCase {
         "c6", "Be4", "Nd7", "Nxe3", "Nf6+", "Kg7", "Qxd8", "Bf5", "Qg8+", "Kh6",
         "Qxh7+", "Kg5", "h4#"
     ]
+
+    func testApplyMoveAssessmentUpdatesStoredMove() {
+        let archive = PGNArchive()
+        let game = ChessGame()
+
+        archive.ensureActiveGameExists(metadata: testMetadata)
+        playE4E5(on: game)
+        archive.syncActiveGame(from: game, metadata: testMetadata)
+        let gameID = archive.activeGameID!
+
+        XCTAssertTrue(
+            archive.applyMoveAssessment(
+                gameID: gameID,
+                moveIndex: 0,
+                quality: .great,
+                expectedSAN: "e4"
+            )
+        )
+        XCTAssertEqual(archive.games.first { $0.id == gameID }?.moves[0].quality, .great)
+    }
+
+    func testSyncActiveGamePreservesExistingMoveQualities() {
+        let archive = PGNArchive()
+        let game = ChessGame()
+
+        archive.ensureActiveGameExists(metadata: testMetadata)
+        playE4E5(on: game)
+        archive.syncActiveGame(from: game, metadata: testMetadata)
+        let gameID = archive.activeGameID!
+
+        XCTAssertTrue(
+            archive.applyMoveAssessment(
+                gameID: gameID,
+                moveIndex: 0,
+                quality: .inaccuracy,
+                expectedSAN: "e4"
+            )
+        )
+
+        archive.syncActiveGame(from: game, metadata: testMetadata)
+
+        XCTAssertEqual(archive.games.first { $0.id == gameID }?.moves[0].quality, .inaccuracy)
+        XCTAssertNil(archive.games.first { $0.id == gameID }?.moves[1].quality)
+    }
+
+    func testExportedMovetextIncludesAssessmentSymbolsWhenEnabled() {
+        let move = ChessMove(
+            san: "Nf3",
+            piece: .knight,
+            from: ChessPosition(file: 6, rank: 0),
+            to: ChessPosition(file: 5, rank: 2),
+            captures: false,
+            isCheck: false,
+            isCheckmate: false,
+            promotion: nil,
+            castling: nil,
+            quality: .mistake
+        )
+
+        let withoutSymbols = PGNFormatter.movetext(from: [move], result: .ongoing, includeAssessmentSymbols: false)
+        let withSymbols = PGNFormatter.movetext(from: [move], result: .ongoing, includeAssessmentSymbols: true)
+
+        XCTAssertEqual(withoutSymbols, "1. Nf3")
+        XCTAssertEqual(withSymbols, "1. Nf3?")
+    }
 }

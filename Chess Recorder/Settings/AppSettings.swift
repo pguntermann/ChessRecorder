@@ -60,12 +60,20 @@ struct AppSettings: Codable, Equatable {
     var engineAnalysisUseAlgebraicNotation: Bool
     var engineAnalysisShowBoardArrow: Bool
     var engineAnalysisArrowColor: CodableColor
+    var moveAssessmentEnabled: Bool
+    var moveAssessmentDepth: Double
+    var moveAssessmentBrilliantColor: CodableColor
+    var moveAssessmentGreatColor: CodableColor
+    var moveAssessmentInaccuracyColor: CodableColor
+    var moveAssessmentMistakeColor: CodableColor
+    var moveAssessmentBlunderColor: CodableColor
     var openingNameVisible: Bool
     var pgnEvent: String
     var pgnSite: String
     var pgnWhite: String
     var pgnBlack: String
     var pgnHideHeaderTags: Bool
+    var pgnIncludeMoveAssessmentSymbols: Bool
 
     static let defaultPGNEvent = "Chess Recorder"
     
@@ -93,12 +101,20 @@ struct AppSettings: Codable, Equatable {
         case engineAnalysisUseAlgebraicNotation
         case engineAnalysisShowBoardArrow
         case engineAnalysisArrowColor
+        case moveAssessmentEnabled
+        case moveAssessmentDepth
+        case moveAssessmentBrilliantColor
+        case moveAssessmentGreatColor
+        case moveAssessmentInaccuracyColor
+        case moveAssessmentMistakeColor
+        case moveAssessmentBlunderColor
         case openingNameVisible
         case pgnEvent
         case pgnSite
         case pgnWhite
         case pgnBlack
         case pgnHideHeaderTags
+        case pgnIncludeMoveAssessmentSymbols
     }
     
     init(
@@ -125,12 +141,20 @@ struct AppSettings: Codable, Equatable {
         engineAnalysisUseAlgebraicNotation: Bool = false,
         engineAnalysisShowBoardArrow: Bool = false,
         engineAnalysisArrowColor: CodableColor = CodableColor(red: 0, green: 0.478, blue: 1),
+        moveAssessmentEnabled: Bool = true,
+        moveAssessmentDepth: Double = 14,
+        moveAssessmentBrilliantColor: CodableColor = AppSettings.defaultMoveAssessmentBrilliantColor,
+        moveAssessmentGreatColor: CodableColor = AppSettings.defaultMoveAssessmentGreatColor,
+        moveAssessmentInaccuracyColor: CodableColor = AppSettings.defaultMoveAssessmentInaccuracyColor,
+        moveAssessmentMistakeColor: CodableColor = AppSettings.defaultMoveAssessmentMistakeColor,
+        moveAssessmentBlunderColor: CodableColor = AppSettings.defaultMoveAssessmentBlunderColor,
         openingNameVisible: Bool = true,
         pgnEvent: String = AppSettings.defaultPGNEvent,
         pgnSite: String = "?",
         pgnWhite: String = "?",
         pgnBlack: String = "?",
-        pgnHideHeaderTags: Bool = true
+        pgnHideHeaderTags: Bool = true,
+        pgnIncludeMoveAssessmentSymbols: Bool = false
     ) {
         self.boardSizePercent = boardSizePercent
         self.pieceSizePercent = pieceSizePercent
@@ -155,12 +179,20 @@ struct AppSettings: Codable, Equatable {
         self.engineAnalysisUseAlgebraicNotation = engineAnalysisUseAlgebraicNotation
         self.engineAnalysisShowBoardArrow = engineAnalysisShowBoardArrow
         self.engineAnalysisArrowColor = engineAnalysisArrowColor
+        self.moveAssessmentEnabled = moveAssessmentEnabled
+        self.moveAssessmentDepth = moveAssessmentDepth
+        self.moveAssessmentBrilliantColor = moveAssessmentBrilliantColor
+        self.moveAssessmentGreatColor = moveAssessmentGreatColor
+        self.moveAssessmentInaccuracyColor = moveAssessmentInaccuracyColor
+        self.moveAssessmentMistakeColor = moveAssessmentMistakeColor
+        self.moveAssessmentBlunderColor = moveAssessmentBlunderColor
         self.openingNameVisible = openingNameVisible
         self.pgnEvent = pgnEvent
         self.pgnSite = pgnSite
         self.pgnWhite = pgnWhite
         self.pgnBlack = pgnBlack
         self.pgnHideHeaderTags = pgnHideHeaderTags
+        self.pgnIncludeMoveAssessmentSymbols = pgnIncludeMoveAssessmentSymbols
     }
     
     init(from decoder: Decoder) throws {
@@ -195,12 +227,25 @@ struct AppSettings: Codable, Equatable {
         engineAnalysisShowBoardArrow = try container.decodeIfPresent(Bool.self, forKey: .engineAnalysisShowBoardArrow) ?? false
         engineAnalysisArrowColor = try container.decodeIfPresent(CodableColor.self, forKey: .engineAnalysisArrowColor)
             ?? CodableColor(red: 0, green: 0.478, blue: 1)
+        moveAssessmentEnabled = try container.decodeIfPresent(Bool.self, forKey: .moveAssessmentEnabled) ?? true
+        moveAssessmentDepth = try container.decodeIfPresent(Double.self, forKey: .moveAssessmentDepth) ?? 14
+        moveAssessmentBrilliantColor = try container.decodeIfPresent(CodableColor.self, forKey: .moveAssessmentBrilliantColor)
+            ?? Self.defaultMoveAssessmentBrilliantColor
+        moveAssessmentGreatColor = try container.decodeIfPresent(CodableColor.self, forKey: .moveAssessmentGreatColor)
+            ?? Self.defaultMoveAssessmentGreatColor
+        moveAssessmentInaccuracyColor = try container.decodeIfPresent(CodableColor.self, forKey: .moveAssessmentInaccuracyColor)
+            ?? Self.defaultMoveAssessmentInaccuracyColor
+        moveAssessmentMistakeColor = try container.decodeIfPresent(CodableColor.self, forKey: .moveAssessmentMistakeColor)
+            ?? Self.defaultMoveAssessmentMistakeColor
+        moveAssessmentBlunderColor = try container.decodeIfPresent(CodableColor.self, forKey: .moveAssessmentBlunderColor)
+            ?? Self.defaultMoveAssessmentBlunderColor
         openingNameVisible = try container.decodeIfPresent(Bool.self, forKey: .openingNameVisible) ?? true
         pgnEvent = try container.decodeIfPresent(String.self, forKey: .pgnEvent) ?? Self.defaultPGNEvent
         pgnSite = try container.decodeIfPresent(String.self, forKey: .pgnSite) ?? "?"
         pgnWhite = try container.decodeIfPresent(String.self, forKey: .pgnWhite) ?? "?"
         pgnBlack = try container.decodeIfPresent(String.self, forKey: .pgnBlack) ?? "?"
         pgnHideHeaderTags = try container.decodeIfPresent(Bool.self, forKey: .pgnHideHeaderTags) ?? true
+        pgnIncludeMoveAssessmentSymbols = try container.decodeIfPresent(Bool.self, forKey: .pgnIncludeMoveAssessmentSymbols) ?? false
     }
     
     var pgnMetadata: PGNMetadata {
@@ -239,12 +284,20 @@ struct AppSettings: Codable, Equatable {
         engineAnalysisUseAlgebraicNotation: true,
         engineAnalysisShowBoardArrow: true,
         engineAnalysisArrowColor: CodableColor(red: 0, green: 0.478, blue: 1),
+        moveAssessmentEnabled: true,
+        moveAssessmentDepth: 14,
+        moveAssessmentBrilliantColor: defaultMoveAssessmentBrilliantColor,
+        moveAssessmentGreatColor: defaultMoveAssessmentGreatColor,
+        moveAssessmentInaccuracyColor: defaultMoveAssessmentInaccuracyColor,
+        moveAssessmentMistakeColor: defaultMoveAssessmentMistakeColor,
+        moveAssessmentBlunderColor: defaultMoveAssessmentBlunderColor,
         openingNameVisible: true,
         pgnEvent: defaultPGNEvent,
         pgnSite: "?",
         pgnWhite: "?",
         pgnBlack: "?",
-        pgnHideHeaderTags: true
+        pgnHideHeaderTags: true,
+        pgnIncludeMoveAssessmentSymbols: false
     )
 
     static var bundled: AppSettings? {
@@ -323,6 +376,12 @@ private extension JSONEncoder {
 }
 
 extension AppSettings {
+    static let defaultMoveAssessmentBrilliantColor = CodableColor(red: 0.0, green: 0.72, blue: 0.95)
+    static let defaultMoveAssessmentGreatColor = CodableColor(red: 0.2, green: 0.75, blue: 0.45)
+    static let defaultMoveAssessmentInaccuracyColor = CodableColor(red: 0.95, green: 0.78, blue: 0.2)
+    static let defaultMoveAssessmentMistakeColor = CodableColor(red: 0.95, green: 0.45, blue: 0.2)
+    static let defaultMoveAssessmentBlunderColor = CodableColor(red: 0.9, green: 0.2, blue: 0.2)
+
     static let uncappedEngineAnalysisDepth = 31.0
 
     var isEngineAnalysisUncapped: Bool {
@@ -331,6 +390,26 @@ extension AppSettings {
 
     var cappedEngineAnalysisDepth: Int {
         Int(min(max(engineAnalysisDepth, 1), 30))
+    }
+
+    var cappedMoveAssessmentDepth: Int {
+        Int(min(max(moveAssessmentDepth, 1), 30))
+    }
+
+    var moveAssessmentColors: MoveAssessmentColors {
+        MoveAssessmentColors(settings: self)
+    }
+
+    var moveAssessmentColorsCacheKey: String {
+        [
+            moveAssessmentBrilliantColor,
+            moveAssessmentGreatColor,
+            moveAssessmentInaccuracyColor,
+            moveAssessmentMistakeColor,
+            moveAssessmentBlunderColor
+        ]
+        .map { "\($0.red),\($0.green),\($0.blue),\($0.alpha)" }
+        .joined(separator: "|")
     }
 
     var usesOutsideCoordinates: Bool {

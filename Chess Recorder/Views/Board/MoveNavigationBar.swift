@@ -7,6 +7,9 @@ import SwiftUI
 
 struct MoveNavigationBar: View {
     let game: ChessGame
+    var moveQualities: [MoveQuality?] = []
+    var showMoveAssessments: Bool = false
+    var assessmentColors: MoveAssessmentColors = .defaults
     var iconHitSize: CGFloat = 44
     var onGoToFirst: () -> Void
     var onGoToPrevious: () -> Void
@@ -81,21 +84,18 @@ struct MoveNavigationBar: View {
                         LazyHStack(spacing: 4) {
                             ForEach(Array(game.moves.enumerated()), id: \.offset) { index, move in
                                 if index % 2 == 0 {
-                                    moveToken(
+                                    moveNumberToken(
                                         id: "number-\(index)",
                                         text: "\(index / 2 + 1).",
-                                        isMoveNumber: true,
-                                        moveIndex: index,
-                                        action: { onGoToPly(index) }
+                                        moveIndex: index
                                     )
                                 }
 
-                                moveToken(
+                                assessedMoveToken(
                                     id: "move-\(index)",
-                                    text: move.algebraicNotation,
-                                    isMoveNumber: false,
+                                    move: move,
                                     moveIndex: index,
-                                    action: { onGoToPly(index + 1) }
+                                    quality: quality(at: index)
                                 )
                             }
                         }
@@ -116,22 +116,47 @@ struct MoveNavigationBar: View {
         .frame(height: iconHitSize)
     }
 
-    private func moveToken(
-        id: String,
-        text: String,
-        isMoveNumber: Bool,
-        moveIndex: Int,
-        action: @escaping () -> Void
-    ) -> some View {
-        let isActive = !isMoveNumber && game.activePlyIndex == moveIndex + 1
+    private func quality(at index: Int) -> MoveQuality? {
+        guard showMoveAssessments, index < moveQualities.count else { return nil }
+        return moveQualities[index]
+    }
+
+    private func moveNumberToken(id: String, text: String, moveIndex: Int) -> some View {
         let isDimmed = !game.isAtLatestMove && moveIndex >= game.activePlyIndex
 
-        return Button(action: action) {
+        return Button {
+            onGoToPly(moveIndex)
+        } label: {
             Text(text)
                 .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(isDimmed ? Color.secondary.opacity(0.45) : Color.secondary)
+                .padding(.horizontal, 0)
+                .padding(.vertical, 3)
+        }
+        .buttonStyle(.plain)
+        .id(id)
+        .accessibilityLabel("Move \(text.trimmingCharacters(in: .whitespaces))")
+    }
+
+    private func assessedMoveToken(
+        id: String,
+        move: ChessMove,
+        moveIndex: Int,
+        quality: MoveQuality?
+    ) -> some View {
+        let isActive = game.activePlyIndex == moveIndex + 1
+        let isDimmed = !game.isAtLatestMove && moveIndex >= game.activePlyIndex
+        let displayText = move.algebraicNotation + (quality?.annotationSymbol ?? "")
+        let showsDecoration = quality?.showsAssessmentDecoration == true
+
+        return Button {
+            onGoToPly(moveIndex + 1)
+        } label: {
+            Text(displayText)
+                .font(.system(.caption, design: .monospaced))
                 .fontWeight(isActive ? .semibold : .regular)
-                .foregroundStyle(tokenColor(isMoveNumber: isMoveNumber, isDimmed: isDimmed))
-                .padding(.horizontal, isMoveNumber ? 0 : 4)
+                .foregroundStyle(isDimmed ? Color.secondary.opacity(0.45) : Color.primary)
+                .padding(.horizontal, 4)
                 .padding(.vertical, 3)
                 .background {
                     if isActive {
@@ -139,25 +164,26 @@ struct MoveNavigationBar: View {
                             .fill(Color.accentColor.opacity(0.25))
                     }
                 }
+                .overlay(alignment: .bottom) {
+                    if showsDecoration, let quality {
+                        Capsule()
+                            .fill(assessmentColors.underlineColor(for: quality))
+                            .frame(height: 2.5)
+                            .padding(.horizontal, 1)
+                            .offset(y: 1)
+                    }
+                }
         }
         .buttonStyle(.plain)
         .id(id)
-        .accessibilityLabel(accessibilityLabel(for: text, isMoveNumber: isMoveNumber, isActive: isActive))
+        .accessibilityLabel(accessibilityLabel(for: move, quality: quality, isActive: isActive))
     }
 
-    private func tokenColor(isMoveNumber: Bool, isDimmed: Bool) -> Color {
-        if isDimmed {
-            return .secondary.opacity(0.45)
-        }
-        return isMoveNumber ? .secondary : .primary
-    }
-
-    private func accessibilityLabel(for text: String, isMoveNumber: Bool, isActive: Bool) -> String {
+    private func accessibilityLabel(for move: ChessMove, quality: MoveQuality?, isActive: Bool) -> String {
         let prefix = isActive ? "Current move, " : ""
-        if isMoveNumber {
-            return "\(prefix)Move \(text.trimmingCharacters(in: .whitespaces))"
-        }
-        return "\(prefix)\(text)"
+        let annotation = quality?.annotationSymbol ?? ""
+        let assessment = quality.map { ", \($0.rawValue)" } ?? ""
+        return "\(prefix)\(move.algebraicNotation)\(annotation)\(assessment)"
     }
 
     private func scrollToActiveMove(using proxy: ScrollViewProxy, animated: Bool) {

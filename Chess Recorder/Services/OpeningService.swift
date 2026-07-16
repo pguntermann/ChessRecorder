@@ -49,6 +49,8 @@ final class OpeningService {
 
     private var ecoBase: [String: EcoEntry] = [:]
     private var ecoInterpolated: [String: EcoEntry] = [:]
+    /// Openings keyed by placement + side-to-move (ignores en passant / clocks).
+    private var openingsByBookKey: [String: EcoEntry] = [:]
 
     func prepare() async {
         guard !isLoaded else { return }
@@ -59,6 +61,15 @@ final class OpeningService {
 
         ecoBase = loaded.base
         ecoInterpolated = loaded.interpolated
+
+        var indexed: [String: EcoEntry] = [:]
+        for (fen, entry) in ecoBase {
+            indexed[Self.bookKey(for: fen)] = entry
+        }
+        for (fen, entry) in ecoInterpolated {
+            indexed[Self.bookKey(for: fen)] = entry
+        }
+        openingsByBookKey = indexed
         isLoaded = true
     }
 
@@ -90,6 +101,14 @@ final class OpeningService {
         return openingDisplay(forFens: game.fensAfterMoves())?.eco
     }
 
+    /// True when the position after a move is a known opening/book position.
+    func isBookPosition(fen: String) -> Bool {
+        guard isLoaded else { return false }
+        return openingsByBookKey[Self.bookKey(for: fen)] != nil
+            || ecoInterpolated[fen] != nil
+            || ecoBase[fen] != nil
+    }
+
     private func openingDisplay(forFens fens: [String]) -> OpeningDisplay? {
         var lastKnown: OpeningDisplay?
         for fen in fens {
@@ -101,14 +120,26 @@ final class OpeningService {
     }
 
     private func lookupOpening(fen: String) -> OpeningDisplay? {
-        let entry = ecoInterpolated[fen] ?? ecoBase[fen]
-        guard let entry,
-              let eco = entry.eco,
+        if let entry = ecoInterpolated[fen] ?? ecoBase[fen] {
+            return display(from: entry)
+        }
+        return openingsByBookKey[Self.bookKey(for: fen)].flatMap(display(from:))
+    }
+
+    private func display(from entry: EcoEntry) -> OpeningDisplay? {
+        guard let eco = entry.eco,
               let name = entry.name,
               !eco.isEmpty,
               !name.isEmpty else {
             return nil
         }
         return OpeningDisplay(eco: eco, name: name)
+    }
+
+    /// Placement + side-to-move, ignoring en passant and clocks.
+    private static func bookKey(for fen: String) -> String {
+        let fields = fen.split(separator: " ", maxSplits: 2, omittingEmptySubsequences: true)
+        guard fields.count >= 2 else { return fen }
+        return "\(fields[0]) \(fields[1])"
     }
 }

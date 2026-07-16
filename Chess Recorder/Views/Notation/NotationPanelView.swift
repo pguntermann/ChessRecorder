@@ -17,6 +17,11 @@ struct NotationPanelView: View {
     @Bindable var pgnArchive: PGNArchive
     let defaultMetadata: PGNMetadata
     var hidePGNHeaderTags: Bool = true
+    var includeMoveAssessmentSymbolsInExport: Bool = false
+    var activeAssessment: MoveAssessmentProgress?
+    var showMoveAssessments: Bool = false
+    var assessmentColors: MoveAssessmentColors = .defaults
+    var assessmentColorsCacheKey: String = ""
     let engineAnalysisVisible: Bool
     let engineAnalysisUseAlgebraicNotation: Bool
     @Bindable var engineAnalysis: EngineAnalysisService
@@ -92,7 +97,14 @@ struct NotationPanelView: View {
                                     presentation: cachedRows[recordedGame.id],
                                     hideHeaderTags: hidePGNHeaderTags,
                                     isActive: recordedGame.id == pgnArchive.activeGameID,
-                                    showMoveHighlight: recordedGame.id == pgnArchive.activeGameID
+                                    showMoveHighlight: recordedGame.id == pgnArchive.activeGameID,
+                                    assessingMoveIndex: activeAssessment?.gameID == recordedGame.id
+                                        ? activeAssessment?.moveIndex
+                                        : nil,
+                                    showMoveAssessments: showMoveAssessments,
+                                    assessmentColors: assessmentColors,
+                                    activePlyIndex: game.activePlyIndex,
+                                    isAtLatestMove: game.isAtLatestMove
                                 )
                                 .contentShape(Rectangle())
                                 .onTapGesture {
@@ -112,7 +124,12 @@ struct NotationPanelView: View {
                                 presentation: fallbackActiveRowPresentation(),
                                 hideHeaderTags: hidePGNHeaderTags,
                                 isActive: true,
-                                showMoveHighlight: true
+                                showMoveHighlight: true,
+                                assessingMoveIndex: nil,
+                                showMoveAssessments: showMoveAssessments,
+                                assessmentColors: assessmentColors,
+                                activePlyIndex: game.activePlyIndex,
+                                isAtLatestMove: game.isAtLatestMove
                             )
                         }
                     }
@@ -145,7 +162,10 @@ struct NotationPanelView: View {
             activeGameID: pgnArchive.activeGameID,
             activePlyIndex: game.activePlyIndex,
             isAtLatestMove: game.isAtLatestMove,
-            hidePGNHeaderTags: hidePGNHeaderTags
+            hidePGNHeaderTags: hidePGNHeaderTags,
+            activeAssessment: activeAssessment,
+            showMoveAssessments: showMoveAssessments,
+            assessmentColorsCacheKey: assessmentColorsCacheKey
         )
     }
 
@@ -158,7 +178,10 @@ struct NotationPanelView: View {
             activeGameID: pgnArchive.activeGameID,
             activePlyIndex: game.activePlyIndex,
             isAtLatestMove: game.isAtLatestMove,
-            hidePGNHeaderTags: hidePGNHeaderTags
+            hidePGNHeaderTags: hidePGNHeaderTags,
+            activeAssessment: activeAssessment,
+            showMoveAssessments: showMoveAssessments,
+            assessmentColors: assessmentColors
         )
         cachedRows = builtRows
     }
@@ -179,7 +202,10 @@ struct NotationPanelView: View {
     }
 
     private func copyPGNToClipboard() {
-        cachedFullPGN = PGNExportService.fullPGN(for: pgnArchive)
+        cachedFullPGN = PGNExportService.fullPGN(
+            for: pgnArchive,
+            includeAssessmentSymbols: includeMoveAssessmentSymbolsInExport
+        )
         #if os(iOS)
         UIPasteboard.general.string = cachedFullPGN
         #else
@@ -189,7 +215,10 @@ struct NotationPanelView: View {
     }
 
     private func sharePGN() {
-        cachedFullPGN = PGNExportService.fullPGN(for: pgnArchive)
+        cachedFullPGN = PGNExportService.fullPGN(
+            for: pgnArchive,
+            includeAssessmentSymbols: includeMoveAssessmentSymbolsInExport
+        )
         guard !cachedFullPGN.isEmpty else { return }
         do {
             let url = try PGNExportService.writeTemporaryFile(content: cachedFullPGN)
@@ -213,6 +242,19 @@ private struct GamePGNRowView: View {
     var hideHeaderTags: Bool = true
     let isActive: Bool
     let showMoveHighlight: Bool
+    var assessingMoveIndex: Int? = nil
+    var showMoveAssessments: Bool = false
+    var assessmentColors: MoveAssessmentColors = .defaults
+    var activePlyIndex: Int = 0
+    var isAtLatestMove: Bool = true
+
+    private var isAssessingMoves: Bool {
+        assessingMoveIndex != nil
+    }
+
+    private var usesAssessedTokenLayout: Bool {
+        showMoveAssessments || isAssessingMoves
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -239,6 +281,12 @@ private struct GamePGNRowView: View {
                         .foregroundStyle(.secondary)
                 }
 
+                if isAssessingMoves {
+                    ProgressView()
+                        .controlSize(.mini)
+                        .accessibilityLabel("Assessing move quality")
+                }
+
                 Spacer()
             }
 
@@ -260,6 +308,17 @@ private struct GamePGNRowView: View {
                 Text("No moves yet")
                     .font(.system(.caption, design: .monospaced))
                     .foregroundStyle(.secondary)
+            } else if usesAssessedTokenLayout {
+                PGNAssessedMovetextView(
+                    moves: recordedGame.moves,
+                    result: recordedGame.result,
+                    showMoveHighlight: showMoveHighlight,
+                    activePlyIndex: activePlyIndex,
+                    isAtLatestMove: isAtLatestMove,
+                    assessingMoveIndex: assessingMoveIndex,
+                    showMoveAssessments: showMoveAssessments,
+                    assessmentColors: assessmentColors
+                )
             } else if showMoveHighlight, let presentation {
                 Text(presentation.highlightedMovetext)
                     .font(.system(.caption, design: .monospaced))
@@ -278,6 +337,145 @@ private struct GamePGNRowView: View {
         .background {
             Rectangle()
                 .fill(isActive ? Color.accentColor.opacity(0.08) : Color.clear)
+        }
+    }
+}
+
+private struct PGNAssessedMovetextView: View {
+    let moves: [ChessMove]
+    let result: PGNResult
+    let showMoveHighlight: Bool
+    let activePlyIndex: Int
+    let isAtLatestMove: Bool
+    let assessingMoveIndex: Int?
+    let showMoveAssessments: Bool
+    let assessmentColors: MoveAssessmentColors
+
+    var body: some View {
+        PGNWrappingLayout(spacing: 4) {
+            ForEach(Array(moves.enumerated()), id: \.offset) { index, move in
+                if index % 2 == 0 {
+                    Text("\(index / 2 + 1).")
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(tokenColor(for: index, isMoveNumber: true))
+                }
+
+                moveToken(move: move, index: index)
+            }
+
+            if result != .ongoing {
+                Text(result.rawValue)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func moveToken(move: ChessMove, index: Int) -> some View {
+        let activeMoveIndex = showMoveHighlight && activePlyIndex > 0 ? activePlyIndex - 1 : nil
+        let isActiveMove = index == activeMoveIndex
+        let isDimmed = showMoveHighlight && !isAtLatestMove && index >= activePlyIndex
+        let quality = showMoveAssessments ? move.quality : nil
+        let displayText = move.algebraicNotation + (quality?.annotationSymbol ?? "")
+        let showsDecoration = quality?.showsAssessmentDecoration == true
+        let isAssessing = index == assessingMoveIndex
+
+        return Text(displayText)
+            .font(.system(.caption, design: .monospaced))
+            .fontWeight(isActiveMove ? .semibold : .regular)
+            .foregroundStyle(tokenColor(for: index, isMoveNumber: false))
+            .padding(.horizontal, 2)
+            .padding(.vertical, 1)
+            .background {
+                if isActiveMove {
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(Color.accentColor.opacity(0.25))
+                }
+            }
+            .overlay(alignment: .bottom) {
+                if isAssessing {
+                    DottedUnderline()
+                        .stroke(Color.secondary.opacity(0.55), style: StrokeStyle(lineWidth: 1.5, dash: [1.5, 1.5]))
+                        .frame(height: 1.5)
+                        .padding(.horizontal, 1)
+                        .offset(y: 2)
+                } else if showsDecoration, let quality {
+                    Capsule()
+                        .fill(
+                            assessmentColors.underlineColor(for: quality)
+                                .opacity(isDimmed ? 0.45 : 1)
+                        )
+                        .frame(height: 2.5)
+                        .padding(.horizontal, 1)
+                        .offset(y: 2)
+                }
+            }
+            .padding(.bottom, (isAssessing || showsDecoration) ? 3 : 0)
+    }
+
+    private func tokenColor(for index: Int, isMoveNumber: Bool) -> Color {
+        if showMoveHighlight && !isAtLatestMove && index >= activePlyIndex {
+            return .secondary.opacity(0.45)
+        }
+        return isMoveNumber ? .secondary : .primary
+    }
+}
+
+private struct DottedUnderline: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let y = rect.midY
+        path.move(to: CGPoint(x: rect.minX, y: y))
+        path.addLine(to: CGPoint(x: rect.maxX, y: y))
+        return path
+    }
+}
+
+/// Simple left-to-right wrapping layout for PGN move tokens.
+private struct PGNWrappingLayout: Layout {
+    var spacing: CGFloat = 4
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let maxWidth = proposal.width ?? .infinity
+        var x: CGFloat = 0
+        var y: CGFloat = 0
+        var rowHeight: CGFloat = 0
+        var width: CGFloat = 0
+
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if x > 0, x + size.width > maxWidth {
+                x = 0
+                y += rowHeight + spacing
+                rowHeight = 0
+            }
+            rowHeight = max(rowHeight, size.height)
+            width = max(width, x + size.width)
+            x += size.width + spacing
+        }
+
+        return CGSize(width: maxWidth.isFinite ? maxWidth : width, height: y + rowHeight)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var x = bounds.minX
+        var y = bounds.minY
+        var rowHeight: CGFloat = 0
+
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if x > bounds.minX, x + size.width > bounds.maxX {
+                x = bounds.minX
+                y += rowHeight + spacing
+                rowHeight = 0
+            }
+            subview.place(
+                at: CGPoint(x: x, y: y),
+                proposal: ProposedViewSize(size)
+            )
+            rowHeight = max(rowHeight, size.height)
+            x += size.width + spacing
         }
     }
 }

@@ -88,8 +88,57 @@ struct ChessMove {
     let isCheckmate: Bool
     let promotion: PieceType?
     let castling: String?
+    let quality: MoveQuality?
 
     var algebraicNotation: String { san }
+
+    init(
+        san: String,
+        piece: PieceType,
+        from: ChessPosition,
+        to: ChessPosition,
+        captures: Bool,
+        isCheck: Bool,
+        isCheckmate: Bool,
+        promotion: PieceType?,
+        castling: String?,
+        quality: MoveQuality? = nil
+    ) {
+        self.san = san
+        self.piece = piece
+        self.from = from
+        self.to = to
+        self.captures = captures
+        self.isCheck = isCheck
+        self.isCheckmate = isCheckmate
+        self.promotion = promotion
+        self.castling = castling
+        self.quality = quality
+    }
+
+    func matchesPositionally(_ other: ChessMove) -> Bool {
+        san == other.san
+            && from == other.from
+            && to == other.to
+            && piece == other.piece
+            && promotion == other.promotion
+            && castling == other.castling
+    }
+
+    func withQuality(_ quality: MoveQuality?) -> ChessMove {
+        ChessMove(
+            san: san,
+            piece: piece,
+            from: from,
+            to: to,
+            captures: captures,
+            isCheck: isCheck,
+            isCheckmate: isCheckmate,
+            promotion: promotion,
+            castling: castling,
+            quality: quality
+        )
+    }
 }
 
 struct AnimatedPieceMove: Equatable {

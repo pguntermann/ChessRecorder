@@ -20,6 +20,11 @@ struct SettingsView: View {
     @State private var analysisArrowColor: Color
     @State private var touchInputHighlightColor: Color
     @State private var lastMoveArrowColor: Color
+    @State private var moveAssessmentBrilliantColor: Color
+    @State private var moveAssessmentGreatColor: Color
+    @State private var moveAssessmentInaccuracyColor: Color
+    @State private var moveAssessmentMistakeColor: Color
+    @State private var moveAssessmentBlunderColor: Color
     @State private var selectedLanguage: RecognitionLanguage
     @State private var showingAddPhrase = false
     @State private var showingAddCorrection = false
@@ -46,6 +51,11 @@ struct SettingsView: View {
         _analysisArrowColor = State(initialValue: settings.engineAnalysisArrowColor.color)
         _touchInputHighlightColor = State(initialValue: settings.touchInputHighlightColor.color)
         _lastMoveArrowColor = State(initialValue: settings.lastMoveArrowColor.color)
+        _moveAssessmentBrilliantColor = State(initialValue: settings.moveAssessmentBrilliantColor.color)
+        _moveAssessmentGreatColor = State(initialValue: settings.moveAssessmentGreatColor.color)
+        _moveAssessmentInaccuracyColor = State(initialValue: settings.moveAssessmentInaccuracyColor.color)
+        _moveAssessmentMistakeColor = State(initialValue: settings.moveAssessmentMistakeColor.color)
+        _moveAssessmentBlunderColor = State(initialValue: settings.moveAssessmentBlunderColor.color)
         _selectedLanguage = State(initialValue: settings.defaultRecognitionLanguage)
         _phraseListLanguage = State(initialValue: settings.defaultRecognitionLanguage)
     }
@@ -156,8 +166,58 @@ struct SettingsView: View {
                             }
                         ), in: 1...AppSettings.uncappedEngineAnalysisDepth, step: 1)
                     }
+
+                    Toggle("Assess move quality", isOn: Binding(
+                        get: { settingsStore.settings.moveAssessmentEnabled },
+                        set: { newValue in
+                            settingsStore.update { $0.moveAssessmentEnabled = newValue }
+                        }
+                    ))
+
+                    VStack(alignment: .leading) {
+                        Text(moveAssessmentDepthLabel)
+                        Slider(value: Binding(
+                            get: { settingsStore.settings.moveAssessmentDepth },
+                            set: { newValue in
+                                settingsStore.update { $0.moveAssessmentDepth = newValue.rounded() }
+                            }
+                        ), in: 1...30, step: 1)
+                    }
+                    .disabled(!settingsStore.settings.moveAssessmentEnabled)
+
+                    ColorPicker("Brilliant (!!)", selection: $moveAssessmentBrilliantColor, supportsOpacity: false)
+                        .disabled(!settingsStore.settings.moveAssessmentEnabled)
+                        .onChange(of: moveAssessmentBrilliantColor) { _, color in
+                            settingsStore.update { $0.moveAssessmentBrilliantColor = CodableColor(color) }
+                        }
+
+                    ColorPicker("Great (!)", selection: $moveAssessmentGreatColor, supportsOpacity: false)
+                        .disabled(!settingsStore.settings.moveAssessmentEnabled)
+                        .onChange(of: moveAssessmentGreatColor) { _, color in
+                            settingsStore.update { $0.moveAssessmentGreatColor = CodableColor(color) }
+                        }
+
+                    ColorPicker("Inaccuracy (?!)", selection: $moveAssessmentInaccuracyColor, supportsOpacity: false)
+                        .disabled(!settingsStore.settings.moveAssessmentEnabled)
+                        .onChange(of: moveAssessmentInaccuracyColor) { _, color in
+                            settingsStore.update { $0.moveAssessmentInaccuracyColor = CodableColor(color) }
+                        }
+
+                    ColorPicker("Mistake (?)", selection: $moveAssessmentMistakeColor, supportsOpacity: false)
+                        .disabled(!settingsStore.settings.moveAssessmentEnabled)
+                        .onChange(of: moveAssessmentMistakeColor) { _, color in
+                            settingsStore.update { $0.moveAssessmentMistakeColor = CodableColor(color) }
+                        }
+
+                    ColorPicker("Blunder (??)", selection: $moveAssessmentBlunderColor, supportsOpacity: false)
+                        .disabled(!settingsStore.settings.moveAssessmentEnabled)
+                        .onChange(of: moveAssessmentBlunderColor) { _, color in
+                            settingsStore.update { $0.moveAssessmentBlunderColor = CodableColor(color) }
+                        }
                 } header: {
                     Text("Engine")
+                } footer: {
+                    Text("Move quality symbols and underlines appear in the move history below the board and in the PGN notation section after each played move is analyzed in the background.")
                 }
                 
                 Section {
@@ -345,10 +405,17 @@ struct SettingsView: View {
                             settingsStore.update { $0.pgnHideHeaderTags = newValue }
                         }
                     ))
+
+                    Toggle("Include move assessment symbols", isOn: Binding(
+                        get: { settingsStore.settings.pgnIncludeMoveAssessmentSymbols },
+                        set: { newValue in
+                            settingsStore.update { $0.pgnIncludeMoveAssessmentSymbols = newValue }
+                        }
+                    ))
                 } header: {
                     Text("PGN")
                 } footer: {
-                    Text("Event, Site, and player names are used in exported PGN headers. [ECO] is added automatically when an opening is recognized. Use Switch to swap sides between games. Hiding header tags affects the notation panel only; Copy and Share still include full PGN headers.")
+                    Text("Event, Site, and player names are used in exported PGN headers. [ECO] is added automatically when an opening is recognized. Use Switch to swap sides between games. Hiding header tags affects the notation panel only; Copy and Share still include full PGN headers. Move assessment symbols (!, ?!, ??, etc.) are added to exported movetext when enabled and assessments are available.")
                 }
                 
                 Section {
@@ -528,6 +595,10 @@ struct SettingsView: View {
         }
         return "Analysis Max Depth: \(Int(settingsStore.settings.engineAnalysisDepth))"
     }
+
+    private var moveAssessmentDepthLabel: String {
+        "Move Assessment Depth: \(Int(settingsStore.settings.moveAssessmentDepth))"
+    }
     
     private func swapPGNPlayers() {
         settingsStore.update {
@@ -555,6 +626,11 @@ struct SettingsView: View {
         analysisArrowColor = settings.engineAnalysisArrowColor.color
         touchInputHighlightColor = settings.touchInputHighlightColor.color
         lastMoveArrowColor = settings.lastMoveArrowColor.color
+        moveAssessmentBrilliantColor = settings.moveAssessmentBrilliantColor.color
+        moveAssessmentGreatColor = settings.moveAssessmentGreatColor.color
+        moveAssessmentInaccuracyColor = settings.moveAssessmentInaccuracyColor.color
+        moveAssessmentMistakeColor = settings.moveAssessmentMistakeColor.color
+        moveAssessmentBlunderColor = settings.moveAssessmentBlunderColor.color
         selectedLanguage = settings.defaultRecognitionLanguage
         phraseListLanguage = settings.defaultRecognitionLanguage
     }

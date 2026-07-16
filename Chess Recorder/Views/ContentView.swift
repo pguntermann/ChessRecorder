@@ -26,6 +26,7 @@ struct ContentView: View {
     @State private var recordingPermissionIssue: RecordingPermissionIssue?
     @State private var boardOrientation: BoardOrientation = .whiteAtBottom
     @State private var engineAnalysis = EngineAnalysisService()
+    @State private var moveAssessment = MoveAssessmentService()
     @State private var openingService = OpeningService()
     @State private var isAppReady = false
     @State private var startupIncludesSessionRestore = false
@@ -117,9 +118,19 @@ struct ContentView: View {
                 depth: settingsStore.settings.cappedEngineAnalysisDepth,
                 unlimited: settingsStore.settings.isEngineAnalysisUncapped
             )
+            moveAssessment.configure(
+                depth: settingsStore.settings.cappedMoveAssessmentDepth,
+                enabled: settingsStore.settings.moveAssessmentEnabled,
+                openingService: openingService
+            )
+            moveAssessment.onAssessmentApplied = {
+                scheduleSessionPersist()
+            }
             await speechRecognizer.startup(with: settingsStore.settings.defaultRecognitionLanguage)
             speechRecognizer.setInitializationPhase(.preparingEngine)
-            await engineAnalysis.prepare()
+            async let enginePrepare: Void = engineAnalysis.prepare()
+            async let assessmentPrepare: Void = moveAssessment.prepare()
+            _ = await (enginePrepare, assessmentPrepare)
             speechRecognizer.setInitializationPhase(.loadingOpenings)
             await openingService.prepare()
 
@@ -129,10 +140,14 @@ struct ContentView: View {
             }
 
             openingService.refresh(game: game)
+            moveAssessment.enqueueUnassessedMoves(in: pgnArchive)
             isAppReady = true
         }
         .onDisappear {
-            Task { await engineAnalysis.shutdown() }
+            Task {
+                await engineAnalysis.shutdown()
+                await moveAssessment.shutdown()
+            }
         }
         .onChange(of: settingsStore.settings.dictationPauseSeconds) { _, newValue in
             speechRecognizer.dictationPauseSeconds = newValue
@@ -153,10 +168,29 @@ struct ContentView: View {
             )
             engineAnalysis.refresh(game: game)
         }
-        .onChange(of: game.moves.count) { _, _ in
+        .onChange(of: settingsStore.settings.moveAssessmentEnabled) { _, _ in
+            moveAssessment.configure(
+                depth: settingsStore.settings.cappedMoveAssessmentDepth,
+                enabled: settingsStore.settings.moveAssessmentEnabled,
+                openingService: openingService
+            )
+        }
+        .onChange(of: settingsStore.settings.moveAssessmentDepth) { _, _ in
+            moveAssessment.configure(
+                depth: settingsStore.settings.cappedMoveAssessmentDepth,
+                enabled: settingsStore.settings.moveAssessmentEnabled,
+                openingService: openingService
+            )
+        }
+        .onChange(of: game.moves.count) { oldCount, newCount in
             openingService.refresh(game: game)
             syncLiveBoardToArchiveIfRecording()
             scheduleSessionPersist()
+            if newCount > oldCount {
+                enqueueMoveAssessmentForLatestMove()
+            } else if newCount < oldCount {
+                moveAssessment.cancelJobs(for: pgnArchive.activeGameID, fromMoveIndex: newCount)
+            }
             if game.isGameOver {
                 engineAnalysis.stop()
                 stopRecordingIfNeeded()
@@ -370,6 +404,9 @@ struct ContentView: View {
 
                 MoveNavigationBar(
                     game: game,
+                    moveQualities: activeMoveQualities,
+                    showMoveAssessments: settingsStore.settings.moveAssessmentEnabled,
+                    assessmentColors: settingsStore.settings.moveAssessmentColors,
                     iconHitSize: iconHitSize,
                     onGoToFirst: navigateToFirst,
                     onGoToPrevious: navigateBack,
@@ -426,6 +463,11 @@ struct ContentView: View {
                 pgnArchive: pgnArchive,
                 defaultMetadata: settingsStore.settings.pgnMetadata,
                 hidePGNHeaderTags: settingsStore.settings.pgnHideHeaderTags,
+                includeMoveAssessmentSymbolsInExport: settingsStore.settings.pgnIncludeMoveAssessmentSymbols,
+                activeAssessment: moveAssessment.activeAssessment,
+                showMoveAssessments: settingsStore.settings.moveAssessmentEnabled,
+                assessmentColors: settingsStore.settings.moveAssessmentColors,
+                assessmentColorsCacheKey: settingsStore.settings.moveAssessmentColorsCacheKey,
                 engineAnalysisVisible: settingsStore.settings.engineAnalysisVisible,
                 engineAnalysisUseAlgebraicNotation: settingsStore.settings.engineAnalysisUseAlgebraicNotation,
                 engineAnalysis: engineAnalysis,
@@ -439,6 +481,29 @@ struct ContentView: View {
     private func refreshEngineIfAppropriate() {
         guard settingsStore.settings.engineAnalysisVisible else { return }
         engineAnalysis.refresh(game: game)
+    }
+
+    private func enqueueMoveAssessmentForLatestMove() {
+        guard settingsStore.settings.moveAssessmentEnabled,
+              moveAssessment.isEngineReady,
+              let gameID = pgnArchive.activeGameID,
+              !pgnArchive.activeGameIsReviewOnly,
+              !game.moves.isEmpty else {
+            return
+        }
+
+        let moveIndex = game.moves.count - 1
+        let fenSequence = game.fenSequenceFromStart()
+        guard moveIndex + 1 < fenSequence.count else { return }
+
+        let job = MoveAssessmentJob(
+            gameID: gameID,
+            moveIndex: moveIndex,
+            fenBeforeMove: fenSequence[moveIndex],
+            fenAfterMove: fenSequence[moveIndex + 1],
+            playedMoveSAN: game.moves[moveIndex].san
+        )
+        moveAssessment.enqueue(job, archive: pgnArchive)
     }
     
     private func controlToolbar(compact: Bool, availableWidth: CGFloat) -> some View {
@@ -697,6 +762,7 @@ struct ContentView: View {
     }
     
     private func clearPGN() {
+        moveAssessment.cancelAll()
         pgnArchive.resetAll()
         game.resetGame()
         speechRecognizer.resetTranscriptDisplay()
@@ -802,6 +868,7 @@ struct ContentView: View {
         }
 
         let previousID = pgnArchive.activeGameID
+        moveAssessment.cancelJobs(for: id, fromMoveIndex: 0)
         let nextActiveID = pgnArchive.removeGame(id: id)
 
         guard settingsStore.settings.gameSwitchAnimationEnabled else {
@@ -910,6 +977,15 @@ struct ContentView: View {
 
     private var currentPGNMetadata: PGNMetadata {
         settingsStore.settings.pgnMetadata
+    }
+
+    private var activeMoveQualities: [MoveQuality?] {
+        guard let recordedGame = pgnArchive.activeGame,
+              recordedGame.moves.count == game.moves.count,
+              zip(recordedGame.moves, game.moves).allSatisfy({ $0.0.matchesPositionally($0.1) }) else {
+            return []
+        }
+        return recordedGame.moves.map(\.quality)
     }
 
     private func restorePersistedSessionIfAvailable() {

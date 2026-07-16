@@ -86,13 +86,15 @@ def is_significant(r, g, b, a):
     return a >= 200
 
 def finalize_pixel(r, g, b, a):
-    if r + g + b < 40:
-        return (0, 0, 0, a)
+    # Keep dark-mode UI grays intact; only fully opaque-ify stable pixels.
+    # (Previously crushed r+g+b < 40 to black, which turned sheet scrims into
+    # hard black and made drop shadows look like a shade band on the content.)
     if a >= 240:
         return (r, g, b, 255)
     return (r, g, b, a)
 
-def solidify_interior_blacks(image, mask, source, min_dist=4):
+def solidify_interior_blacks(image, mask, source, min_dist=4, max_dist=48):
+    """Fill near-black holes in the hardware bezel ring only — not app UI."""
     px = image.load()
     src = source.load()
     dist = [[10**9] * ww for _ in range(wh)]
@@ -113,7 +115,14 @@ def solidify_interior_blacks(image, mask, source, min_dist=4):
     for y in range(wh):
         for x in range(ww):
             r, g, b, a = px[x, y]
-            if a and r + g + b < 40 and dist[y][x] >= min_dist and src[x, y][3] >= 200:
+            d = dist[y][x]
+            # Only touch nearly pure black pixels in the outer bezel band.
+            if (
+                a
+                and r + g + b < 8
+                and min_dist <= d <= max_dist
+                and src[x, y][3] >= 200
+            ):
                 px[x, y] = (0, 0, 0, 255)
 
 def clear_boundary_dark(image, mask, source, max_dist=6):

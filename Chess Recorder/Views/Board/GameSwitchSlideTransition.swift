@@ -60,6 +60,8 @@ enum GameSwitchDirection {
 
 @MainActor
 enum GameSwitchSlideAnimator {
+    /// Slides content out, awaits `prepareSwap`, applies `swapContent`, then slides back in.
+    /// Returns only after the slide-in animation has finished so callers can defer heavy work.
     static func run(
         direction: GameSwitchDirection,
         distance: CGFloat,

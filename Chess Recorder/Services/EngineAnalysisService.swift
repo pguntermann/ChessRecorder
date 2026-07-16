@@ -120,12 +120,31 @@ final class EngineAnalysisService {
         Task { await engineWorker.stopSearch() }
     }
 
+    /// Cancels in-flight search and clears the board arrow without turning analysis off.
+    /// Used during game-switch slides so Stockfish work does not compete with animation frames.
+    func suspendInFlightAnalysis() {
+        guard isActive else { return }
+        analysisGeneration += 1
+        analysisTask?.cancel()
+        analysisTask = nil
+        pendingDisplay = nil
+        isAnalyzing = false
+        var cleared = display
+        cleared.nextMoveArrow = nil
+        cleared.principalLineUCI = ""
+        cleared.principalLineSAN = ""
+        cleared.statusMessage = "Analyzing…"
+        display = cleared
+        Task { await engineWorker.stopSearch() }
+    }
+
     func refresh(game: ChessGame) {
         guard isActive, isEngineReady else { return }
 
         analysisGeneration += 1
         let generation = analysisGeneration
         analysisTask?.cancel()
+        pendingDisplay = nil
 
         let snapshot = AnalysisSnapshot(
             fen: game.fen(),
@@ -136,9 +155,23 @@ final class EngineAnalysisService {
         let unlimited = isDepthUnlimited
 
         isAnalyzing = true
-        display.statusMessage = unlimited ? "Analyzing (uncapped)…" : "Analyzing…"
+        // Drop the previous position's best-move arrow immediately so it can't linger
+        // while we wait on assessment lock / the first new depth result.
+        var cleared = display
+        cleared.nextMoveArrow = nil
+        cleared.principalLineUCI = ""
+        cleared.principalLineSAN = ""
+        cleared.statusMessage = unlimited ? "Analyzing (uncapped)…" : "Analyzing…"
+        display = cleared
 
         analysisTask = Task.detached(priority: .userInitiated) { [engineWorker] in
+            // Live analysis and move assessment share one Stockfish. Wait until assessment
+            // releases the engine so our evaluate timeout cannot sf_stop_search mid-classify.
+            while StockfishSearchLock.isAssessmentSessionActive && !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+            guard !Task.isCancelled else { return }
+
             await engineWorker.stopSearch()
 
             let gamePhase = EngineAnalysisDisplayBuilder.currentPhase(fens: snapshot.fenSequence)

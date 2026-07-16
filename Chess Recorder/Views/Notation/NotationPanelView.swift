@@ -34,6 +34,9 @@ struct NotationPanelView: View {
     @State private var cachedFullPGN = ""
     @State private var cachedRows: [UUID: GameRowPresentation] = [:]
     @State private var presentationCacheKey = ""
+    @State private var cachedContentRevision: UInt64 = 0
+    @State private var cachedActiveGameID: UUID?
+    @State private var cachedHighlightKey = ""
 
     private var hasAnyPGNContent: Bool {
         !pgnArchive.games.isEmpty || !game.moves.isEmpty
@@ -88,8 +91,10 @@ struct NotationPanelView: View {
                 }
 
                 if hasAnyPGNContent {
-                    VStack(alignment: .leading, spacing: 12) {
+                    // LazyVStack keeps off-screen archived games from paying layout cost.
+                    LazyVStack(alignment: .leading, spacing: 12) {
                         ForEach(pgnArchive.games) { recordedGame in
+                            let isActiveGame = recordedGame.id == pgnArchive.activeGameID
                             SwipeToDeleteRow {
                                 onDeleteGame?(recordedGame.id)
                             } content: {
@@ -97,18 +102,21 @@ struct NotationPanelView: View {
                                     recordedGame: recordedGame,
                                     presentation: cachedRows[recordedGame.id],
                                     hideHeaderTags: hidePGNHeaderTags,
-                                    isActive: recordedGame.id == pgnArchive.activeGameID,
-                                    showMoveHighlight: recordedGame.id == pgnArchive.activeGameID,
+                                    isActive: isActiveGame,
+                                    showMoveHighlight: isActiveGame,
                                     assessingMoveIndex: activeAssessment?.gameID == recordedGame.id
                                         ? activeAssessment?.moveIndex
                                         : nil,
                                     showMoveAssessments: showMoveAssessments,
                                     showAccuracySummary: showAccuracySummary,
                                     assessmentColors: assessmentColors,
-                                    activePlyIndex: game.activePlyIndex,
-                                    isAtLatestMove: game.isAtLatestMove,
+                                    // Freeze ply props on inactive rows so they don't redraw on navigation.
+                                    activePlyIndex: isActiveGame ? game.activePlyIndex : recordedGame.moves.count,
+                                    isAtLatestMove: isActiveGame ? game.isAtLatestMove : true,
+                                    contentRevision: pgnArchive.contentRevision(for: recordedGame.id),
                                     onActivate: { onActivateGame?(recordedGame.id) }
                                 )
+                                .equatable()
                             }
                         }
 
@@ -158,7 +166,8 @@ struct NotationPanelView: View {
 
     private var presentationInvalidationKey: String {
         PGNPresentationBuilder.cacheKey(
-            games: pgnArchive.games,
+            contentRevision: pgnArchive.contentRevision,
+            gameCount: pgnArchive.games.count,
             activeGameID: pgnArchive.activeGameID,
             activePlyIndex: game.activePlyIndex,
             isAtLatestMove: game.isAtLatestMove,
@@ -172,8 +181,46 @@ struct NotationPanelView: View {
     private func refreshPresentationCacheIfNeeded() {
         let key = presentationInvalidationKey
         guard key != presentationCacheKey else { return }
+
+        let highlightKey = showMoveAssessments
+            ? "assessed"
+            : "\(game.activePlyIndex)|\(game.isAtLatestMove)"
+
+        var rebuildIDs = Set<UUID>()
+
+        let contentChanged = pgnArchive.contentRevision != cachedContentRevision
+        if contentChanged {
+            rebuildIDs.formUnion(pgnArchive.consumeMutatedGameIDs())
+            cachedContentRevision = pgnArchive.contentRevision
+        }
+
+        if cachedActiveGameID != pgnArchive.activeGameID {
+            if let cachedActiveGameID {
+                rebuildIDs.insert(cachedActiveGameID)
+            }
+            if let activeID = pgnArchive.activeGameID {
+                rebuildIDs.insert(activeID)
+            }
+            cachedActiveGameID = pgnArchive.activeGameID
+        }
+
+        // Non-assessed mode paints highlight in attributed text — only the active game needs it.
+        if !showMoveAssessments,
+           highlightKey != cachedHighlightKey,
+           let activeID = pgnArchive.activeGameID {
+            rebuildIDs.insert(activeID)
+        }
+        cachedHighlightKey = highlightKey
+
+        // First populate or unknown dirty set → rebuild everything present.
+        if presentationCacheKey.isEmpty || (contentChanged && rebuildIDs.isEmpty) {
+            rebuildIDs = Set(pgnArchive.games.map(\.id))
+        }
+
         presentationCacheKey = key
-        let builtRows = PGNPresentationBuilder.build(
+        cachedRows = PGNPresentationBuilder.mergeRows(
+            existing: cachedRows,
+            rebuildIDs: rebuildIDs,
             games: pgnArchive.games,
             activeGameID: pgnArchive.activeGameID,
             activePlyIndex: game.activePlyIndex,
@@ -183,7 +230,6 @@ struct NotationPanelView: View {
             showMoveAssessments: showMoveAssessments,
             assessmentColors: assessmentColors
         )
-        cachedRows = builtRows
     }
 
     private func fallbackActiveRowPresentation() -> GameRowPresentation {
@@ -197,7 +243,9 @@ struct NotationPanelView: View {
             eco: nil,
             activePlyIndex: game.activePlyIndex,
             isAtLatestMove: game.isAtLatestMove,
-            showMoveHighlight: true
+            showMoveHighlight: true,
+            buildHighlightedMovetext: !showMoveAssessments,
+            includeAssessmentSymbols: showMoveAssessments
         )
     }
 
@@ -236,7 +284,7 @@ struct NotationPanelView: View {
     }
 }
 
-private struct GamePGNRowView: View {
+private struct GamePGNRowView: View, Equatable {
     let recordedGame: RecordedGame
     let presentation: GameRowPresentation?
     var hideHeaderTags: Bool = true
@@ -248,22 +296,77 @@ private struct GamePGNRowView: View {
     var assessmentColors: MoveAssessmentColors = .defaults
     var activePlyIndex: Int = 0
     var isAtLatestMove: Bool = true
+    var contentRevision: UInt64 = 0
     var onActivate: (() -> Void)? = nil
 
     @State private var showingAccuracySummary = false
+    @State private var cachedAccuracy: CachedAccuracySummary?
+
+    static func == (lhs: GamePGNRowView, rhs: GamePGNRowView) -> Bool {
+        // Intentionally omit `presentation` — AttributedString equality is O(moves).
+        // `contentRevision` + move count cover movetext/quality invalidation.
+        lhs.recordedGame.id == rhs.recordedGame.id
+            && lhs.recordedGame.moves.count == rhs.recordedGame.moves.count
+            && lhs.recordedGame.result == rhs.recordedGame.result
+            && lhs.recordedGame.round == rhs.recordedGame.round
+            && lhs.recordedGame.eco == rhs.recordedGame.eco
+            && lhs.recordedGame.isReviewOnly == rhs.recordedGame.isReviewOnly
+            && lhs.recordedGame.summaryTitle == rhs.recordedGame.summaryTitle
+            && lhs.hideHeaderTags == rhs.hideHeaderTags
+            && lhs.isActive == rhs.isActive
+            && lhs.showMoveHighlight == rhs.showMoveHighlight
+            && lhs.assessingMoveIndex == rhs.assessingMoveIndex
+            && lhs.showMoveAssessments == rhs.showMoveAssessments
+            && lhs.showAccuracySummary == rhs.showAccuracySummary
+            && lhs.assessmentColors == rhs.assessmentColors
+            && lhs.activePlyIndex == rhs.activePlyIndex
+            && lhs.isAtLatestMove == rhs.isAtLatestMove
+            && lhs.contentRevision == rhs.contentRevision
+    }
+
+    private struct CachedAccuracySummary {
+        let revision: UInt64
+        let moveCount: Int
+        let summary: GameAccuracySummary?
+    }
 
     private var isAssessingMoves: Bool {
         assessingMoveIndex != nil
     }
 
+    /// Token layout is expensive (one view per ply). Only the live/assessing game needs it;
+    /// archived games render a single cached Text.
     private var usesAssessedTokenLayout: Bool {
-        showMoveAssessments || isAssessingMoves
+        (showMoveAssessments || isAssessingMoves) && (isActive || isAssessingMoves)
     }
 
     private var accuracySummary: GameAccuracySummary? {
         guard showMoveAssessments, showAccuracySummary else { return nil }
+        if let cachedAccuracy,
+           cachedAccuracy.revision == contentRevision,
+           cachedAccuracy.moveCount == recordedGame.moves.count {
+            return cachedAccuracy.summary
+        }
         let summary = GameAccuracySummary(moves: recordedGame.moves)
         return summary.hasContent ? summary : nil
+    }
+
+    private func refreshAccuracyCache() {
+        guard showMoveAssessments, showAccuracySummary else {
+            cachedAccuracy = nil
+            return
+        }
+        if let cachedAccuracy,
+           cachedAccuracy.revision == contentRevision,
+           cachedAccuracy.moveCount == recordedGame.moves.count {
+            return
+        }
+        let summary = GameAccuracySummary(moves: recordedGame.moves)
+        cachedAccuracy = CachedAccuracySummary(
+            revision: contentRevision,
+            moveCount: recordedGame.moves.count,
+            summary: summary.hasContent ? summary : nil
+        )
     }
 
     var body: some View {
@@ -362,7 +465,14 @@ private struct GamePGNRowView: View {
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
-                    Text(presentation?.plainMovetext ?? PGNFormatter.movetext(from: recordedGame.moves, result: recordedGame.result))
+                    Text(
+                        presentation?.plainMovetext
+                            ?? PGNFormatter.movetext(
+                                from: recordedGame.moves,
+                                result: recordedGame.result,
+                                includeAssessmentSymbols: showMoveAssessments
+                            )
+                    )
                         .font(.system(.caption, design: .monospaced))
                         .foregroundStyle(.secondary)
                         .textSelection(.enabled)
@@ -378,9 +488,12 @@ private struct GamePGNRowView: View {
             Rectangle()
                 .fill(isActive ? Color.accentColor.opacity(0.08) : Color.clear)
         }
+        .onAppear(perform: refreshAccuracyCache)
+        .onChange(of: contentRevision) { _, _ in refreshAccuracyCache() }
+        .onChange(of: recordedGame.moves.count) { _, _ in refreshAccuracyCache() }
         .sheet(isPresented: $showingAccuracySummary) {
             GameAccuracySummarySheet(
-                summary: GameAccuracySummary(moves: recordedGame.moves),
+                summary: cachedAccuracy?.summary ?? GameAccuracySummary(moves: recordedGame.moves),
                 roundTitle: "Round \(recordedGame.round)",
                 assessmentColors: assessmentColors
             )
@@ -501,12 +614,28 @@ private struct PGNAssessedMovetextView: View {
         PGNWrappingLayout(spacing: 4) {
             ForEach(Array(moves.enumerated()), id: \.offset) { index, move in
                 if index % 2 == 0 {
-                    Text("\(index / 2 + 1).")
-                        .font(.system(.caption, design: .monospaced))
-                        .foregroundStyle(tokenColor(for: index, isMoveNumber: true))
+                    PGNMoveNumberToken(
+                        number: index / 2 + 1,
+                        isDimmed: showMoveHighlight && !isAtLatestMove && index >= activePlyIndex
+                    )
+                    .equatable()
                 }
 
-                moveToken(move: move, index: index)
+                PGNMoveSANToken(
+                    text: move.algebraicNotation + (
+                        showMoveAssessments ? (move.quality?.annotationSymbol ?? "") : ""
+                    ),
+                    isActiveMove: showMoveHighlight && activePlyIndex > 0 && index == activePlyIndex - 1,
+                    isDimmed: showMoveHighlight && !isAtLatestMove && index >= activePlyIndex,
+                    isAssessing: index == assessingMoveIndex,
+                    underlineColor: {
+                        guard showMoveAssessments,
+                              let quality = move.quality,
+                              quality.showsAssessmentDecoration else { return nil }
+                        return assessmentColors.underlineColor(for: quality)
+                    }()
+                )
+                .equatable()
             }
 
             if result != .ongoing {
@@ -517,20 +646,31 @@ private struct PGNAssessedMovetextView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
+}
 
-    private func moveToken(move: ChessMove, index: Int) -> some View {
-        let activeMoveIndex = showMoveHighlight && activePlyIndex > 0 ? activePlyIndex - 1 : nil
-        let isActiveMove = index == activeMoveIndex
-        let isDimmed = showMoveHighlight && !isAtLatestMove && index >= activePlyIndex
-        let quality = showMoveAssessments ? move.quality : nil
-        let displayText = move.algebraicNotation + (quality?.annotationSymbol ?? "")
-        let showsDecoration = quality?.showsAssessmentDecoration == true
-        let isAssessing = index == assessingMoveIndex
+private struct PGNMoveNumberToken: View, Equatable {
+    let number: Int
+    let isDimmed: Bool
 
-        return Text(displayText)
+    var body: some View {
+        Text("\(number).")
+            .font(.system(.caption, design: .monospaced))
+            .foregroundStyle(isDimmed ? AnyShapeStyle(.secondary.opacity(0.45)) : AnyShapeStyle(.secondary))
+    }
+}
+
+private struct PGNMoveSANToken: View, Equatable {
+    let text: String
+    let isActiveMove: Bool
+    let isDimmed: Bool
+    let isAssessing: Bool
+    let underlineColor: Color?
+
+    var body: some View {
+        Text(text)
             .font(.system(.caption, design: .monospaced))
             .fontWeight(isActiveMove ? .semibold : .regular)
-            .foregroundStyle(tokenColor(for: index, isMoveNumber: false))
+            .foregroundStyle(isDimmed ? AnyShapeStyle(.secondary.opacity(0.45)) : AnyShapeStyle(.primary))
             .padding(.horizontal, 2)
             .padding(.vertical, 1)
             .background {
@@ -546,25 +686,15 @@ private struct PGNAssessedMovetextView: View {
                         .frame(height: 1.5)
                         .padding(.horizontal, 1)
                         .offset(y: 2)
-                } else if showsDecoration, let quality {
+                } else if let underlineColor {
                     Capsule()
-                        .fill(
-                            assessmentColors.underlineColor(for: quality)
-                                .opacity(isDimmed ? 0.45 : 1)
-                        )
+                        .fill(underlineColor.opacity(isDimmed ? 0.45 : 1))
                         .frame(height: 2.5)
                         .padding(.horizontal, 1)
                         .offset(y: 2)
                 }
             }
-            .padding(.bottom, (isAssessing || showsDecoration) ? 3 : 0)
-    }
-
-    private func tokenColor(for index: Int, isMoveNumber: Bool) -> Color {
-        if showMoveHighlight && !isAtLatestMove && index >= activePlyIndex {
-            return .secondary.opacity(0.45)
-        }
-        return isMoveNumber ? .secondary : .primary
+            .padding(.bottom, (isAssessing || underlineColor != nil) ? 3 : 0)
     }
 }
 
@@ -582,15 +712,24 @@ private struct DottedUnderline: Shape {
 private struct PGNWrappingLayout: Layout {
     var spacing: CGFloat = 4
 
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+    struct Cache {
+        var sizes: [CGSize] = []
+    }
+
+    func makeCache(subviews: Subviews) -> Cache {
+        Cache()
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout Cache) -> CGSize {
         let maxWidth = proposal.width ?? .infinity
+        cache.sizes = subviews.map { $0.sizeThatFits(.unspecified) }
+
         var x: CGFloat = 0
         var y: CGFloat = 0
         var rowHeight: CGFloat = 0
         var width: CGFloat = 0
 
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
+        for size in cache.sizes {
             if x > 0, x + size.width > maxWidth {
                 x = 0
                 y += rowHeight + spacing
@@ -604,13 +743,17 @@ private struct PGNWrappingLayout: Layout {
         return CGSize(width: maxWidth.isFinite ? maxWidth : width, height: y + rowHeight)
     }
 
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout Cache) {
+        if cache.sizes.count != subviews.count {
+            cache.sizes = subviews.map { $0.sizeThatFits(.unspecified) }
+        }
+
         var x = bounds.minX
         var y = bounds.minY
         var rowHeight: CGFloat = 0
 
-        for subview in subviews {
-            let size = subview.sizeThatFits(.unspecified)
+        for (index, subview) in subviews.enumerated() {
+            let size = cache.sizes[index]
             if x > bounds.minX, x + size.width > bounds.maxX {
                 x = bounds.minX
                 y += rowHeight + spacing

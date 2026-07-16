@@ -35,34 +35,53 @@ actor MoveAssessmentEngine {
     }
 
     func assessMove(fenBefore: String, fenAfter: String, depth: Int) async throws -> MoveAssessmentResult {
-        let beforeAssessment = try await engine.evaluate(fen: fenBefore, depth: depth)
-        let rawScoreAfter: Score
-        do {
-            rawScoreAfter = try await engine.evaluate(fen: fenAfter, depth: depth).score
-        } catch EngineError.analysisInterrupted {
-            // Terminal checkmate/stalemate FENs often have no best move; LucidEngine maps that
-            // to analysisInterrupted. If we already had a forced mate, treat this as delivery.
-            guard case .mate(let n) = beforeAssessment.score, n > 0 else {
-                throw EngineError.analysisInterrupted
+        // Keep live analysis from calling sf_stop_search() during this pair of evals.
+        try await StockfishSearchLock.withAssessmentSession {
+            let beforeAssessment = try await engine.evaluate(fen: fenBefore, depth: depth)
+
+            // If the played move is the engine's #1 choice, it cannot be a blunder — even when a
+            // concurrent analysis stop corrupts the fenAfter eval and invents a huge CPL.
+            if MoveAssessmentClassifier.isEngineBestMove(
+                fenBefore: fenBefore,
+                fenAfter: fenAfter,
+                bestMove: beforeAssessment.bestMove
+            ) {
+                return MoveAssessmentResult(
+                    quality: .good,
+                    centipawnLoss: 0,
+                    scoreBefore: beforeAssessment.score,
+                    rawScoreAfter: MoveAssessmentClassifier.inverted(beforeAssessment.score)
+                )
             }
-            rawScoreAfter = .mate(0)
+
+            let rawScoreAfter: Score
+            do {
+                rawScoreAfter = try await engine.evaluate(fen: fenAfter, depth: depth).score
+            } catch EngineError.analysisInterrupted {
+                // Terminal checkmate/stalemate FENs often have no best move; LucidEngine maps that
+                // to analysisInterrupted. If we already had a forced mate, treat this as delivery.
+                guard case .mate(let n) = beforeAssessment.score, n > 0 else {
+                    throw EngineError.analysisInterrupted
+                }
+                rawScoreAfter = .mate(0)
+            }
+
+            let centipawnLoss = MoveAssessmentClassifier.centipawnLoss(
+                scoreBefore: beforeAssessment.score,
+                rawScoreAfter: rawScoreAfter
+            )
+            let quality = MoveAssessmentClassifier.quality(
+                centipawnLoss: centipawnLoss,
+                scoreBefore: beforeAssessment.score,
+                rawScoreAfter: rawScoreAfter
+            )
+
+            return MoveAssessmentResult(
+                quality: quality,
+                centipawnLoss: centipawnLoss,
+                scoreBefore: beforeAssessment.score,
+                rawScoreAfter: rawScoreAfter
+            )
         }
-
-        let centipawnLoss = MoveAssessmentClassifier.centipawnLoss(
-            scoreBefore: beforeAssessment.score,
-            rawScoreAfter: rawScoreAfter
-        )
-        let quality = MoveAssessmentClassifier.quality(
-            centipawnLoss: centipawnLoss,
-            scoreBefore: beforeAssessment.score,
-            rawScoreAfter: rawScoreAfter
-        )
-
-        return MoveAssessmentResult(
-            quality: quality,
-            centipawnLoss: centipawnLoss,
-            scoreBefore: beforeAssessment.score,
-            rawScoreAfter: rawScoreAfter
-        )
     }
 }

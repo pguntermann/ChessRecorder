@@ -30,6 +30,8 @@ actor EngineAnalysisEngine {
     }
 
     func stopSearch() {
+        // Assessment owns the global Stockfish search while classifying moves.
+        guard !StockfishSearchLock.isAssessmentSessionActive else { return }
         sf_stop_search()
     }
 

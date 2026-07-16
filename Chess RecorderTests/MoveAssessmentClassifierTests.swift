@@ -127,4 +127,36 @@ final class MoveAssessmentClassifierTests: XCTestCase {
         )
         XCTAssertEqual(colors.underlineColor(for: .miss), pink)
     }
+
+    func testPlayedEngineBestMoveIsDetected() {
+        // After 1.e4 e5, White's best is often Nf3 (g1f3).
+        let before = "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq e6 0 2"
+        let after = "rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2"
+        XCTAssertTrue(
+            MoveAssessmentClassifier.isEngineBestMove(
+                fenBefore: before,
+                fenAfter: after,
+                bestMove: Move(from: "g1", to: "f3")
+            )
+        )
+        XCTAssertFalse(
+            MoveAssessmentClassifier.isEngineBestMove(
+                fenBefore: before,
+                fenAfter: after,
+                bestMove: Move(from: "b1", to: "c3")
+            )
+        )
+    }
+
+    func testBestMoveShortCircuitOverridesBogusCentipawnLoss() {
+        // Even if CPL math would scream blunder, playing the engine move is `.good`.
+        // (Regression for cases like 35...Bf8 marked ?? while being the PV move.)
+        XCTAssertTrue(
+            MoveAssessmentClassifier.isEngineBestMove(
+                fenBefore: "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq e6 0 2",
+                fenAfter: "rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2",
+                bestMove: Move(from: "g1", to: "f3")
+            )
+        )
+    }
 }

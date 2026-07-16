@@ -13,8 +13,14 @@ struct GameRowPresentation: Equatable {
 
 @MainActor
 enum PGNPresentationBuilder {
+    /// Cheap invalidation key. Relies on `PGNArchive.contentRevision` instead of scanning
+    /// every archived game on each SwiftUI body evaluation.
+    ///
+    /// When move assessments are shown, ply highlight is handled by token views directly, so
+    /// `activePlyIndex` is omitted and attributed highlight rebuilds are skipped.
     static func cacheKey(
-        games: [RecordedGame],
+        contentRevision: UInt64,
+        gameCount: Int,
         activeGameID: UUID?,
         activePlyIndex: Int,
         isAtLatestMove: Bool,
@@ -23,14 +29,12 @@ enum PGNPresentationBuilder {
         showMoveAssessments: Bool,
         assessmentColorsCacheKey: String
     ) -> String {
-        let gameSignature = games.map {
-            let qualitySignature = $0.moves.map {
-                "\($0.quality?.rawValue ?? ""):\($0.centipawnLoss.map(String.init) ?? "")"
-            }.joined(separator: ",")
-            return "\($0.id.uuidString):\($0.moves.count):\($0.result.rawValue):\($0.round):\($0.eco ?? ""):\(qualitySignature):\($0.metadata)"
-        }.joined(separator: "|")
         let assessmentKey = activeAssessment.map { "\($0.gameID.uuidString):\($0.moveIndex)" } ?? "none"
-        return "\(gameSignature)|\(activeGameID?.uuidString ?? "none")|\(activePlyIndex)|\(isAtLatestMove)|\(hidePGNHeaderTags)|\(assessmentKey)|\(showMoveAssessments)|\(assessmentColorsCacheKey)"
+        // Assessed token layout paints highlight from live ply props — no attributed rebuild.
+        let highlightKey = showMoveAssessments
+            ? "assessed"
+            : "\(activePlyIndex)|\(isAtLatestMove)"
+        return "\(contentRevision)|\(gameCount)|\(activeGameID?.uuidString ?? "none")|\(highlightKey)|\(hidePGNHeaderTags)|\(assessmentKey)|\(showMoveAssessments)|\(assessmentColorsCacheKey)"
     }
 
     static func build(
@@ -43,21 +47,55 @@ enum PGNPresentationBuilder {
         showMoveAssessments: Bool,
         assessmentColors: MoveAssessmentColors
     ) -> [UUID: GameRowPresentation] {
-        var rows: [UUID: GameRowPresentation] = [:]
+        mergeRows(
+            existing: [:],
+            rebuildIDs: Set(games.map(\.id)),
+            games: games,
+            activeGameID: activeGameID,
+            activePlyIndex: activePlyIndex,
+            isAtLatestMove: isAtLatestMove,
+            hidePGNHeaderTags: hidePGNHeaderTags,
+            activeAssessment: activeAssessment,
+            showMoveAssessments: showMoveAssessments,
+            assessmentColors: assessmentColors
+        )
+    }
 
+    /// Keeps cached rows for unchanged games; rebuilds only `rebuildIDs` (and drops removed games).
+    static func mergeRows(
+        existing: [UUID: GameRowPresentation],
+        rebuildIDs: Set<UUID>,
+        games: [RecordedGame],
+        activeGameID: UUID?,
+        activePlyIndex: Int,
+        isAtLatestMove: Bool,
+        hidePGNHeaderTags: Bool,
+        activeAssessment: MoveAssessmentProgress?,
+        showMoveAssessments: Bool,
+        assessmentColors: MoveAssessmentColors
+    ) -> [UUID: GameRowPresentation] {
         _ = hidePGNHeaderTags
-        _ = showMoveAssessments
         _ = assessmentColors
         _ = activeAssessment
 
-        for game in games.reversed() where !game.moves.isEmpty {
+        let currentIDs = Set(games.map(\.id))
+        var rows = existing.filter { currentIDs.contains($0.key) }
+
+        for game in games where !game.moves.isEmpty && rebuildIDs.contains(game.id) {
             rows[game.id] = rowPresentation(
                 for: game,
                 eco: game.eco,
                 activePlyIndex: activePlyIndex,
                 isAtLatestMove: isAtLatestMove,
-                showMoveHighlight: game.id == activeGameID
+                showMoveHighlight: game.id == activeGameID,
+                buildHighlightedMovetext: !showMoveAssessments,
+                includeAssessmentSymbols: showMoveAssessments
             )
+        }
+
+        // Drop empty games that no longer have presentation.
+        for game in games where game.moves.isEmpty {
+            rows.removeValue(forKey: game.id)
         }
 
         return rows
@@ -68,18 +106,32 @@ enum PGNPresentationBuilder {
         eco: String?,
         activePlyIndex: Int,
         isAtLatestMove: Bool,
-        showMoveHighlight: Bool
+        showMoveHighlight: Bool,
+        buildHighlightedMovetext: Bool = true,
+        includeAssessmentSymbols: Bool = false
     ) -> GameRowPresentation {
-        GameRowPresentation(
-            eco: eco,
-            highlightedMovetext: highlightedMovetext(
+        let plain = PGNFormatter.movetext(
+            from: game.moves,
+            result: game.result,
+            includeAssessmentSymbols: includeAssessmentSymbols
+        )
+        let highlighted: AttributedString
+        if buildHighlightedMovetext {
+            highlighted = Self.highlightedMovetext(
                 moves: game.moves,
                 result: game.result,
                 activePlyIndex: activePlyIndex,
                 isAtLatestMove: isAtLatestMove,
                 showMoveHighlight: showMoveHighlight
-            ),
-            plainMovetext: PGNFormatter.movetext(from: game.moves, result: game.result)
+            )
+        } else {
+            highlighted = AttributedString(plain)
+        }
+
+        return GameRowPresentation(
+            eco: eco,
+            highlightedMovetext: highlighted,
+            plainMovetext: plain
         )
     }
 

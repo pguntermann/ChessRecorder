@@ -21,6 +21,18 @@ enum MoveAssessmentClassifier: Sendable {
     /// Above this, losing a mate score but staying crushing is only an inaccuracy.
     nonisolated static let crushingWinCentipawns = 600
 
+    /// True when the move between `fenBefore` and `fenAfter` is the engine's best move.
+    nonisolated static func isEngineBestMove(
+        fenBefore: String,
+        fenAfter: String,
+        bestMove: Move
+    ) -> Bool {
+        guard let played = FENDiff.detectMove(before: fenBefore, after: fenAfter) else {
+            return false
+        }
+        return played == bestMove
+    }
+
     nonisolated static func quality(
         centipawnLoss: Int,
         scoreBefore: Score,

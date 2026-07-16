@@ -110,10 +110,21 @@ struct MoveNavigationBar: View {
                 scrollToActiveMove(using: proxy, animated: true)
             }
             .onChange(of: game.moves.count) { _, _ in
+                // LazyHStack often hasn't measured the new trailing token yet on the first pass.
                 scrollToActiveMove(using: proxy, animated: true)
+                scheduleFollowUpScroll(using: proxy)
+            }
+            .onChange(of: moveStripLayoutKey) { _, _ in
+                // Annotation symbols / underlines widen tokens after assessment completes.
+                scheduleFollowUpScroll(using: proxy)
             }
         }
         .frame(height: iconHitSize)
+    }
+
+    /// Invalidates when token widths change without a ply/count change (e.g. `??` appears).
+    private var moveStripLayoutKey: String {
+        moveQualities.map { $0?.rawValue ?? "-" }.joined(separator: ",")
     }
 
     private func quality(at index: Int) -> MoveQuality? {
@@ -196,12 +207,24 @@ struct MoveNavigationBar: View {
 
         guard let targetID else { return }
 
+        // At the live edge, pin to trailing so the newest (often wider) token stays fully visible.
+        let anchor: UnitPoint = game.isAtLatestMove ? .trailing : .center
+
         if animated {
             withAnimation(.easeInOut(duration: 0.2)) {
-                proxy.scrollTo(targetID, anchor: .center)
+                proxy.scrollTo(targetID, anchor: anchor)
             }
         } else {
-            proxy.scrollTo(targetID, anchor: .center)
+            proxy.scrollTo(targetID, anchor: anchor)
+        }
+    }
+
+    private func scheduleFollowUpScroll(using proxy: ScrollViewProxy) {
+        DispatchQueue.main.async {
+            scrollToActiveMove(using: proxy, animated: false)
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            scrollToActiveMove(using: proxy, animated: false)
         }
     }
 

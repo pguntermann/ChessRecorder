@@ -37,6 +37,8 @@ struct ContentView: View {
     @State private var gameSwitchSlideOffset: CGFloat = 0
     @State private var isGameSwitchAnimating = false
     @State private var gameSwitchContainerWidth: CGFloat = 0
+    /// Defers archive/PGN work until piece animation finishes so notation rebuilds don't stutter the tween.
+    @State private var deferredArchiveWorkTask: Task<Void, Never>?
     
     init(
         settingsStore: SettingsStore,
@@ -185,14 +187,43 @@ struct ContentView: View {
         }
         .onChange(of: game.moves.count) { oldCount, newCount in
             openingService.refresh(game: game)
-            syncLiveBoardToArchiveIfRecording()
-            scheduleSessionPersist()
-            if newCount > oldCount, !isApplyingArchiveSelection {
-                enqueueMoveAssessmentForLatestMove()
-            } else if newCount < oldCount, !isApplyingArchiveSelection {
+
+            let isForwardMove = newCount > oldCount && !isApplyingArchiveSelection
+            let isTakeback = newCount < oldCount && !isApplyingArchiveSelection
+            let animationDuration = settingsStore.settings.moveAnimationDuration
+
+            if isTakeback {
+                deferredArchiveWorkTask?.cancel()
+                deferredArchiveWorkTask = nil
                 moveAssessment.cancelJobs(for: pgnArchive.activeGameID, fromMoveIndex: newCount)
+                syncLiveBoardToArchiveIfRecording()
+                scheduleSessionPersist()
+            } else if isForwardMove, animationDuration > 0 {
+                // Keep archive/notation idle during the piece tween; multi-game PGN rebuilds are heavy.
+                deferredArchiveWorkTask?.cancel()
+                deferredArchiveWorkTask = Task { @MainActor in
+                    let nanoseconds = UInt64(animationDuration * 1_000_000_000)
+                    try? await Task.sleep(nanoseconds: nanoseconds)
+                    guard !Task.isCancelled else { return }
+                    syncLiveBoardToArchiveIfRecording()
+                    scheduleSessionPersist()
+                    enqueueMoveAssessmentForLatestMove()
+                }
+            } else {
+                deferredArchiveWorkTask?.cancel()
+                deferredArchiveWorkTask = nil
+                syncLiveBoardToArchiveIfRecording()
+                scheduleSessionPersist()
+                if isForwardMove {
+                    enqueueMoveAssessmentForLatestMove()
+                }
             }
+
             if game.isGameOver {
+                deferredArchiveWorkTask?.cancel()
+                deferredArchiveWorkTask = nil
+                syncLiveBoardToArchiveIfRecording()
+                scheduleSessionPersist()
                 engineAnalysis.stop()
                 stopRecordingIfNeeded()
             } else {
@@ -274,6 +305,8 @@ struct ContentView: View {
             if newPhase == .active {
                 speechRecognizer.refreshAuthorizationStatus()
             } else if newPhase == .background || newPhase == .inactive {
+                deferredArchiveWorkTask?.cancel()
+                deferredArchiveWorkTask = nil
                 flushSessionToDisk()
             }
         }
@@ -824,19 +857,24 @@ struct ContentView: View {
         return PreparedGameSwitch(staging: staging, recordedGame: recordedGame)
     }
 
-    private func commitPreparedGameSwitch(_ prepared: PreparedGameSwitch?) {
-        guard let prepared else {
-            finishArchiveSelection()
-            return
-        }
+    /// Board-only swap at the slide midpoint. Heavy archive/engine/opening work waits until
+    /// `finalizeGameSwitchAfterSlide` after the slide-in finishes.
+    private func commitPreparedGameSwitchBoardOnly(_ prepared: PreparedGameSwitch?) {
+        guard let prepared else { return }
 
-        if let recordedGame = prepared.recordedGame {
+        if prepared.recordedGame != nil {
             game.replaceMainLine(with: prepared.staging)
-            if recordedGame.result != .ongoing {
+            if let recordedGame = prepared.recordedGame, recordedGame.result != .ongoing {
                 game.declareResult(recordedGame.result)
             }
         } else {
             game.resetGame()
+        }
+    }
+
+    private func finalizeGameSwitchAfterSlide(activatingGameID: UUID?) {
+        if let activatingGameID {
+            pgnArchive.setActiveGame(id: activatingGameID)
         }
 
         openingService.refresh(game: game)
@@ -859,6 +897,7 @@ struct ContentView: View {
         }
 
         syncOutgoingGameToArchive()
+        engineAnalysis.suspendInFlightAnalysis()
 
         let previousID = pgnArchive.activeGameID
         let direction = gameSwitchDirection(from: previousID, to: id)
@@ -879,11 +918,14 @@ struct ContentView: View {
                 distance: slideDistance,
                 setOffset: { gameSwitchSlideOffset = $0 },
                 prepareSwap: {
-                    pgnArchive.setActiveGame(id: id)
+                    // Do not setActiveGame here — notation rebuild must wait until after slide-in.
                     prepared = await prepareLoadedGame(for: id)
                 },
-                swapContent: { commitPreparedGameSwitch(prepared) }
+                swapContent: { commitPreparedGameSwitchBoardOnly(prepared) }
             )
+
+            await Task.yield()
+            finalizeGameSwitchAfterSlide(activatingGameID: id)
         }
     }
 
@@ -904,6 +946,7 @@ struct ContentView: View {
         }
 
         let direction = gameSwitchDirection(from: previousID, to: nextActiveID)
+        engineAnalysis.suspendInFlightAnalysis()
 
         Task { @MainActor in
             await Task.yield()
@@ -924,8 +967,12 @@ struct ContentView: View {
                 prepareSwap: {
                     prepared = await prepareLoadedGame(for: nextActiveID)
                 },
-                swapContent: { commitPreparedGameSwitch(prepared) }
+                swapContent: { commitPreparedGameSwitchBoardOnly(prepared) }
             )
+
+            await Task.yield()
+            // removeGame already updated activeGameID when needed.
+            finalizeGameSwitchAfterSlide(activatingGameID: nil)
         }
     }
 
@@ -1008,8 +1055,7 @@ struct ContentView: View {
 
     private var activeMoveQualities: [MoveQuality?] {
         guard let recordedGame = pgnArchive.activeGame,
-              recordedGame.moves.count == game.moves.count,
-              zip(recordedGame.moves, game.moves).allSatisfy({ $0.0.matchesPositionally($0.1) }) else {
+              recordedGame.moves.count == game.moves.count else {
             return []
         }
         return recordedGame.moves.map(\.quality)

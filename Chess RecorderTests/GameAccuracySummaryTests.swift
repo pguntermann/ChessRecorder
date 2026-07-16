@@ -27,7 +27,7 @@ final class GameAccuracySummaryTests: XCTestCase {
         XCTAssertEqual(summary.bookMoveCount, 2)
         XCTAssertEqual(summary.white.accuracyPercent, 100)
         XCTAssertEqual(summary.black.accuracyPercent, 50)
-        XCTAssertEqual(summary.white.compactLabel, "Accuracy 100% · 1 book")
+        XCTAssertEqual(summary.white.compactLabel, "Accuracy 100% · 1 book · 1 good")
         XCTAssertEqual(summary.black.compactLabel, "Accuracy 50% · 1 book · 1 mistake")
         // Book moves do not create progress points.
         XCTAssertEqual(summary.accuracyProgress.count, 2)
@@ -60,12 +60,27 @@ final class GameAccuracySummaryTests: XCTestCase {
         let summary = GameAccuracySummary(moves: moves)
         XCTAssertEqual(summary.blunderCount, 1)
         XCTAssertEqual(summary.missCount, 1)
-        XCTAssertEqual(summary.white.compactLabel, "Accuracy 85% · 1 miss")
+        XCTAssertEqual(summary.white.compactLabel, "Accuracy 85% · 1 good · 1 miss")
         XCTAssertEqual(summary.black.compactLabel, "Accuracy 20% · 1 blunder")
         XCTAssertEqual(summary.white.accuracyText, "85%")
         XCTAssertEqual(summary.compactTableColumns, [.accuracy, .good, .blunders, .misses])
         XCTAssertEqual(summary.white.goodText, "1")
         XCTAssertEqual(summary.black.goodText, "—")
+    }
+
+    func testInaccuraciesAppearInCompactColumns() {
+        let moves = [
+            move("e4", quality: .good),
+            move("e5", quality: .inaccuracy),
+            move("Nf3", quality: .inaccuracy)
+        ]
+        let summary = GameAccuracySummary(moves: moves)
+        XCTAssertEqual(summary.inaccuracyCount, 2)
+        XCTAssertEqual(summary.compactTableColumns, [.accuracy, .good, .inaccuracies])
+        XCTAssertEqual(summary.white.inaccuraciesText, "1")
+        XCTAssertEqual(summary.black.inaccuraciesText, "1")
+        XCTAssertEqual(summary.white.compactLabel, "Accuracy 90% · 1 good · 1 inaccuracy")
+        XCTAssertEqual(summary.black.compactLabel, "Accuracy 80% · 1 inaccuracy")
     }
 
     func testCompactColumnsAndQualitySlicesUseBookThenGoodOrder() {

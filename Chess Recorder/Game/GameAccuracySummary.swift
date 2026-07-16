@@ -49,6 +49,12 @@ struct GameAccuracySummary: Equatable, Sendable {
             if bookCount > 0 {
                 parts.append("\(bookCount) book")
             }
+            if goodCount > 0 {
+                parts.append(goodCount == 1 ? "1 good" : "\(goodCount) good")
+            }
+            if inaccuracyCount > 0 {
+                parts.append(inaccuracyCount == 1 ? "1 inaccuracy" : "\(inaccuracyCount) inaccuracies")
+            }
             if mistakeCount > 0 {
                 parts.append(mistakeCount == 1 ? "1 mistake" : "\(mistakeCount) mistakes")
             }
@@ -57,12 +63,6 @@ struct GameAccuracySummary: Equatable, Sendable {
             }
             if missCount > 0 {
                 parts.append(missCount == 1 ? "1 miss" : "\(missCount) misses")
-            }
-            if parts.isEmpty, inaccuracyCount > 0 {
-                parts.append(inaccuracyCount == 1 ? "1 inaccuracy" : "\(inaccuracyCount) inaccuracies")
-            }
-            if parts.isEmpty, goodCount > 0 {
-                parts.append(goodCount == 1 ? "1 good move" : "\(goodCount) good moves")
             }
             return parts.joined(separator: " · ")
         }
@@ -77,6 +77,10 @@ struct GameAccuracySummary: Equatable, Sendable {
 
         var goodText: String {
             goodCount > 0 ? "\(goodCount)" : "—"
+        }
+
+        var inaccuraciesText: String {
+            inaccuracyCount > 0 ? "\(inaccuracyCount)" : "—"
         }
 
         var mistakesText: String {
@@ -169,6 +173,7 @@ struct GameAccuracySummary: Equatable, Sendable {
         var columns: [CompactTableColumn] = [.accuracy]
         if bookMoveCount > 0 { columns.append(.book) }
         if goodCount > 0 { columns.append(.good) }
+        if inaccuracyCount > 0 { columns.append(.inaccuracies) }
         if mistakeCount > 0 { columns.append(.mistakes) }
         if blunderCount > 0 { columns.append(.blunders) }
         if missCount > 0 { columns.append(.misses) }
@@ -179,6 +184,7 @@ struct GameAccuracySummary: Equatable, Sendable {
         case accuracy
         case book
         case good
+        case inaccuracies
         case mistakes
         case blunders
         case misses
@@ -188,6 +194,7 @@ struct GameAccuracySummary: Equatable, Sendable {
             case .accuracy: return "Acc"
             case .book: return "Book"
             case .good: return "Good"
+            case .inaccuracies: return "Inac"
             case .mistakes: return "Mist"
             case .blunders: return "Blun"
             case .misses: return "Miss"
@@ -199,6 +206,7 @@ struct GameAccuracySummary: Equatable, Sendable {
             case .accuracy: return side.accuracyText
             case .book: return side.bookText
             case .good: return side.goodText
+            case .inaccuracies: return side.inaccuraciesText
             case .mistakes: return side.mistakesText
             case .blunders: return side.blundersText
             case .misses: return side.missesText

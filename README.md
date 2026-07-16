@@ -12,7 +12,7 @@ Chess Recorder is an iOS app for recording chess games by voice. Speak your move
 
 > **Related project:** Also check out [CARA](https://pguntermann.github.io/CARA/) — Chess Analysis and Review Application for Windows, macOS, and Linux.
 
-**Contents:** [Features](#features) · [Requirements](#requirements) · [Building](#building) · [Usage](#usage) · [Project layout](#project-layout) · [License](#license) · [Contributing](#contributing) · [Contact](#contact) · [Acknowledgments](#acknowledgments)
+**Contents:** [Features](#features) · [Requirements](#requirements) · [Building](#building) · [Usage](#usage) · [Screenshots](#screenshots) · [Project layout](#project-layout) · [License](#license) · [Contributing](#contributing) · [Contact](#contact) · [Acknowledgments](#acknowledgments)
 
 ## Features
 
@@ -108,6 +108,28 @@ In-app help (**?** in the toolbar) lists supported phrase patterns for English a
 - Board appearance, piece size, and touch-input highlight color
 - Opening name visibility and explorer mini-board size
 - Default PGN header fields and learned phrase management
+
+## Screenshots
+
+<p align="center">
+  <img src="Chess%20Recorder/Resources/Screenshots/ipad_mini_ls1.PNG" alt="iPad landscape — live voice recording, engine analysis, and assessed PGN notation" width="80%">
+</p>
+<p align="center"><em>iPad — live recording with engine analysis and move assessment</em></p>
+
+<p align="center">
+  <img src="Chess%20Recorder/Resources/Screenshots/ipad_mini_pt1.PNG" alt="iPad — opening book explorer with mini-board continuations" width="80%">
+</p>
+<p align="center"><em>iPad — interactive opening book with mini-board previews</em></p>
+
+<p align="center">
+  <img src="Chess%20Recorder/Resources/Screenshots/ipad_pro_ls1.PNG" alt="iPad Pro — accuracy summary with move-quality pies and progress chart" width="80%">
+</p>
+<p align="center"><em>iPad Pro — game accuracy summary and move-quality breakdown</em></p>
+
+<p align="center">
+  <img src="Chess%20Recorder/Resources/Screenshots/iphone_promax_pt1.PNG" alt="iPhone — Manual/Touch move entering" width="36%">
+</p>
+<p align="center"><em>iPhone — Manual/Touch move entering</em></p>
 
 ## Project layout
 

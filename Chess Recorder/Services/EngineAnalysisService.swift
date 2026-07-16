@@ -68,14 +68,17 @@ final class EngineAnalysisService {
             defaultDepth: Self.defaultDepth,
             threadCount: 1,
             hashSizeMB: 16,
-            timeoutSeconds: 30
+            // Per iterative-depth step; high max depths need more than 30s to finish a search.
+            timeoutSeconds: 120
         )) ?? .default
         engineWorker = EngineAnalysisEngine(configuration: configuration)
     }
 
     func configure(depth: Int, unlimited: Bool) {
-        configuredDepth = min(max(depth, 1), EngineAnalysisDisplayBuilder.maxDepth)
-        isDepthUnlimited = unlimited
+        configuredDepth = min(max(depth, 1), Int(AppSettings.maxEngineAnalysisDepth))
+        // Uncapped analysis was removed; ignore legacy `unlimited` callers.
+        isDepthUnlimited = false
+        _ = unlimited
     }
 
     func prepare() async {

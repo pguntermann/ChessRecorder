@@ -134,6 +134,7 @@ struct SettingsView: View {
                             settingsStore.update { $0.engineAnalysisUseAlgebraicNotation = newValue }
                         }
                     ))
+                    .disabled(!settingsStore.settings.engineAnalysisVisible)
 
                     Toggle("Show best-move arrow on board", isOn: Binding(
                         get: { settingsStore.settings.engineAnalysisShowBoardArrow },
@@ -141,9 +142,13 @@ struct SettingsView: View {
                             settingsStore.update { $0.engineAnalysisShowBoardArrow = newValue }
                         }
                     ))
+                    .disabled(!settingsStore.settings.engineAnalysisVisible)
 
                     ColorPicker("Best-move arrow color", selection: $analysisArrowColor, supportsOpacity: false)
-                        .disabled(!settingsStore.settings.engineAnalysisShowBoardArrow)
+                        .disabled(
+                            !settingsStore.settings.engineAnalysisVisible
+                                || !settingsStore.settings.engineAnalysisShowBoardArrow
+                        )
                         .onChange(of: analysisArrowColor) { _, color in
                             settingsStore.update { $0.engineAnalysisArrowColor = CodableColor(color) }
                         }
@@ -154,16 +159,26 @@ struct SettingsView: View {
                             settingsStore.update { $0.engineAnalysisShowEvaluationBar = newValue }
                         }
                     ))
+                    .disabled(!settingsStore.settings.engineAnalysisVisible)
 
-                    VStack(alignment: .leading) {
+                    VStack(alignment: .leading, spacing: 6) {
                         Text(engineDepthLabel)
                         Slider(value: Binding(
                             get: { settingsStore.settings.engineAnalysisDepth },
                             set: { newValue in
                                 settingsStore.update { $0.engineAnalysisDepth = newValue.rounded() }
                             }
-                        ), in: 1...AppSettings.uncappedEngineAnalysisDepth, step: 1)
+                        ), in: 1...AppSettings.maxEngineAnalysisDepth, step: 1)
+
+                        if settingsStore.settings.engineAnalysisVisible,
+                           settingsStore.settings.moveAssessmentEnabled,
+                           settingsStore.settings.engineAnalysisDepth > AppSettings.engineDepthContentionWarningThreshold {
+                            Text("High analysis depth can slow down move assessment.")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
                     }
+                    .disabled(!settingsStore.settings.engineAnalysisVisible)
 
                     Toggle("Assess move quality", isOn: Binding(
                         get: { settingsStore.settings.moveAssessmentEnabled },
@@ -172,14 +187,22 @@ struct SettingsView: View {
                         }
                     ))
 
-                    VStack(alignment: .leading) {
+                    VStack(alignment: .leading, spacing: 6) {
                         Text(moveAssessmentDepthLabel)
                         Slider(value: Binding(
                             get: { settingsStore.settings.moveAssessmentDepth },
                             set: { newValue in
                                 settingsStore.update { $0.moveAssessmentDepth = newValue.rounded() }
                             }
-                        ), in: 1...30, step: 1)
+                        ), in: 1...AppSettings.maxMoveAssessmentDepth, step: 1)
+
+                        if settingsStore.settings.engineAnalysisVisible,
+                           settingsStore.settings.moveAssessmentEnabled,
+                           settingsStore.settings.moveAssessmentDepth > AppSettings.engineDepthContentionWarningThreshold {
+                            Text("High move-assessment depth can slow live engine analysis.")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                     .disabled(!settingsStore.settings.moveAssessmentEnabled)
 
@@ -615,10 +638,7 @@ struct SettingsView: View {
     }
 
     private var engineDepthLabel: String {
-        if settingsStore.settings.isEngineAnalysisUncapped {
-            return "Analysis Max Depth: Uncapped"
-        }
-        return "Analysis Max Depth: \(Int(settingsStore.settings.engineAnalysisDepth))"
+        "Analysis Max Depth: \(Int(settingsStore.settings.engineAnalysisDepth))"
     }
 
     private var moveAssessmentDepthLabel: String {

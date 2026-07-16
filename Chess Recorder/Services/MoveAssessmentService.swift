@@ -42,13 +42,14 @@ final class MoveAssessmentService {
             defaultDepth: Self.defaultDepth,
             threadCount: 1,
             hashSizeMB: 16,
-            timeoutSeconds: 45
+            // High depths (up to 25) need generous time; 45s was timing out before glyphs appeared.
+            timeoutSeconds: 120
         )) ?? .default
         engineWorker = MoveAssessmentEngine(configuration: configuration)
     }
 
     func configure(depth: Int, enabled: Bool, openingService: OpeningService? = nil) {
-        configuredDepth = min(max(depth, 1), 30)
+        configuredDepth = min(max(depth, 1), Int(AppSettings.maxMoveAssessmentDepth))
         isEnabled = enabled
         if let openingService {
             self.openingService = openingService

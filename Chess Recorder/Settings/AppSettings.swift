@@ -228,8 +228,10 @@ struct AppSettings: Codable, Equatable {
         engineAnalysisDepth = try container.decodeIfPresent(Double.self, forKey: .engineAnalysisDepth) ?? 18
         if let legacyContainer = try? decoder.container(keyedBy: LegacyCodingKeys.self),
            (try? legacyContainer.decodeIfPresent(Bool.self, forKey: .engineAnalysisUnlimitedDepth)) == true {
-            engineAnalysisDepth = Self.uncappedEngineAnalysisDepth
+            engineAnalysisDepth = Self.maxEngineAnalysisDepth
         }
+        // Clamp legacy uncapped (31+) and out-of-range values to the current max.
+        engineAnalysisDepth = min(max(engineAnalysisDepth, 1), Self.maxEngineAnalysisDepth)
         engineAnalysisShowEvaluationBar = try container.decodeIfPresent(Bool.self, forKey: .engineAnalysisShowEvaluationBar) ?? false
         engineAnalysisUseAlgebraicNotation = try container.decodeIfPresent(Bool.self, forKey: .engineAnalysisUseAlgebraicNotation) ?? false
         engineAnalysisShowBoardArrow = try container.decodeIfPresent(Bool.self, forKey: .engineAnalysisShowBoardArrow) ?? false
@@ -237,6 +239,7 @@ struct AppSettings: Codable, Equatable {
             ?? CodableColor(red: 0, green: 0.478, blue: 1)
         moveAssessmentEnabled = try container.decodeIfPresent(Bool.self, forKey: .moveAssessmentEnabled) ?? true
         moveAssessmentDepth = try container.decodeIfPresent(Double.self, forKey: .moveAssessmentDepth) ?? 14
+        moveAssessmentDepth = min(max(moveAssessmentDepth, 1), Self.maxMoveAssessmentDepth)
         moveAssessmentInaccuracyColor = try container.decodeIfPresent(CodableColor.self, forKey: .moveAssessmentInaccuracyColor)
             ?? Self.defaultMoveAssessmentInaccuracyColor
         moveAssessmentMistakeColor = try container.decodeIfPresent(CodableColor.self, forKey: .moveAssessmentMistakeColor)
@@ -397,18 +400,24 @@ extension AppSettings {
     static let defaultMoveAssessmentMissColor = CodableColor(red: 1.0, green: 0.45, blue: 0.75)
     static let defaultOpeningBookMiniBoardSide = 72.0
 
+    static let maxEngineAnalysisDepth = 30.0
+    static let maxMoveAssessmentDepth = 25.0
+    /// Depth above which settings show a shared-engine contention warning.
+    static let engineDepthContentionWarningThreshold = 20.0
+    /// Legacy slider sentinel for "uncapped" analysis; migrated to `maxEngineAnalysisDepth` on load.
     static let uncappedEngineAnalysisDepth = 31.0
 
     var isEngineAnalysisUncapped: Bool {
-        engineAnalysisDepth >= Self.uncappedEngineAnalysisDepth
+        // Uncapped mode was removed; keep the property for call sites / older logic.
+        false
     }
 
     var cappedEngineAnalysisDepth: Int {
-        Int(min(max(engineAnalysisDepth, 1), 30))
+        Int(min(max(engineAnalysisDepth, 1), Self.maxEngineAnalysisDepth))
     }
 
     var cappedMoveAssessmentDepth: Int {
-        Int(min(max(moveAssessmentDepth, 1), 30))
+        Int(min(max(moveAssessmentDepth, 1), Self.maxMoveAssessmentDepth))
     }
 
     var moveAssessmentColors: MoveAssessmentColors {

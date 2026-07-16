@@ -323,7 +323,7 @@ class ChessGame {
     }
 
     var isAtLatestMove: Bool {
-        currentIndex == kitGame.moves.endIndex
+        activePlyIndex >= moves.count
     }
 
     /// The move that led to the currently viewed position, if any.
@@ -333,19 +333,19 @@ class ChessGame {
     }
 
     var canGoBack: Bool {
-        kitGame.moves.hasIndex(before: currentIndex)
+        activePlyIndex > 0
     }
 
     var canGoForward: Bool {
-        kitGame.moves.hasIndex(after: currentIndex)
+        activePlyIndex < moves.count
     }
 
     var canGoToFirst: Bool {
-        currentIndex != kitGame.startingIndex
+        activePlyIndex > 0
     }
 
     var canGoToLatest: Bool {
-        !isAtLatestMove
+        activePlyIndex < moves.count
     }
 
     var canUndo: Bool {

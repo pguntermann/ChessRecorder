@@ -186,9 +186,9 @@ struct ContentView: View {
             openingService.refresh(game: game)
             syncLiveBoardToArchiveIfRecording()
             scheduleSessionPersist()
-            if newCount > oldCount {
+            if newCount > oldCount, !isApplyingArchiveSelection {
                 enqueueMoveAssessmentForLatestMove()
-            } else if newCount < oldCount {
+            } else if newCount < oldCount, !isApplyingArchiveSelection {
                 moveAssessment.cancelJobs(for: pgnArchive.activeGameID, fromMoveIndex: newCount)
             }
             if game.isGameOver {
@@ -493,6 +493,16 @@ struct ContentView: View {
         }
 
         let moveIndex = game.moves.count - 1
+        let playedMove = game.moves[moveIndex]
+
+        // Game switches reload the board and bump moves.count; skip moves already assessed in the archive.
+        if let archivedMoves = pgnArchive.games.first(where: { $0.id == gameID })?.moves,
+           moveIndex < archivedMoves.count,
+           archivedMoves[moveIndex].matchesPositionally(playedMove),
+           archivedMoves[moveIndex].quality != nil {
+            return
+        }
+
         let fenSequence = game.fenSequenceFromStart()
         guard moveIndex + 1 < fenSequence.count else { return }
 
@@ -501,7 +511,7 @@ struct ContentView: View {
             moveIndex: moveIndex,
             fenBeforeMove: fenSequence[moveIndex],
             fenAfterMove: fenSequence[moveIndex + 1],
-            playedMoveSAN: game.moves[moveIndex].san
+            playedMoveSAN: playedMove.san
         )
         moveAssessment.enqueue(job, archive: pgnArchive)
     }

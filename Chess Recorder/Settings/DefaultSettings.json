@@ -69,6 +69,7 @@
   "pgnEvent" : "Chess Recorder",
   "pgnHideHeaderTags" : true,
   "pgnIncludeMoveAssessmentSymbols" : false,
+  "pgnShowAccuracySummary" : true,
   "pgnSite" : "?",
   "pgnWhite" : "?",
   "boardSizePercent" : 1,

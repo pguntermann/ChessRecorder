@@ -429,10 +429,18 @@ struct SettingsView: View {
                             settingsStore.update { $0.pgnIncludeMoveAssessmentSymbols = newValue }
                         }
                     ))
+
+                    Toggle("Show accuracy summary", isOn: Binding(
+                        get: { settingsStore.settings.pgnShowAccuracySummary },
+                        set: { newValue in
+                            settingsStore.update { $0.pgnShowAccuracySummary = newValue }
+                        }
+                    ))
+                    .disabled(!settingsStore.settings.moveAssessmentEnabled)
                 } header: {
                     Text("PGN")
                 } footer: {
-                    Text("Event, Site, and player names are used in exported PGN headers. [ECO] is added automatically when an opening is recognized. Use Switch to swap sides between games. Hiding header tags affects the notation panel only; Copy and Share still include full PGN headers. Move assessment symbols (?!, ?, ??) are added to exported movetext when enabled; misses have no symbol.")
+                    Text("Event, Site, and player names are used in exported PGN headers. [ECO] is added automatically when an opening is recognized. Use Switch to swap sides between games. Hiding header tags affects the notation panel only; Copy and Share still include full PGN headers. Move assessment symbols (?!, ?, ??) are added to exported movetext when enabled; misses have no symbol. The accuracy summary appears in the notation panel when move assessment is enabled.")
                 }
                 
                 Section {

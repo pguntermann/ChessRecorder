@@ -18,6 +18,7 @@ struct NotationPanelView: View {
     let defaultMetadata: PGNMetadata
     var hidePGNHeaderTags: Bool = true
     var includeMoveAssessmentSymbolsInExport: Bool = false
+    var showAccuracySummary: Bool = true
     var activeAssessment: MoveAssessmentProgress?
     var showMoveAssessments: Bool = false
     var assessmentColors: MoveAssessmentColors = .defaults
@@ -102,6 +103,7 @@ struct NotationPanelView: View {
                                         ? activeAssessment?.moveIndex
                                         : nil,
                                     showMoveAssessments: showMoveAssessments,
+                                    showAccuracySummary: showAccuracySummary,
                                     assessmentColors: assessmentColors,
                                     activePlyIndex: game.activePlyIndex,
                                     isAtLatestMove: game.isAtLatestMove
@@ -127,6 +129,7 @@ struct NotationPanelView: View {
                                 showMoveHighlight: true,
                                 assessingMoveIndex: nil,
                                 showMoveAssessments: showMoveAssessments,
+                                showAccuracySummary: showAccuracySummary,
                                 assessmentColors: assessmentColors,
                                 activePlyIndex: game.activePlyIndex,
                                 isAtLatestMove: game.isAtLatestMove
@@ -244,9 +247,12 @@ private struct GamePGNRowView: View {
     let showMoveHighlight: Bool
     var assessingMoveIndex: Int? = nil
     var showMoveAssessments: Bool = false
+    var showAccuracySummary: Bool = true
     var assessmentColors: MoveAssessmentColors = .defaults
     var activePlyIndex: Int = 0
     var isAtLatestMove: Bool = true
+
+    @State private var showingAccuracySummary = false
 
     private var isAssessingMoves: Bool {
         assessingMoveIndex != nil
@@ -254,6 +260,12 @@ private struct GamePGNRowView: View {
 
     private var usesAssessedTokenLayout: Bool {
         showMoveAssessments || isAssessingMoves
+    }
+
+    private var accuracySummary: GameAccuracySummary? {
+        guard showMoveAssessments, showAccuracySummary else { return nil }
+        let summary = GameAccuracySummary(moves: recordedGame.moves)
+        return summary.hasContent ? summary : nil
     }
 
     var body: some View {
@@ -288,6 +300,25 @@ private struct GamePGNRowView: View {
                 }
 
                 Spacer()
+            }
+
+            if let accuracySummary {
+                Button {
+                    showingAccuracySummary = true
+                } label: {
+                    HStack(alignment: .center, spacing: 6) {
+                        Spacer(minLength: 0)
+                        GameAccuracyCompactTable(summary: accuracySummary)
+                        Image(systemName: "chevron.right")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.tertiary)
+                        Spacer(minLength: 0)
+                    }
+                }
+                .buttonStyle(.plain)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(accuracyAccessibilityLabel(accuracySummary))
+                .accessibilityHint("Shows accuracy details")
             }
 
             if !hideHeaderTags {
@@ -338,6 +369,112 @@ private struct GamePGNRowView: View {
             Rectangle()
                 .fill(isActive ? Color.accentColor.opacity(0.08) : Color.clear)
         }
+        .sheet(isPresented: $showingAccuracySummary) {
+            GameAccuracySummarySheet(
+                summary: GameAccuracySummary(moves: recordedGame.moves),
+                roundTitle: "Round \(recordedGame.round)",
+                assessmentColors: assessmentColors
+            )
+        }
+    }
+
+    private func accuracyAccessibilityLabel(_ summary: GameAccuracySummary) -> String {
+        var parts: [String] = []
+        if summary.white.hasContent {
+            parts.append("White \(summary.white.compactLabel)")
+        }
+        if summary.black.hasContent {
+            parts.append("Black \(summary.black.compactLabel)")
+        }
+        return parts.joined(separator: ", ")
+    }
+}
+
+private struct GameAccuracyCompactTable: View {
+    @Environment(\.colorScheme) private var colorScheme
+
+    let summary: GameAccuracySummary
+
+    private var columns: [GameAccuracySummary.CompactTableColumn] {
+        summary.compactTableColumns
+    }
+
+    private var rows: [(side: GameAccuracySummary.Side, stats: GameAccuracySummary.SideStats)] {
+        var result: [(GameAccuracySummary.Side, GameAccuracySummary.SideStats)] = []
+        if summary.white.hasContent {
+            result.append((.white, summary.white))
+        }
+        if summary.black.hasContent {
+            result.append((.black, summary.black))
+        }
+        return result
+    }
+
+    var body: some View {
+        Grid(alignment: .center, horizontalSpacing: 12, verticalSpacing: 3) {
+            GridRow {
+                Color.clear
+                    .frame(width: 12, height: 12)
+                    .gridColumnAlignment(.center)
+                ForEach(columns, id: \.title) { column in
+                    Text(column.title)
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.tertiary)
+                        .frame(minWidth: 28)
+                        .gridColumnAlignment(.center)
+                }
+            }
+
+            ForEach(rows, id: \.side) { row in
+                GridRow {
+                    sideSwatch(row.side)
+                        .gridColumnAlignment(.center)
+                    ForEach(columns, id: \.title) { column in
+                        Text(column.value(for: row.stats))
+                            .font(.caption2.monospacedDigit())
+                            .foregroundStyle(.secondary)
+                            .frame(minWidth: 28)
+                            .gridColumnAlignment(.center)
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .center)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityLabel)
+    }
+
+    private func sideSwatch(_ side: GameAccuracySummary.Side) -> some View {
+        // White fills look larger (irradiation); inset the fill so both share the same outer edge.
+        ZStack {
+            Circle()
+                .fill(sideFill(side))
+                .padding(side == .white ? 0.75 : 0)
+            Circle()
+                .strokeBorder(Color.primary.opacity(0.35), lineWidth: 0.5)
+        }
+        .frame(width: 10, height: 10)
+        .accessibilityHidden(true)
+    }
+
+    private func sideFill(_ side: GameAccuracySummary.Side) -> Color {
+        switch side {
+        case .white:
+            return colorScheme == .dark ? Color(white: 0.92) : Color(white: 0.95)
+        case .black:
+            return colorScheme == .dark ? Color(white: 0.06) : Color.black
+        }
+    }
+
+    private var accessibilityLabel: String {
+        var parts: [String] = []
+        if summary.white.hasContent {
+            parts.append("White \(summary.white.compactLabel)")
+        }
+        if summary.black.hasContent {
+            parts.append("Black \(summary.black.compactLabel)")
+        }
+        return parts.joined(separator: ", ")
     }
 }
 

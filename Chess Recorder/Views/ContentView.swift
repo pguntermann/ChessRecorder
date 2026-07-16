@@ -480,6 +480,7 @@ struct ContentView: View {
                 defaultMetadata: settingsStore.settings.pgnMetadata,
                 hidePGNHeaderTags: settingsStore.settings.pgnHideHeaderTags,
                 includeMoveAssessmentSymbolsInExport: settingsStore.settings.pgnIncludeMoveAssessmentSymbols,
+                showAccuracySummary: settingsStore.settings.pgnShowAccuracySummary,
                 activeAssessment: moveAssessment.activeAssessment,
                 showMoveAssessments: settingsStore.settings.moveAssessmentEnabled,
                 assessmentColors: settingsStore.settings.moveAssessmentColors,

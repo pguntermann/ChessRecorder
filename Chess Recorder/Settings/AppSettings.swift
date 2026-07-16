@@ -75,6 +75,7 @@ struct AppSettings: Codable, Equatable {
     var pgnBlack: String
     var pgnHideHeaderTags: Bool
     var pgnIncludeMoveAssessmentSymbols: Bool
+    var pgnShowAccuracySummary: Bool
 
     static let defaultPGNEvent = "Chess Recorder"
     
@@ -117,6 +118,7 @@ struct AppSettings: Codable, Equatable {
         case pgnBlack
         case pgnHideHeaderTags
         case pgnIncludeMoveAssessmentSymbols
+        case pgnShowAccuracySummary
     }
     
     init(
@@ -157,7 +159,8 @@ struct AppSettings: Codable, Equatable {
         pgnWhite: String = "?",
         pgnBlack: String = "?",
         pgnHideHeaderTags: Bool = true,
-        pgnIncludeMoveAssessmentSymbols: Bool = false
+        pgnIncludeMoveAssessmentSymbols: Bool = false,
+        pgnShowAccuracySummary: Bool = true
     ) {
         self.boardSizePercent = boardSizePercent
         self.pieceSizePercent = pieceSizePercent
@@ -197,6 +200,7 @@ struct AppSettings: Codable, Equatable {
         self.pgnBlack = pgnBlack
         self.pgnHideHeaderTags = pgnHideHeaderTags
         self.pgnIncludeMoveAssessmentSymbols = pgnIncludeMoveAssessmentSymbols
+        self.pgnShowAccuracySummary = pgnShowAccuracySummary
     }
     
     init(from decoder: Decoder) throws {
@@ -254,6 +258,7 @@ struct AppSettings: Codable, Equatable {
         pgnBlack = try container.decodeIfPresent(String.self, forKey: .pgnBlack) ?? "?"
         pgnHideHeaderTags = try container.decodeIfPresent(Bool.self, forKey: .pgnHideHeaderTags) ?? true
         pgnIncludeMoveAssessmentSymbols = try container.decodeIfPresent(Bool.self, forKey: .pgnIncludeMoveAssessmentSymbols) ?? false
+        pgnShowAccuracySummary = try container.decodeIfPresent(Bool.self, forKey: .pgnShowAccuracySummary) ?? true
     }
     
     var pgnMetadata: PGNMetadata {
@@ -306,7 +311,8 @@ struct AppSettings: Codable, Equatable {
         pgnWhite: "?",
         pgnBlack: "?",
         pgnHideHeaderTags: true,
-        pgnIncludeMoveAssessmentSymbols: false
+        pgnIncludeMoveAssessmentSymbols: false,
+        pgnShowAccuracySummary: true
     )
 
     static var bundled: AppSettings? {

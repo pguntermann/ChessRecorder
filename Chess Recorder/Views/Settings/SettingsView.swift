@@ -23,6 +23,7 @@ struct SettingsView: View {
     @State private var moveAssessmentInaccuracyColor: Color
     @State private var moveAssessmentMistakeColor: Color
     @State private var moveAssessmentBlunderColor: Color
+    @State private var moveAssessmentMissColor: Color
     @State private var selectedLanguage: RecognitionLanguage
     @State private var showingAddPhrase = false
     @State private var showingAddCorrection = false
@@ -52,6 +53,7 @@ struct SettingsView: View {
         _moveAssessmentInaccuracyColor = State(initialValue: settings.moveAssessmentInaccuracyColor.color)
         _moveAssessmentMistakeColor = State(initialValue: settings.moveAssessmentMistakeColor.color)
         _moveAssessmentBlunderColor = State(initialValue: settings.moveAssessmentBlunderColor.color)
+        _moveAssessmentMissColor = State(initialValue: settings.moveAssessmentMissColor.color)
         _selectedLanguage = State(initialValue: settings.defaultRecognitionLanguage)
         _phraseListLanguage = State(initialValue: settings.defaultRecognitionLanguage)
     }
@@ -193,6 +195,12 @@ struct SettingsView: View {
                             settingsStore.update { $0.moveAssessmentMistakeColor = CodableColor(color) }
                         }
 
+                    ColorPicker("Miss", selection: $moveAssessmentMissColor, supportsOpacity: false)
+                        .disabled(!settingsStore.settings.moveAssessmentEnabled)
+                        .onChange(of: moveAssessmentMissColor) { _, color in
+                            settingsStore.update { $0.moveAssessmentMissColor = CodableColor(color) }
+                        }
+
                     ColorPicker("Blunder (??)", selection: $moveAssessmentBlunderColor, supportsOpacity: false)
                         .disabled(!settingsStore.settings.moveAssessmentEnabled)
                         .onChange(of: moveAssessmentBlunderColor) { _, color in
@@ -201,7 +209,7 @@ struct SettingsView: View {
                 } header: {
                     Text("Engine")
                 } footer: {
-                    Text("Move quality symbols and underlines appear in the move history below the board and in the PGN notation section after each played move is analyzed in the background.")
+                    Text("Move quality underlines appear in the move history and PGN notation after each move is analyzed. Miss marks a slower forced mate (no ?? symbol). Inaccuracy, mistake, and blunder use ?!, ?, and ??.")
                 }
                 
                 Section {
@@ -399,7 +407,7 @@ struct SettingsView: View {
                 } header: {
                     Text("PGN")
                 } footer: {
-                    Text("Event, Site, and player names are used in exported PGN headers. [ECO] is added automatically when an opening is recognized. Use Switch to swap sides between games. Hiding header tags affects the notation panel only; Copy and Share still include full PGN headers. Move assessment symbols (?!, ?, ??) are added to exported movetext when enabled and assessments are available.")
+                    Text("Event, Site, and player names are used in exported PGN headers. [ECO] is added automatically when an opening is recognized. Use Switch to swap sides between games. Hiding header tags affects the notation panel only; Copy and Share still include full PGN headers. Move assessment symbols (?!, ?, ??) are added to exported movetext when enabled; misses have no symbol.")
                 }
                 
                 Section {
@@ -613,6 +621,7 @@ struct SettingsView: View {
         moveAssessmentInaccuracyColor = settings.moveAssessmentInaccuracyColor.color
         moveAssessmentMistakeColor = settings.moveAssessmentMistakeColor.color
         moveAssessmentBlunderColor = settings.moveAssessmentBlunderColor.color
+        moveAssessmentMissColor = settings.moveAssessmentMissColor.color
         selectedLanguage = settings.defaultRecognitionLanguage
         phraseListLanguage = settings.defaultRecognitionLanguage
     }

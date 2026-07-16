@@ -65,6 +65,7 @@ struct AppSettings: Codable, Equatable {
     var moveAssessmentInaccuracyColor: CodableColor
     var moveAssessmentMistakeColor: CodableColor
     var moveAssessmentBlunderColor: CodableColor
+    var moveAssessmentMissColor: CodableColor
     var openingNameVisible: Bool
     var pgnEvent: String
     var pgnSite: String
@@ -104,6 +105,7 @@ struct AppSettings: Codable, Equatable {
         case moveAssessmentInaccuracyColor
         case moveAssessmentMistakeColor
         case moveAssessmentBlunderColor
+        case moveAssessmentMissColor
         case openingNameVisible
         case pgnEvent
         case pgnSite
@@ -142,6 +144,7 @@ struct AppSettings: Codable, Equatable {
         moveAssessmentInaccuracyColor: CodableColor = AppSettings.defaultMoveAssessmentInaccuracyColor,
         moveAssessmentMistakeColor: CodableColor = AppSettings.defaultMoveAssessmentMistakeColor,
         moveAssessmentBlunderColor: CodableColor = AppSettings.defaultMoveAssessmentBlunderColor,
+        moveAssessmentMissColor: CodableColor = AppSettings.defaultMoveAssessmentMissColor,
         openingNameVisible: Bool = true,
         pgnEvent: String = AppSettings.defaultPGNEvent,
         pgnSite: String = "?",
@@ -178,6 +181,7 @@ struct AppSettings: Codable, Equatable {
         self.moveAssessmentInaccuracyColor = moveAssessmentInaccuracyColor
         self.moveAssessmentMistakeColor = moveAssessmentMistakeColor
         self.moveAssessmentBlunderColor = moveAssessmentBlunderColor
+        self.moveAssessmentMissColor = moveAssessmentMissColor
         self.openingNameVisible = openingNameVisible
         self.pgnEvent = pgnEvent
         self.pgnSite = pgnSite
@@ -227,6 +231,8 @@ struct AppSettings: Codable, Equatable {
             ?? Self.defaultMoveAssessmentMistakeColor
         moveAssessmentBlunderColor = try container.decodeIfPresent(CodableColor.self, forKey: .moveAssessmentBlunderColor)
             ?? Self.defaultMoveAssessmentBlunderColor
+        moveAssessmentMissColor = try container.decodeIfPresent(CodableColor.self, forKey: .moveAssessmentMissColor)
+            ?? Self.defaultMoveAssessmentMissColor
         openingNameVisible = try container.decodeIfPresent(Bool.self, forKey: .openingNameVisible) ?? true
         pgnEvent = try container.decodeIfPresent(String.self, forKey: .pgnEvent) ?? Self.defaultPGNEvent
         pgnSite = try container.decodeIfPresent(String.self, forKey: .pgnSite) ?? "?"
@@ -277,6 +283,7 @@ struct AppSettings: Codable, Equatable {
         moveAssessmentInaccuracyColor: defaultMoveAssessmentInaccuracyColor,
         moveAssessmentMistakeColor: defaultMoveAssessmentMistakeColor,
         moveAssessmentBlunderColor: defaultMoveAssessmentBlunderColor,
+        moveAssessmentMissColor: defaultMoveAssessmentMissColor,
         openingNameVisible: true,
         pgnEvent: defaultPGNEvent,
         pgnSite: "?",
@@ -365,6 +372,7 @@ extension AppSettings {
     static let defaultMoveAssessmentInaccuracyColor = CodableColor(red: 0.95, green: 0.78, blue: 0.2)
     static let defaultMoveAssessmentMistakeColor = CodableColor(red: 0.95, green: 0.45, blue: 0.2)
     static let defaultMoveAssessmentBlunderColor = CodableColor(red: 0.9, green: 0.2, blue: 0.2)
+    static let defaultMoveAssessmentMissColor = CodableColor(red: 1.0, green: 0.45, blue: 0.75)
 
     static let uncappedEngineAnalysisDepth = 31.0
 
@@ -388,7 +396,8 @@ extension AppSettings {
         [
             moveAssessmentInaccuracyColor,
             moveAssessmentMistakeColor,
-            moveAssessmentBlunderColor
+            moveAssessmentBlunderColor,
+            moveAssessmentMissColor
         ]
         .map { "\($0.red),\($0.green),\($0.blue),\($0.alpha)" }
         .joined(separator: "|")

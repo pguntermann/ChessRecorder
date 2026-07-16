@@ -41,7 +41,7 @@ Chess Recorder is an iOS app for recording chess games by voice. Speak your move
 ### Move assessment
 
 - Background Stockfish review of played moves (separate from live analysis)
-- Inaccuracy, mistake, and blunder marks in the move list and PGN notation
+- Inaccuracy, mistake, blunder, and miss (slower forced mate) marks in the move list and PGN notation
 - Optional assessment symbols in exported PGN
 
 ### Rules and game state
@@ -102,7 +102,7 @@ In-app help (**?** in the toolbar) lists supported phrase patterns for English a
 
 - Speech language (English / Deutsch) and dictation pause length
 - Engine depth and which analysis overlays to show (including arrow color)
-- Move assessment on/off, search depth, and quality colors
+- Move assessment on/off, search depth, and quality colors (including miss)
 - Whether assessment symbols are included in PGN export
 - Board appearance, piece size, and touch-input highlight color
 - Default PGN header fields and learned phrase management

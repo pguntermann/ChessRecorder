@@ -42,6 +42,12 @@
     "green" : 0.2,
     "red" : 0.9
   },
+  "moveAssessmentMissColor" : {
+    "alpha" : 1,
+    "blue" : 0.75,
+    "green" : 0.45,
+    "red" : 1
+  },
   "moveAssessmentDepth" : 14,
   "moveAssessmentEnabled" : true,
   "moveAssessmentInaccuracyColor" : {

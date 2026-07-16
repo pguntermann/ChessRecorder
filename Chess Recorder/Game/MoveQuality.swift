@@ -10,6 +10,7 @@ enum MoveQuality: String, Equatable, Sendable, CaseIterable {
     case blunder
     case mistake
     case inaccuracy
+    case miss
     case book
     case good
 
@@ -23,10 +24,10 @@ enum MoveQuality: String, Equatable, Sendable, CaseIterable {
         }
     }
 
-    /// Classic PGN assessment suffix (e.g. `?!`, `??`).
+    /// Classic PGN assessment suffix (e.g. `?!`, `??`). Misses have no NAG/symbol.
     var annotationSymbol: String {
         switch self {
-        case .good, .book: return ""
+        case .good, .book, .miss: return ""
         case .inaccuracy: return "?!"
         case .mistake: return "?"
         case .blunder: return "??"
@@ -80,12 +81,14 @@ struct MoveAssessmentColors: Equatable {
     let inaccuracy: Color
     let mistake: Color
     let blunder: Color
+    let miss: Color
 
     func underlineColor(for quality: MoveQuality) -> Color {
         switch quality {
         case .inaccuracy: return inaccuracy
         case .mistake: return mistake
         case .blunder: return blunder
+        case .miss: return miss
         case .good, .book: return .primary
         }
     }
@@ -93,24 +96,28 @@ struct MoveAssessmentColors: Equatable {
     init(
         inaccuracy: Color,
         mistake: Color,
-        blunder: Color
+        blunder: Color,
+        miss: Color
     ) {
         self.inaccuracy = inaccuracy
         self.mistake = mistake
         self.blunder = blunder
+        self.miss = miss
     }
 
     init(settings: AppSettings) {
         self.init(
             inaccuracy: settings.moveAssessmentInaccuracyColor.color,
             mistake: settings.moveAssessmentMistakeColor.color,
-            blunder: settings.moveAssessmentBlunderColor.color
+            blunder: settings.moveAssessmentBlunderColor.color,
+            miss: settings.moveAssessmentMissColor.color
         )
     }
 
     static let defaults = MoveAssessmentColors(
         inaccuracy: Color(red: 0.95, green: 0.78, blue: 0.2),
         mistake: Color(red: 0.95, green: 0.45, blue: 0.2),
-        blunder: Color(red: 0.9, green: 0.2, blue: 0.2)
+        blunder: Color(red: 0.9, green: 0.2, blue: 0.2),
+        miss: Color(red: 1.0, green: 0.45, blue: 0.75)
     )
 }

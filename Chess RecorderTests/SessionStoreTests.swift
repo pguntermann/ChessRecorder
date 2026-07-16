@@ -332,14 +332,22 @@ final class SessionStoreTests: XCTestCase {
     }
 
     func testSchedulePersistEventuallyWritesSnapshot() {
-        let expectation = expectation(description: "debounced persist")
         store.schedulePersist(snapshot: SessionTestFixtures.snapshotWithSingleMove(san: "e4"))
 
-        DispatchQueue.global().asyncAfter(deadline: .now() + SessionStore.debounceInterval + 0.2) {
-            expectation.fulfill()
+        // schedulePersist hops onto ioQueue before starting the debounce timer, so waiting
+        // exactly debounceInterval from the call site can lose the race under load.
+        let expectation = expectation(description: "debounced persist")
+        let deadline = Date().addingTimeInterval(SessionStore.debounceInterval + 2.0)
+        func poll() {
+            if store.hasStoredSession {
+                expectation.fulfill()
+            } else if Date() < deadline {
+                DispatchQueue.global().asyncAfter(deadline: .now() + 0.05, execute: poll)
+            }
         }
+        poll()
 
-        wait(for: [expectation], timeout: 3.0)
+        wait(for: [expectation], timeout: SessionStore.debounceInterval + 3.0)
         XCTAssertTrue(store.hasStoredSession)
         XCTAssertEqual(store.restoreSession()?.games.first?.moves.first?.san, "e4")
     }

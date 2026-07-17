@@ -529,7 +529,8 @@ struct ContentView: View {
                 engineAnalysis: engineAnalysis,
                 onClearPGN: clearPGN,
                 onActivateGame: activateGame,
-                onDeleteGame: deleteGame
+                onDeleteGame: deleteGame,
+                onGameTagsEdited: scheduleSessionPersist
             )
         }
     }

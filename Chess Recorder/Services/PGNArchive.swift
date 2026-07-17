@@ -365,6 +365,17 @@ final class PGNArchive {
         activeGameID = id
     }
 
+    /// Updates PGN header tags for a single archived game.
+    func updateGameTags(id: UUID, metadata: PGNMetadata, date: Date) {
+        guard let index = games.firstIndex(where: { $0.id == id }) else { return }
+        guard games[index].metadata != metadata || !Calendar.current.isDate(games[index].date, inSameDayAs: date) else {
+            return
+        }
+        games[index].metadata = metadata
+        games[index].date = date
+        bumpContentRevision(affecting: id)
+    }
+
     /// Removes a game and returns the ID of the game that should be loaded next, if any.
     @discardableResult
     func removeGame(id: UUID) -> UUID? {

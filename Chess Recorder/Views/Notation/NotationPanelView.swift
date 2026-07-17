@@ -29,8 +29,10 @@ struct NotationPanelView: View {
     var onClearPGN: (() -> Void)?
     var onActivateGame: ((UUID) -> Void)?
     var onDeleteGame: ((UUID) -> Void)?
+    var onGameTagsEdited: (() -> Void)?
 
     @State private var exportItem: ShareablePGNExport?
+    @State private var gamePendingTagEdit: RecordedGame?
     @State private var cachedFullPGN = ""
     @State private var cachedRows: [UUID: GameRowPresentation] = [:]
     @State private var presentationCacheKey = ""
@@ -117,6 +119,25 @@ struct NotationPanelView: View {
                                     onActivate: { onActivateGame?(recordedGame.id) }
                                 )
                                 .equatable()
+                                .contextMenu {
+                                    Button {
+                                        copyGameToClipboard(recordedGame)
+                                    } label: {
+                                        Label("Copy", systemImage: "doc.on.doc")
+                                    }
+
+                                    Button {
+                                        shareGame(recordedGame)
+                                    } label: {
+                                        Label("Share", systemImage: "square.and.arrow.up")
+                                    }
+
+                                    Button {
+                                        gamePendingTagEdit = recordedGame
+                                    } label: {
+                                        Label("Edit PGN Tags", systemImage: "pencil")
+                                    }
+                                }
                             }
                         }
 
@@ -160,6 +181,16 @@ struct NotationPanelView: View {
         #if os(iOS)
         .sheet(item: $exportItem, onDismiss: cleanupExport) { item in
             ShareSheet(items: [item.url])
+        }
+        .sheet(item: $gamePendingTagEdit) { recordedGame in
+            EditPGNTagsSheet(
+                roundTitle: "Round \(recordedGame.round)",
+                metadata: recordedGame.metadata,
+                date: recordedGame.date
+            ) { metadata, date in
+                pgnArchive.updateGameTags(id: recordedGame.id, metadata: metadata, date: date)
+                onGameTagsEdited?()
+            }
         }
         #endif
     }
@@ -262,6 +293,19 @@ struct NotationPanelView: View {
         #endif
     }
 
+    private func copyGameToClipboard(_ recordedGame: RecordedGame) {
+        let pgn = PGNExportService.pgn(
+            for: recordedGame,
+            includeAssessmentSymbols: includeMoveAssessmentSymbolsInExport
+        )
+        #if os(iOS)
+        UIPasteboard.general.string = pgn
+        #else
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(pgn, forType: .string)
+        #endif
+    }
+
     private func sharePGN() {
         cachedFullPGN = PGNExportService.fullPGN(
             for: pgnArchive,
@@ -270,6 +314,22 @@ struct NotationPanelView: View {
         guard !cachedFullPGN.isEmpty else { return }
         do {
             let url = try PGNExportService.writeTemporaryFile(content: cachedFullPGN)
+            exportItem = ShareablePGNExport(url: url)
+        } catch {
+            print("PGN export failed: \(error.localizedDescription)")
+        }
+    }
+
+    private func shareGame(_ recordedGame: RecordedGame) {
+        let pgn = PGNExportService.pgn(
+            for: recordedGame,
+            includeAssessmentSymbols: includeMoveAssessmentSymbolsInExport
+        )
+        do {
+            let url = try PGNExportService.writeTemporaryFile(
+                content: pgn,
+                filenamePrefix: "ChessRecorder-R\(recordedGame.round)"
+            )
             exportItem = ShareablePGNExport(url: url)
         } catch {
             print("PGN export failed: \(error.localizedDescription)")
@@ -310,6 +370,8 @@ private struct GamePGNRowView: View, Equatable {
             && lhs.recordedGame.result == rhs.recordedGame.result
             && lhs.recordedGame.round == rhs.recordedGame.round
             && lhs.recordedGame.eco == rhs.recordedGame.eco
+            && lhs.recordedGame.date == rhs.recordedGame.date
+            && lhs.recordedGame.metadata == rhs.recordedGame.metadata
             && lhs.recordedGame.isReviewOnly == rhs.recordedGame.isReviewOnly
             && lhs.recordedGame.summaryTitle == rhs.recordedGame.summaryTitle
             && lhs.hideHeaderTags == rhs.hideHeaderTags

@@ -11,15 +11,7 @@ enum PGNExportService {
             .reversed()
             .filter { !$0.moves.isEmpty }
             .map { game in
-                PGNFormatter.formatGame(
-                    moves: game.moves,
-                    round: game.round,
-                    result: game.result,
-                    metadata: game.metadata,
-                    date: game.date,
-                    eco: game.eco,
-                    includeAssessmentSymbols: includeAssessmentSymbols
-                )
+                pgn(for: game, includeAssessmentSymbols: includeAssessmentSymbols)
             }
             .joined(separator: "\n\n")
     }
@@ -28,11 +20,23 @@ enum PGNExportService {
         fullPGN(for: archive.games, includeAssessmentSymbols: includeAssessmentSymbols)
     }
 
-    static func writeTemporaryFile(content: String) throws -> URL {
+    static func pgn(for game: RecordedGame, includeAssessmentSymbols: Bool = false) -> String {
+        PGNFormatter.formatGame(
+            moves: game.moves,
+            round: game.round,
+            result: game.result,
+            metadata: game.metadata,
+            date: game.date,
+            eco: game.eco,
+            includeAssessmentSymbols: includeAssessmentSymbols
+        )
+    }
+
+    static func writeTemporaryFile(content: String, filenamePrefix: String = "ChessRecorder") throws -> URL {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyy-MM-dd-HHmmss"
-        let filename = "ChessRecorder-\(formatter.string(from: Date())).pgn"
+        let filename = "\(filenamePrefix)-\(formatter.string(from: Date())).pgn"
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
         try content.write(to: url, atomically: true, encoding: .utf8)
         return url

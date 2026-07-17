@@ -12,17 +12,29 @@ struct GameAccuracySummarySheet: View {
 
     let summary: GameAccuracySummary
     let roundTitle: String
+    var result: PGNResult = .ongoing
+    var whiteName: String = GameAccuracySummary.Side.white.label
+    var blackName: String = GameAccuracySummary.Side.black.label
     var assessmentColors: MoveAssessmentColors = .defaults
+
+    @State private var progressMode: GameAccuracySummary.AccuracyProgressMode = .running
+
+    /// Uses the PGN tag when it has a real value; otherwise `White` / `Black`.
+    static func playerDisplayName(from tag: String, fallback: String) -> String {
+        let trimmed = tag.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, trimmed != "?" else { return fallback }
+        return trimmed
+    }
 
     var body: some View {
         NavigationStack {
             List {
                 Section {
-                    accuracyComparison
+                    overviewSection
                 } header: {
-                    Text("Accuracy")
+                    Text("Overview")
                 } footer: {
-                    Text("Accuracy is based on average centipawn loss (book moves excluded).")
+                    Text("Accuracy uses average centipawn loss (book excluded). Best-move % is the share of scored moves with 0 CPL. Blunder rate is among all assessed moves.")
                 }
 
                 if summary.white.hasContent || summary.black.hasContent {
@@ -34,6 +46,14 @@ struct GameAccuracySummarySheet: View {
 
                 if summary.hasAccuracyProgress {
                     Section {
+                        Picker("Chart mode", selection: $progressMode) {
+                            ForEach(GameAccuracySummary.AccuracyProgressMode.allCases) { mode in
+                                Text(mode.title).tag(mode)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                        .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 4, trailing: 16))
+
                         accuracyProgressChart
                             .frame(height: 200)
                             .padding(.vertical, 4)
@@ -54,21 +74,90 @@ struct GameAccuracySummarySheet: View {
         }
     }
 
+    private var overviewSection: some View {
+        VStack(spacing: 14) {
+            accuracyComparison
+            if summary.scoredMoveCount > 0 || summary.blunderCount > 0 {
+                overviewMetricsTable
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
     private var accuracyComparison: some View {
         HStack(spacing: 0) {
             accuracyScore(side: .white, stats: summary.white)
+
+            if result.isFinal {
+                resultPointLabel(for: .white)
+                    .padding(.trailing, 10)
+            }
+
             Divider()
                 .frame(height: 56)
+
+            if result.isFinal {
+                resultPointLabel(for: .black)
+                    .padding(.leading, 10)
+            }
+
             accuracyScore(side: .black, stats: summary.black)
         }
         .frame(maxWidth: .infinity)
     }
 
+    private var overviewMetricsTable: some View {
+        Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 6) {
+            overviewMetricRow(label: "Avg CPL", white: summary.white.averageCPLText, black: summary.black.averageCPLText)
+            overviewMetricRow(label: "Best-move %", white: summary.white.bestMoveText, black: summary.black.bestMoveText)
+            overviewMetricRow(label: "Blunders", white: summary.white.blunderRateText, black: summary.black.blunderRateText)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 2)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(overviewMetricsAccessibilityLabel)
+    }
+
+    private func overviewMetricRow(label: String, white: String, black: String) -> some View {
+        GridRow {
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .gridColumnAlignment(.leading)
+            Text(white)
+                .font(.caption.monospacedDigit().weight(.medium))
+                .foregroundStyle(sideMetricAccent(.white))
+                .frame(maxWidth: .infinity)
+                .gridColumnAlignment(.center)
+            Text(black)
+                .font(.caption.monospacedDigit().weight(.medium))
+                .foregroundStyle(sideMetricAccent(.black))
+                .frame(maxWidth: .infinity)
+                .gridColumnAlignment(.center)
+        }
+    }
+
+    private var overviewMetricsAccessibilityLabel: String {
+        [
+            "\(displayName(for: .white)) average CPL \(summary.white.averageCPLText), best-move \(summary.white.bestMoveText), blunder rate \(summary.white.blunderRateText)",
+            "\(displayName(for: .black)) average CPL \(summary.black.averageCPLText), best-move \(summary.black.bestMoveText), blunder rate \(summary.black.blunderRateText)"
+        ].joined(separator: ". ")
+    }
+
+    private func displayName(for side: GameAccuracySummary.Side) -> String {
+        switch side {
+        case .white: return whiteName
+        case .black: return blackName
+        }
+    }
+
     private func accuracyScore(side: GameAccuracySummary.Side, stats: GameAccuracySummary.SideStats) -> some View {
         VStack(spacing: 4) {
-            Text(side.label)
+            Text(displayName(for: side))
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
             Text(stats.accuracyText)
                 .font(.title.monospacedDigit().weight(.semibold))
                 .foregroundStyle(sideAccent(side))
@@ -81,7 +170,48 @@ struct GameAccuracySummarySheet: View {
         .frame(maxWidth: .infinity)
         .padding(.vertical, 8)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("\(side.label) accuracy \(stats.accuracyText)")
+        .accessibilityLabel(accuracyScoreAccessibilityLabel(side: side, stats: stats))
+    }
+
+    private func accuracyScoreAccessibilityLabel(
+        side: GameAccuracySummary.Side,
+        stats: GameAccuracySummary.SideStats
+    ) -> String {
+        var label = "\(displayName(for: side)) accuracy \(stats.accuracyText)"
+        if result.isFinal {
+            label += ", result \(resultPoint(for: side))"
+        }
+        return label
+    }
+
+    private func resultPointLabel(for side: GameAccuracySummary.Side) -> some View {
+        let point = resultPoint(for: side)
+        let won = sideWon(side)
+        return Text(point)
+            .font(.title2.monospacedDigit().weight(won ? .bold : .regular))
+            .foregroundStyle(won ? sideAccent(side) : .secondary)
+            .accessibilityHidden(true)
+    }
+
+    private func resultPoint(for side: GameAccuracySummary.Side) -> String {
+        switch result {
+        case .whiteWins:
+            return side == .white ? "1" : "0"
+        case .blackWins:
+            return side == .white ? "0" : "1"
+        case .draw:
+            return "½"
+        case .ongoing:
+            return ""
+        }
+    }
+
+    private func sideWon(_ side: GameAccuracySummary.Side) -> Bool {
+        switch result {
+        case .whiteWins: return side == .white
+        case .blackWins: return side == .black
+        case .draw, .ongoing: return false
+        }
     }
 
     /// White pie | quality counts table | Black pie — single row, no mid-section separator.
@@ -103,9 +233,11 @@ struct GameAccuracySummarySheet: View {
         stats: GameAccuracySummary.SideStats
     ) -> some View {
         VStack(spacing: 6) {
-            Text(side.label)
+            Text(displayName(for: side))
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
 
             if stats.qualitySlices.isEmpty {
                 Text("—")
@@ -124,7 +256,7 @@ struct GameAccuracySummarySheet: View {
                 }
                 .chartLegend(.hidden)
                 .frame(width: 88, height: 88)
-                .accessibilityLabel("\(side.label) move quality chart")
+                .accessibilityLabel("\(displayName(for: side)) move quality chart")
             }
         }
         .frame(maxWidth: .infinity)
@@ -163,29 +295,44 @@ struct GameAccuracySummarySheet: View {
     }
 
     private var accuracyProgressXScale: GameAccuracySummary.AccuracyProgressXScale {
+        // X positions are identical for both modes; either series works.
         GameAccuracySummary.AccuracyProgressXScale(progress: summary.accuracyProgress)
     }
 
     private var accuracyProgressFooter: String {
+        var text = progressMode.chartFooter
         if accuracyProgressXScale.isCompressed {
-            return "Running accuracy after each scored move. Opening moves are compressed on the left."
+            text += " Opening moves are compressed on the left."
+        } else {
+            text += " Book moves are omitted."
         }
-        return "Running accuracy after each scored move (book moves omitted)."
+        return text
     }
 
     private var accuracyProgressChart: some View {
+        // Crossfade whole charts instead of morphing LineMarks (Charts' default looks glitchy).
+        ZStack {
+            chartMarks(for: progressMode)
+                .id(progressMode)
+                .transition(.opacity.combined(with: .scale(scale: 0.985)))
+        }
+        .animation(.easeInOut(duration: 0.28), value: progressMode)
+    }
+
+    private func chartMarks(for mode: GameAccuracySummary.AccuracyProgressMode) -> some View {
+        let points = summary.accuracyProgress(for: mode)
         let xScale = accuracyProgressXScale
-        let scoredMoves = summary.accuracyProgress.map(\.moveNumber)
+        let scoredMoves = points.map(\.moveNumber)
         let maxMove = scoredMoves.max() ?? xScale.firstScoredMove
         let axisMarks = xScale.axisMarks(scoredMoves: scoredMoves)
 
         return Chart {
             // Draw Black under White so overlapping segments stay a clean light stroke
             // (Black-on-White AA produces a grey fringe along the line edges).
-            ForEach(progressPoints(for: .black)) { point in
+            ForEach(points.filter { $0.side == .black }) { point in
                 accuracyLineMark(for: point, xScale: xScale)
             }
-            ForEach(progressPoints(for: .white)) { point in
+            ForEach(points.filter { $0.side == .white }) { point in
                 accuracyLineMark(for: point, xScale: xScale)
             }
         }
@@ -207,7 +354,7 @@ struct GameAccuracySummarySheet: View {
                 }
             }
         }
-        .chartYScale(domain: accuracyProgressYDomain)
+        .chartYScale(domain: sharedAccuracyProgressYDomain)
         .chartYAxis {
             AxisMarks(position: .leading, values: .automatic(desiredCount: 5)) { value in
                 AxisGridLine()
@@ -224,10 +371,6 @@ struct GameAccuracySummarySheet: View {
         }
     }
 
-    private func progressPoints(for side: GameAccuracySummary.Side) -> [GameAccuracySummary.AccuracyProgressPoint] {
-        summary.accuracyProgress.filter { $0.side == side }
-    }
-
     private func accuracyLineMark(
         for point: GameAccuracySummary.AccuracyProgressPoint,
         xScale: GameAccuracySummary.AccuracyProgressXScale
@@ -242,9 +385,11 @@ struct GameAccuracySummarySheet: View {
         .interpolationMethod(.linear)
     }
 
-    /// Zoom the Y-axis to the data range with a small buffer (still clamped to 0…100).
-    private var accuracyProgressYDomain: ClosedRange<Double> {
-        let values = summary.accuracyProgress.map(\.accuracyPercent)
+    /// Stable Y domain across both modes so the axis doesn't jump during the crossfade.
+    private var sharedAccuracyProgressYDomain: ClosedRange<Double> {
+        let values =
+            summary.accuracyProgress.map(\.accuracyPercent)
+            + summary.cumulativeAccuracyProgress.map(\.accuracyPercent)
         guard let minValue = values.min(), let maxValue = values.max() else {
             return 0...100
         }
@@ -263,6 +408,16 @@ struct GameAccuracySummarySheet: View {
         case .black:
             // Near-black for a true “black pieces” look on grey chart rows.
             return colorScheme == .dark ? Color(white: 0.06) : Color.black
+        }
+    }
+
+    /// Readable side tint for caption-sized overview metrics (near-black is too faint at small sizes).
+    private func sideMetricAccent(_ side: GameAccuracySummary.Side) -> Color {
+        switch side {
+        case .white:
+            return colorScheme == .dark ? Color(white: 0.88) : Color(white: 0.42)
+        case .black:
+            return colorScheme == .dark ? Color(white: 0.78) : Color(white: 0.18)
         }
     }
 

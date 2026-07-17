@@ -495,6 +495,15 @@ private struct GamePGNRowView: View, Equatable {
             GameAccuracySummarySheet(
                 summary: cachedAccuracy?.summary ?? GameAccuracySummary(moves: recordedGame.moves),
                 roundTitle: "Round \(recordedGame.round)",
+                result: recordedGame.result,
+                whiteName: GameAccuracySummarySheet.playerDisplayName(
+                    from: recordedGame.metadata.white,
+                    fallback: GameAccuracySummary.Side.white.label
+                ),
+                blackName: GameAccuracySummarySheet.playerDisplayName(
+                    from: recordedGame.metadata.black,
+                    fallback: GameAccuracySummary.Side.black.label
+                ),
                 assessmentColors: assessmentColors
             )
         }

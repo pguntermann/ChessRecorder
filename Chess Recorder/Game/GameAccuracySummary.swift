@@ -25,6 +25,13 @@ struct GameAccuracySummary: Equatable, Sendable {
     struct SideStats: Equatable, Sendable {
         var scoredMoveCount: Int = 0
         var accuracyPercent: Int? = nil
+        /// Average effective CPL over scored (non-book) moves.
+        var averageCentipawnLoss: Double? = nil
+        /// Share of scored moves with 0 CPL (engine best / equal).
+        var bestMovePercent: Int? = nil
+        /// Blunders as a percent of all assessed moves (including book).
+        var blunderRatePercent: Int? = nil
+        var bestMoveCount: Int = 0
         var goodCount: Int = 0
         var inaccuracyCount: Int = 0
         var mistakeCount: Int = 0
@@ -71,6 +78,19 @@ struct GameAccuracySummary: Equatable, Sendable {
             accuracyPercent.map { "\($0)%" } ?? "—"
         }
 
+        var averageCPLText: String {
+            guard let averageCentipawnLoss else { return "—" }
+            return "\(Int(averageCentipawnLoss.rounded()))"
+        }
+
+        var bestMoveText: String {
+            bestMovePercent.map { "\($0)%" } ?? "—"
+        }
+
+        var blunderRateText: String {
+            blunderRatePercent.map { "\($0)%" } ?? "—"
+        }
+
         var bookText: String {
             bookCount > 0 ? "\(bookCount)" : "—"
         }
@@ -107,6 +127,21 @@ struct GameAccuracySummary: Equatable, Sendable {
             ]
             .filter { $0.count > 0 }
         }
+
+        mutating func finalizeOverviewStats(totalCPL: Double) {
+            if scoredMoveCount > 0 {
+                averageCentipawnLoss = totalCPL / Double(scoredMoveCount)
+                bestMovePercent = Int((Double(bestMoveCount) / Double(scoredMoveCount) * 100).rounded())
+            } else {
+                averageCentipawnLoss = nil
+                bestMovePercent = nil
+            }
+            if assessedMoveCount > 0 {
+                blunderRatePercent = Int((Double(blunderCount) / Double(assessedMoveCount) * 100).rounded())
+            } else {
+                blunderRatePercent = nil
+            }
+        }
     }
 
     struct QualitySlice: Equatable, Sendable, Identifiable {
@@ -127,7 +162,33 @@ struct GameAccuracySummary: Equatable, Sendable {
         }
     }
 
-    /// Running accuracy for one side after a scored move, plotted against game move number.
+    /// How accuracy progress is plotted over the game.
+    enum AccuracyProgressMode: String, Equatable, Sendable, CaseIterable, Identifiable {
+        /// Accuracy if the game had ended after each scored move (can rise or fall).
+        case running
+        /// Path of damage toward the current accuracy (only flat or down).
+        case cumulative
+
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .running: return "Running"
+            case .cumulative: return "Cumulative"
+            }
+        }
+
+        var chartFooter: String {
+            switch self {
+            case .running:
+                return "Accuracy if the game had ended at each move (can go up or down)."
+            case .cumulative:
+                return "How the current accuracy was lost over time (only flat or down)."
+            }
+        }
+    }
+
+    /// Accuracy for one side after a scored move, plotted against game move number.
     struct AccuracyProgressPoint: Equatable, Sendable, Identifiable {
         let side: Side
         /// Full-move number (1-based), e.g. 1 for 1.e4 / 1...e5.
@@ -226,6 +287,8 @@ struct GameAccuracySummary: Equatable, Sendable {
     var black: SideStats
     /// Chronological running accuracy for White and Black (scored moves only).
     var accuracyProgress: [AccuracyProgressPoint]
+    /// Same move numbers as `accuracyProgress`, with CPL scaled by each side's final scored count.
+    var cumulativeAccuracyProgress: [AccuracyProgressPoint]
 
     var assessedMoveCount: Int {
         white.assessedMoveCount + black.assessedMoveCount
@@ -251,6 +314,13 @@ struct GameAccuracySummary: Equatable, Sendable {
 
     var hasAccuracyProgress: Bool {
         accuracyProgress.count >= 2
+    }
+
+    func accuracyProgress(for mode: AccuracyProgressMode) -> [AccuracyProgressPoint] {
+        switch mode {
+        case .running: return accuracyProgress
+        case .cumulative: return cumulativeAccuracyProgress
+        }
     }
 
     /// Columns shown in the compact PGN header table (only those with any data).
@@ -304,7 +374,7 @@ struct GameAccuracySummary: Equatable, Sendable {
         var black = SideStats()
         var whiteCPL = 0.0
         var blackCPL = 0.0
-        var progress: [AccuracyProgressPoint] = []
+        var prefixes: [(side: Side, moveNumber: Int, totalCPL: Double, scoredMoves: Int)] = []
 
         for (index, move) in moves.enumerated() {
             guard let quality = move.quality else { continue }
@@ -313,35 +383,44 @@ struct GameAccuracySummary: Equatable, Sendable {
 
             if side == .white {
                 Self.apply(move, quality: quality, to: &white, cplSum: &whiteCPL)
-                if let point = Self.progressPoint(
-                    side: .white,
-                    moveNumber: moveNumber,
-                    contributedToAccuracy: quality != .book,
-                    totalCPL: whiteCPL,
-                    scoredMoves: white.scoredMoveCount
-                ) {
-                    progress.append(point)
+                if quality != .book, white.scoredMoveCount > 0 {
+                    prefixes.append((.white, moveNumber, whiteCPL, white.scoredMoveCount))
                 }
             } else {
                 Self.apply(move, quality: quality, to: &black, cplSum: &blackCPL)
-                if let point = Self.progressPoint(
-                    side: .black,
-                    moveNumber: moveNumber,
-                    contributedToAccuracy: quality != .book,
-                    totalCPL: blackCPL,
-                    scoredMoves: black.scoredMoveCount
-                ) {
-                    progress.append(point)
+                if quality != .book, black.scoredMoveCount > 0 {
+                    prefixes.append((.black, moveNumber, blackCPL, black.scoredMoveCount))
                 }
             }
         }
 
         white.accuracyPercent = Self.percent(totalCPL: whiteCPL, scoredMoves: white.scoredMoveCount)
         black.accuracyPercent = Self.percent(totalCPL: blackCPL, scoredMoves: black.scoredMoveCount)
+        white.finalizeOverviewStats(totalCPL: whiteCPL)
+        black.finalizeOverviewStats(totalCPL: blackCPL)
+
+        let whiteFinalCount = white.scoredMoveCount
+        let blackFinalCount = black.scoredMoveCount
 
         self.white = white
         self.black = black
-        self.accuracyProgress = progress
+        self.accuracyProgress = prefixes.compactMap { prefix in
+            Self.progressPoint(
+                side: prefix.side,
+                moveNumber: prefix.moveNumber,
+                totalCPL: prefix.totalCPL,
+                scoredMoves: prefix.scoredMoves
+            )
+        }
+        self.cumulativeAccuracyProgress = prefixes.compactMap { prefix in
+            let finalCount = prefix.side == .white ? whiteFinalCount : blackFinalCount
+            return Self.progressPoint(
+                side: prefix.side,
+                moveNumber: prefix.moveNumber,
+                totalCPL: prefix.totalCPL,
+                scoredMoves: finalCount
+            )
+        }
     }
 
     /// Divisor used by `100 - averageCPL / divisor`, matching common CPL accuracy curves.
@@ -381,12 +460,10 @@ struct GameAccuracySummary: Equatable, Sendable {
     private static func progressPoint(
         side: Side,
         moveNumber: Int,
-        contributedToAccuracy: Bool,
         totalCPL: Double,
         scoredMoves: Int
     ) -> AccuracyProgressPoint? {
-        guard contributedToAccuracy,
-              let accuracy = percent(totalCPL: totalCPL, scoredMoves: scoredMoves) else {
+        guard let accuracy = percent(totalCPL: totalCPL, scoredMoves: scoredMoves) else {
             return nil
         }
         return AccuracyProgressPoint(
@@ -420,6 +497,9 @@ struct GameAccuracySummary: Equatable, Sendable {
         guard let cpl = effectiveCentipawnLoss(for: move, quality: quality) else { return }
         side.scoredMoveCount += 1
         cplSum += cpl
+        if cpl == 0 {
+            side.bestMoveCount += 1
+        }
     }
 
     /// `clamp(100 - averageCPL / 3.5, 5, 100)`, rounded to nearest int.

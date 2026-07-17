@@ -161,6 +161,66 @@ final class GameAccuracySummaryTests: XCTestCase {
         XCTAssertTrue(summary.hasAccuracyProgress)
     }
 
+    func testCumulativeAccuracyProgressOnlyFallsOrStaysFlat() {
+        // White blunders first, then plays perfectly — running rises; cumulative stays flat.
+        let moves = [
+            move("e4", quality: .blunder, centipawnLoss: 280), // W: running 20; cumulative ÷3 → ~73
+            move("e5", quality: .good, centipawnLoss: 0),
+            move("Nf3", quality: .good, centipawnLoss: 0),     // W: running 60; cumulative ~73
+            move("Nc6", quality: .good, centipawnLoss: 0),
+            move("d4", quality: .good, centipawnLoss: 0)       // W: running ~73; cumulative ~73
+        ]
+        let summary = GameAccuracySummary(moves: moves)
+        let runningWhite = summary.accuracyProgress(for: .running).filter { $0.side == .white }
+        let cumulativeWhite = summary.accuracyProgress(for: .cumulative).filter { $0.side == .white }
+
+        XCTAssertEqual(runningWhite.map(\.accuracyPercent), [20, 60, 73])
+        XCTAssertEqual(cumulativeWhite.map(\.accuracyPercent), [73, 73, 73])
+        XCTAssertEqual(cumulativeWhite.last?.accuracyPercent, Double(summary.white.accuracyPercent ?? -1))
+
+        for pair in zip(cumulativeWhite, cumulativeWhite.dropFirst()) {
+            XCTAssertLessThanOrEqual(pair.1.accuracyPercent, pair.0.accuracyPercent)
+        }
+    }
+
+    func testOverviewStatsIncludeAverageCPLBestMoveAndBlunderRate() {
+        let moves = [
+            move("e4", quality: .good, centipawnLoss: 0),         // best
+            move("e5", quality: .book),
+            move("Nf3", quality: .blunder, centipawnLoss: 280),   // not best
+            move("Nc6", quality: .good, centipawnLoss: 0),        // best
+            move("d4", quality: .good, centipawnLoss: 70)         // not best
+        ]
+        let summary = GameAccuracySummary(moves: moves)
+
+        // White scored: 0, 280, 70 → avg 116.67 → 117; best 1/3 → 33%; blunders 1/3 assessed → 33%
+        XCTAssertEqual(summary.white.averageCentipawnLoss ?? -1, 350.0 / 3.0, accuracy: 0.01)
+        XCTAssertEqual(summary.white.averageCPLText, "117")
+        XCTAssertEqual(summary.white.bestMoveCount, 1)
+        XCTAssertEqual(summary.white.bestMovePercent, 33)
+        XCTAssertEqual(summary.white.blunderRatePercent, 33)
+
+        // Black: one book + one best → avg CPL 0; best 100%; blunder 0/2 → 0%
+        XCTAssertEqual(summary.black.averageCentipawnLoss, 0)
+        XCTAssertEqual(summary.black.bestMovePercent, 100)
+        XCTAssertEqual(summary.black.blunderRatePercent, 0)
+    }
+
+    func testPlayerDisplayNameFallsBackForMissingOrQuestionMark() {
+        XCTAssertEqual(
+            GameAccuracySummarySheet.playerDisplayName(from: "Carlsen", fallback: "White"),
+            "Carlsen"
+        )
+        XCTAssertEqual(
+            GameAccuracySummarySheet.playerDisplayName(from: "?", fallback: "White"),
+            "White"
+        )
+        XCTAssertEqual(
+            GameAccuracySummarySheet.playerDisplayName(from: "  ", fallback: "Black"),
+            "Black"
+        )
+    }
+
     func testLegacyQualitiesWithoutCPLMapThroughEquivalentLoss() {
         // No stored CPL: invert former point scores so percentages match the old curve.
         let moves = [

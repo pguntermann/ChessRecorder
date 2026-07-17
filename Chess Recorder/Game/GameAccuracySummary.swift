@@ -200,11 +200,12 @@ struct GameAccuracySummary: Equatable, Sendable {
 
     /// Piecewise X mapping that compresses book moves before the first scored point.
     ///
-    /// Example: first scored move at 6 → a short `0...5` prefix, then 6, 7, …
+    /// Example: first scored move at 8 → a short `0...7` prefix, then 8, 9, …
+    /// The book strip scales with game length so the first scored point does not sit on top of `0...N`.
     struct AccuracyProgressXScale: Equatable, Sendable {
         /// Full-move number of the first scored (non-book) progress point.
         let firstScoredMove: Int
-        /// Visual width of the compressed book prefix, in plot units (≈ one scored-move step).
+        /// Visual width of the compressed book prefix, in plot units (≈ scored-move steps).
         let compressedUnits: Double
 
         /// Last full-move still in book (or before first score). `nil` when nothing to compress.
@@ -218,10 +219,30 @@ struct GameAccuracySummary: Equatable, Sendable {
             firstScoredMove >= 3
         }
 
-        init(progress: [AccuracyProgressPoint], compressedUnits: Double = 0.28) {
+        /// Enough room after `0...N` to also label the first scored move.
+        var showsFirstScoredAxisLabel: Bool {
+            isCompressed && compressedUnits >= 1.0
+        }
+
+        init(progress: [AccuracyProgressPoint], compressedUnits: Double? = nil) {
             let first = progress.map(\.moveNumber).min() ?? 1
+            let last = progress.map(\.moveNumber).max() ?? first
             self.firstScoredMove = first
-            self.compressedUnits = max(compressedUnits, 0.15)
+            if let compressedUnits {
+                self.compressedUnits = max(compressedUnits, 0.15)
+            } else {
+                self.compressedUnits = Self.defaultCompressedUnits(
+                    firstScoredMove: first,
+                    lastScoredMove: last
+                )
+            }
+        }
+
+        /// Book strip ≈ 12% of the scored span, clamped so short games stay compact and
+        /// long games keep a clear gap before the first accuracy point.
+        static func defaultCompressedUnits(firstScoredMove: Int, lastScoredMove: Int) -> Double {
+            let scoredSpan = max(lastScoredMove - firstScoredMove, 1)
+            return min(4.0, max(1.2, Double(scoredSpan) * 0.12))
         }
 
         func plotX(moveNumber: Int) -> Double {
@@ -253,9 +274,9 @@ struct GameAccuracySummary: Equatable, Sendable {
             }
 
             // Include every full-move in range so gaps like 4 → 6 don't leave a blank tick.
-            // When compressed, skip the first scored move — it sits too close to "0...N".
+            // Only skip the first scored label when the book strip is too narrow to share space.
             for move in sampleMoveNumbers(from: lo, through: hi, desiredCount: desiredCount) {
-                if isCompressed, move == firstScoredMove { continue }
+                if isCompressed, move == firstScoredMove, !showsFirstScoredAxisLabel { continue }
                 marks.append((plotX(moveNumber: move), "\(move)"))
             }
             return marks

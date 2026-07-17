@@ -259,8 +259,35 @@ final class GameAccuracySummaryTests: XCTestCase {
 
         let labels = scale.axisMarks(scoredMoves: progress.map(\.moveNumber)).map(\.label)
         XCTAssertEqual(labels.first, "0...5")
-        XCTAssertFalse(labels.contains("6"), "First scored move is omitted to avoid overlapping 0...N")
+        XCTAssertFalse(labels.contains("6"), "Narrow book strip still omits first scored label")
         XCTAssertTrue(labels.contains("10"))
+    }
+
+    func testAccuracyProgressXScaleKeepsFirstPointClearOfBookLabel() {
+        // Long game: first scored at 8 (after 7 book), last at 54 — same shape as the reported chart.
+        let progress = [
+            GameAccuracySummary.AccuracyProgressPoint(side: .black, moveNumber: 8, accuracyPercent: 72),
+            GameAccuracySummary.AccuracyProgressPoint(side: .white, moveNumber: 9, accuracyPercent: 82),
+            GameAccuracySummary.AccuracyProgressPoint(side: .black, moveNumber: 54, accuracyPercent: 79)
+        ]
+        let scale = GameAccuracySummary.AccuracyProgressXScale(progress: progress)
+        let domain = scale.domain(maxMoveNumber: 54)
+        let firstX = scale.plotX(moveNumber: 8)
+        let bookWidth = scale.compressedUnits
+
+        XCTAssertTrue(scale.isCompressed)
+        XCTAssertEqual(scale.bookEndMove, 7)
+        XCTAssertGreaterThanOrEqual(bookWidth, 1.2)
+        XCTAssertGreaterThan(firstX, bookWidth, "First scored point must sit after the book strip")
+        XCTAssertGreaterThan(
+            (firstX - domain.lowerBound) / (domain.upperBound - domain.lowerBound),
+            0.06,
+            "First point should not hug the leading edge on a long game"
+        )
+
+        let labels = scale.axisMarks(scoredMoves: progress.map(\.moveNumber)).map(\.label)
+        XCTAssertEqual(labels.first, "0...7")
+        XCTAssertTrue(labels.contains("8"), "Wide book strip should label the first scored move")
     }
 
     func testAccuracyProgressXScaleCompressesShortOpeningToo() {

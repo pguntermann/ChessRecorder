@@ -31,7 +31,8 @@ struct OpeningBookSheet: View {
                                     isCurrent: index == pathToCurrent.count - 1 && isInBook,
                                     miniBoardSide: miniBoardSide,
                                     boardOrientation: boardOrientation,
-                                    moveHighlightColor: moveHighlightColor
+                                    moveHighlightColor: moveHighlightColor,
+                                    openingService: openingService
                                 )
                             }
                         } label: {
@@ -41,10 +42,10 @@ struct OpeningBookSheet: View {
                         currentOpeningHeader
                     }
                 } header: {
-                    Text("How we got here")
+                    Text("Lines until here")
                 } footer: {
                     if pathToCurrent.count > 1 {
-                        Text("Expand to see opening names along the played line, including gaps where the game left and later rejoined the book.")
+                        Text("Open a played opening to browse book continuations from that position. Gaps mark where the game left and later rejoined the book.")
                     }
                 }
 
@@ -105,6 +106,7 @@ private struct OpeningBookPathStepRow: View {
     let miniBoardSide: CGFloat
     let boardOrientation: BoardOrientation
     let moveHighlightColor: Color
+    let openingService: OpeningService
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -112,41 +114,56 @@ private struct OpeningBookPathStepRow: View {
                 OpeningBookGapRow(gap: gap)
             }
 
-            HStack(alignment: .center, spacing: 8) {
-                moveColumn
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(step.display.eco)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                    Text(step.display.name)
-                        .font(.subheadline.weight(isCurrent ? .semibold : .regular))
-                        .foregroundStyle(.primary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    if isCurrent {
-                        Text("Now")
-                            .font(.caption2.weight(.semibold))
-                            .foregroundStyle(.secondary)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Color.secondary.opacity(0.12), in: Capsule())
-                            .padding(.top, 2)
-                    }
-                }
-
-                Spacer(minLength: 4)
-
-                MiniChessBoardView(
+            NavigationLink {
+                OpeningBookPositionLinesView(
+                    display: step.display,
                     fen: step.fen,
-                    side: miniBoardSide,
-                    orientation: boardOrientation,
-                    highlightedFrom: step.moveFrom,
-                    highlightedTo: step.moveTo,
-                    highlightColor: moveHighlightColor
+                    miniBoardSide: miniBoardSide,
+                    boardOrientation: boardOrientation,
+                    moveHighlightColor: moveHighlightColor,
+                    openingService: openingService
                 )
+            } label: {
+                pathStepLabel
             }
         }
         .padding(.vertical, 2)
+    }
+
+    private var pathStepLabel: some View {
+        HStack(alignment: .center, spacing: 8) {
+            moveColumn
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(step.display.eco)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                Text(step.display.name)
+                    .font(.subheadline.weight(isCurrent ? .semibold : .regular))
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if isCurrent {
+                    Text("Now")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.secondary.opacity(0.12), in: Capsule())
+                        .padding(.top, 2)
+                }
+            }
+
+            Spacer(minLength: 4)
+
+            MiniChessBoardView(
+                fen: step.fen,
+                side: miniBoardSide,
+                orientation: boardOrientation,
+                highlightedFrom: step.moveFrom,
+                highlightedTo: step.moveTo,
+                highlightColor: moveHighlightColor
+            )
+        }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityLabel)
     }
@@ -186,7 +203,45 @@ private struct OpeningBookPathStepRow: View {
         if isCurrent {
             parts.append("current")
         }
+        parts.append("browse book lines")
         return parts.joined(separator: ", ")
+    }
+}
+
+/// Dedicated screen for browsing book continuations from a path position.
+/// Keeps nested disclosure trees out of the path list (avoids List outline collapse).
+private struct OpeningBookPositionLinesView: View {
+    let display: OpeningDisplay
+    let fen: String
+    let miniBoardSide: CGFloat
+    let boardOrientation: BoardOrientation
+    let moveHighlightColor: Color
+    let openingService: OpeningService
+
+    var body: some View {
+        List {
+            Section {
+                OpeningBookTreeNodeView(
+                    fen: fen,
+                    display: display,
+                    moveSAN: nil,
+                    moveFrom: nil,
+                    moveTo: nil,
+                    depth: 0,
+                    initiallyExpanded: true,
+                    miniBoardSide: miniBoardSide,
+                    boardOrientation: boardOrientation,
+                    moveHighlightColor: moveHighlightColor,
+                    openingService: openingService
+                )
+            } header: {
+                Text("Book lines")
+            } footer: {
+                Text("Expand a move to drill into further book continuations from this played position.")
+            }
+        }
+        .navigationTitle(display.label)
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 

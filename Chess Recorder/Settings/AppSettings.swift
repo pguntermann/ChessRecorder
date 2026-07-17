@@ -141,7 +141,7 @@ struct AppSettings: Codable, Equatable {
         lastMoveArrowColor: CodableColor = CodableColor(red: 0.85, green: 0.65, blue: 0.1),
         engineAnalysisVisible: Bool = true,
         engineAnalysisDepth: Double = 18,
-        engineAnalysisShowEvaluationBar: Bool = false,
+        engineAnalysisShowEvaluationBar: Bool = true,
         engineAnalysisUseAlgebraicNotation: Bool = false,
         engineAnalysisShowBoardArrow: Bool = false,
         engineAnalysisArrowColor: CodableColor = CodableColor(red: 0, green: 0.478, blue: 1),
@@ -232,7 +232,7 @@ struct AppSettings: Codable, Equatable {
         }
         // Clamp legacy uncapped (31+) and out-of-range values to the current max.
         engineAnalysisDepth = min(max(engineAnalysisDepth, 1), Self.maxEngineAnalysisDepth)
-        engineAnalysisShowEvaluationBar = try container.decodeIfPresent(Bool.self, forKey: .engineAnalysisShowEvaluationBar) ?? false
+        engineAnalysisShowEvaluationBar = try container.decodeIfPresent(Bool.self, forKey: .engineAnalysisShowEvaluationBar) ?? true
         engineAnalysisUseAlgebraicNotation = try container.decodeIfPresent(Bool.self, forKey: .engineAnalysisUseAlgebraicNotation) ?? false
         engineAnalysisShowBoardArrow = try container.decodeIfPresent(Bool.self, forKey: .engineAnalysisShowBoardArrow) ?? false
         engineAnalysisArrowColor = try container.decodeIfPresent(CodableColor.self, forKey: .engineAnalysisArrowColor)
@@ -296,7 +296,7 @@ struct AppSettings: Codable, Equatable {
         lastMoveArrowColor: CodableColor(red: 0.85, green: 0.65, blue: 0.1),
         engineAnalysisVisible: true,
         engineAnalysisDepth: 18,
-        engineAnalysisShowEvaluationBar: false,
+        engineAnalysisShowEvaluationBar: true,
         engineAnalysisUseAlgebraicNotation: true,
         engineAnalysisShowBoardArrow: true,
         engineAnalysisArrowColor: CodableColor(red: 0, green: 0.478, blue: 1),
@@ -398,7 +398,7 @@ extension AppSettings {
     static let defaultMoveAssessmentMistakeColor = CodableColor(red: 0.95, green: 0.45, blue: 0.2)
     static let defaultMoveAssessmentBlunderColor = CodableColor(red: 0.9, green: 0.2, blue: 0.2)
     static let defaultMoveAssessmentMissColor = CodableColor(red: 1.0, green: 0.45, blue: 0.75)
-    static let defaultOpeningBookMiniBoardSide = 72.0
+    static let defaultOpeningBookMiniBoardSide = 92.0
 
     static let maxEngineAnalysisDepth = 30.0
     static let maxMoveAssessmentDepth = 25.0

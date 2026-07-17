@@ -18,7 +18,7 @@
   "defaultLanguage" : "en-US",
   "dictationPauseSeconds" : 0.9,
   "engineAnalysisDepth" : 18,
-  "engineAnalysisShowEvaluationBar" : false,
+  "engineAnalysisShowEvaluationBar" : true,
   "engineAnalysisShowBoardArrow" : true,
   "engineAnalysisArrowColor" : {
     "alpha" : 1,
@@ -29,7 +29,7 @@
   "engineAnalysisUseAlgebraicNotation" : true,
   "engineAnalysisVisible" : true,
   "openingNameVisible" : true,
-  "openingBookMiniBoardSide" : 72,
+  "openingBookMiniBoardSide" : 92,
   "openingBookMiniBoardFollowsOrientation" : true,
   "lightSquareColor" : {
     "alpha" : 1,

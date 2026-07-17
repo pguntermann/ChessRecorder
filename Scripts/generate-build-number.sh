@@ -1,7 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
-BUILD_NUMBER="$(date '+%Y%m%d_%H%M')"
+# App Store requires CFBundleVersion as 1–3 period-separated integers.
+BUILD_NUMBER="$(date '+%Y%m%d.%H%M')"
 OUTPUT="${SRCROOT}/BuildNumber.xcconfig"
 
 cat > "${OUTPUT}" <<EOF

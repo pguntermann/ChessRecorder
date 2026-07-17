@@ -40,7 +40,7 @@ struct GameAccuracySummarySheet: View {
                     } header: {
                         Text("Accuracy over game duration")
                     } footer: {
-                        Text("Running accuracy after each scored move (book moves omitted).")
+                        Text(accuracyProgressFooter)
                     }
                 }
             }
@@ -162,15 +162,31 @@ struct GameAccuracySummarySheet: View {
         }
     }
 
+    private var accuracyProgressXScale: GameAccuracySummary.AccuracyProgressXScale {
+        GameAccuracySummary.AccuracyProgressXScale(progress: summary.accuracyProgress)
+    }
+
+    private var accuracyProgressFooter: String {
+        if accuracyProgressXScale.isCompressed {
+            return "Running accuracy after each scored move. Opening moves are compressed on the left."
+        }
+        return "Running accuracy after each scored move (book moves omitted)."
+    }
+
     private var accuracyProgressChart: some View {
-        Chart {
+        let xScale = accuracyProgressXScale
+        let scoredMoves = summary.accuracyProgress.map(\.moveNumber)
+        let maxMove = scoredMoves.max() ?? xScale.firstScoredMove
+        let axisMarks = xScale.axisMarks(scoredMoves: scoredMoves)
+
+        return Chart {
             // Draw Black under White so overlapping segments stay a clean light stroke
             // (Black-on-White AA produces a grey fringe along the line edges).
             ForEach(progressPoints(for: .black)) { point in
-                accuracyLineMark(for: point)
+                accuracyLineMark(for: point, xScale: xScale)
             }
             ForEach(progressPoints(for: .white)) { point in
-                accuracyLineMark(for: point)
+                accuracyLineMark(for: point, xScale: xScale)
             }
         }
         .chartForegroundStyleScale([
@@ -178,8 +194,18 @@ struct GameAccuracySummarySheet: View {
             GameAccuracySummary.Side.black.label: sideAccent(.black)
         ])
         .chartLegend(position: .bottom, alignment: .center)
+        .chartXScale(domain: xScale.domain(maxMoveNumber: maxMove))
         .chartXAxis {
-            AxisMarks(values: .automatic(desiredCount: 6))
+            AxisMarks(values: axisMarks.map(\.x)) { value in
+                AxisGridLine()
+                AxisValueLabel {
+                    let raw: Double? = value.as(Double.self) ?? value.as(Int.self).map(Double.init)
+                    if let raw, let label = xScale.label(forAxisValue: raw, in: axisMarks) {
+                        Text(label)
+                            .font(.caption2)
+                    }
+                }
+            }
         }
         .chartYScale(domain: accuracyProgressYDomain)
         .chartYAxis {
@@ -202,9 +228,12 @@ struct GameAccuracySummarySheet: View {
         summary.accuracyProgress.filter { $0.side == side }
     }
 
-    private func accuracyLineMark(for point: GameAccuracySummary.AccuracyProgressPoint) -> some ChartContent {
+    private func accuracyLineMark(
+        for point: GameAccuracySummary.AccuracyProgressPoint,
+        xScale: GameAccuracySummary.AccuracyProgressXScale
+    ) -> some ChartContent {
         LineMark(
-            x: .value("Move", point.moveNumber),
+            x: .value("Move", xScale.plotX(moveNumber: point.moveNumber)),
             y: .value("Accuracy", point.accuracyPercent),
             series: .value("Side", point.side.label)
         )

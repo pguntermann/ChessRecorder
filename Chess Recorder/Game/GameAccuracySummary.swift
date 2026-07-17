@@ -137,6 +137,91 @@ struct GameAccuracySummary: Equatable, Sendable {
         var id: String { "\(side.rawValue)-\(moveNumber)-\(accuracyPercent)" }
     }
 
+    /// Piecewise X mapping that compresses book moves before the first scored point.
+    ///
+    /// Example: first scored move at 6 → a short `0...5` prefix, then 6, 7, …
+    struct AccuracyProgressXScale: Equatable, Sendable {
+        /// Full-move number of the first scored (non-book) progress point.
+        let firstScoredMove: Int
+        /// Visual width of the compressed book prefix, in plot units (≈ one scored-move step).
+        let compressedUnits: Double
+
+        /// Last full-move still in book (or before first score). `nil` when nothing to compress.
+        var bookEndMove: Int? {
+            guard isCompressed else { return nil }
+            return firstScoredMove - 1
+        }
+
+        /// Compress whenever at least two full moves precede the first scored point.
+        var isCompressed: Bool {
+            firstScoredMove >= 3
+        }
+
+        init(progress: [AccuracyProgressPoint], compressedUnits: Double = 0.28) {
+            let first = progress.map(\.moveNumber).min() ?? 1
+            self.firstScoredMove = first
+            self.compressedUnits = max(compressedUnits, 0.15)
+        }
+
+        func plotX(moveNumber: Int) -> Double {
+            guard isCompressed, let bookEnd = bookEndMove else {
+                return Double(moveNumber)
+            }
+            if moveNumber <= bookEnd {
+                guard bookEnd > 0 else { return 0 }
+                return Double(moveNumber) / Double(bookEnd) * compressedUnits
+            }
+            return compressedUnits + Double(moveNumber - bookEnd)
+        }
+
+        func domain(maxMoveNumber: Int) -> ClosedRange<Double> {
+            let upper = plotX(moveNumber: max(maxMoveNumber, firstScoredMove))
+            let lower = isCompressed ? 0 : plotX(moveNumber: firstScoredMove)
+            return lower...max(upper, lower + 1)
+        }
+
+        /// Axis ticks: optional compressed opening label, then consecutive move numbers (sampled if long).
+        func axisMarks(scoredMoves: [Int], desiredCount: Int = 6) -> [(x: Double, label: String)] {
+            let uniqueSorted = Array(Set(scoredMoves)).sorted()
+            guard let lo = uniqueSorted.first, let hi = uniqueSorted.last else { return [] }
+
+            var marks: [(Double, String)] = []
+            if isCompressed, let bookEnd = bookEndMove {
+                // Pin to the leading edge so the wide "0...N" text doesn't sit on the first move tick.
+                marks.append((0, "0...\(bookEnd)"))
+            }
+
+            // Include every full-move in range so gaps like 4 → 6 don't leave a blank tick.
+            // When compressed, skip the first scored move — it sits too close to "0...N".
+            for move in sampleMoveNumbers(from: lo, through: hi, desiredCount: desiredCount) {
+                if isCompressed, move == firstScoredMove { continue }
+                marks.append((plotX(moveNumber: move), "\(move)"))
+            }
+            return marks
+        }
+
+        func label(forAxisValue value: Double, in marks: [(x: Double, label: String)]) -> String? {
+            marks.min(by: { abs($0.x - value) < abs($1.x - value) })
+                .flatMap { abs($0.x - value) <= 0.05 ? $0.label : nil }
+        }
+
+        private func sampleMoveNumbers(from lo: Int, through hi: Int, desiredCount: Int) -> [Int] {
+            let span = hi - lo
+            guard span > 0 else { return [lo] }
+            if span + 1 <= desiredCount {
+                return Array(lo...hi)
+            }
+            var picked: [Int] = []
+            for i in 0..<desiredCount {
+                let value = lo + Int((Double(i) / Double(desiredCount - 1) * Double(span)).rounded())
+                if picked.last != value {
+                    picked.append(value)
+                }
+            }
+            return picked
+        }
+    }
+
     var white: SideStats
     var black: SideStats
     /// Chronological running accuracy for White and Black (scored moves only).

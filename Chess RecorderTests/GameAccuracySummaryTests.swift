@@ -182,6 +182,58 @@ final class GameAccuracySummaryTests: XCTestCase {
         XCTAssertEqual(summary.black.qualitySlices.map(\.quality), [.book])
     }
 
+    func testAccuracyProgressXScaleCompressesOpeningPrefix() {
+        let progress = [
+            GameAccuracySummary.AccuracyProgressPoint(side: .white, moveNumber: 6, accuracyPercent: 100),
+            GameAccuracySummary.AccuracyProgressPoint(side: .black, moveNumber: 6, accuracyPercent: 90),
+            GameAccuracySummary.AccuracyProgressPoint(side: .white, moveNumber: 10, accuracyPercent: 80)
+        ]
+        let scale = GameAccuracySummary.AccuracyProgressXScale(progress: progress, compressedUnits: 0.28)
+
+        XCTAssertTrue(scale.isCompressed)
+        XCTAssertEqual(scale.bookEndMove, 5)
+        XCTAssertEqual(scale.plotX(moveNumber: 0), 0)
+        XCTAssertEqual(scale.plotX(moveNumber: 5), 0.28, accuracy: 0.0001)
+        XCTAssertEqual(scale.plotX(moveNumber: 6), 1.28, accuracy: 0.0001)
+        XCTAssertEqual(scale.plotX(moveNumber: 10), 5.28, accuracy: 0.0001)
+
+        let labels = scale.axisMarks(scoredMoves: progress.map(\.moveNumber)).map(\.label)
+        XCTAssertEqual(labels.first, "0...5")
+        XCTAssertFalse(labels.contains("6"), "First scored move is omitted to avoid overlapping 0...N")
+        XCTAssertTrue(labels.contains("10"))
+    }
+
+    func testAccuracyProgressXScaleCompressesShortOpeningToo() {
+        let progress = [
+            GameAccuracySummary.AccuracyProgressPoint(side: .white, moveNumber: 3, accuracyPercent: 100),
+            GameAccuracySummary.AccuracyProgressPoint(side: .black, moveNumber: 3, accuracyPercent: 90),
+            GameAccuracySummary.AccuracyProgressPoint(side: .white, moveNumber: 4, accuracyPercent: 85),
+            GameAccuracySummary.AccuracyProgressPoint(side: .black, moveNumber: 6, accuracyPercent: 80),
+            GameAccuracySummary.AccuracyProgressPoint(side: .white, moveNumber: 7, accuracyPercent: 75)
+        ]
+        let scale = GameAccuracySummary.AccuracyProgressXScale(progress: progress, compressedUnits: 0.28)
+
+        XCTAssertTrue(scale.isCompressed)
+        XCTAssertEqual(scale.bookEndMove, 2)
+        XCTAssertEqual(scale.plotX(moveNumber: 3), 1.28, accuracy: 0.0001)
+        let labels = scale.axisMarks(scoredMoves: progress.map(\.moveNumber)).map(\.label)
+        XCTAssertEqual(labels.first, "0...2")
+        XCTAssertEqual(Array(labels.dropFirst()), ["4", "5", "6", "7"])
+    }
+
+    func testAccuracyProgressXScaleSkipsCompressionWhenNoOpeningGap() {
+        let progress = [
+            GameAccuracySummary.AccuracyProgressPoint(side: .white, moveNumber: 1, accuracyPercent: 100),
+            GameAccuracySummary.AccuracyProgressPoint(side: .black, moveNumber: 2, accuracyPercent: 90)
+        ]
+        let scale = GameAccuracySummary.AccuracyProgressXScale(progress: progress)
+
+        XCTAssertFalse(scale.isCompressed)
+        XCTAssertNil(scale.bookEndMove)
+        XCTAssertEqual(scale.plotX(moveNumber: 1), 1)
+        XCTAssertEqual(scale.plotX(moveNumber: 2), 2)
+    }
+
     private func move(_ san: String, quality: MoveQuality?, centipawnLoss: Int? = nil) -> ChessMove {
         ChessMove(
             san: san,

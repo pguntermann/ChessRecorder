@@ -29,7 +29,7 @@
   "engineAnalysisUseAlgebraicNotation" : true,
   "engineAnalysisVisible" : true,
   "openingNameVisible" : true,
-  "openingBookMiniBoardSide" : 92,
+  "openingBookMiniBoardSide" : 120,
   "openingBookMiniBoardFollowsOrientation" : true,
   "lightSquareColor" : {
     "alpha" : 1,

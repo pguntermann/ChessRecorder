@@ -28,7 +28,10 @@ struct OpeningBookSheet: View {
                             ForEach(Array(pathToCurrent.enumerated()), id: \.element.id) { index, step in
                                 OpeningBookPathStepRow(
                                     step: step,
-                                    isCurrent: index == pathToCurrent.count - 1 && isInBook
+                                    isCurrent: index == pathToCurrent.count - 1 && isInBook,
+                                    miniBoardSide: miniBoardSide,
+                                    boardOrientation: boardOrientation,
+                                    moveHighlightColor: moveHighlightColor
                                 )
                             }
                         } label: {
@@ -37,9 +40,11 @@ struct OpeningBookSheet: View {
                     } else {
                         currentOpeningHeader
                     }
+                } header: {
+                    Text("How we got here")
                 } footer: {
                     if pathToCurrent.count > 1 {
-                        Text("Expand to see how opening names changed along the played line.")
+                        Text("Expand to see opening names along the played line, including gaps where the game left and later rejoined the book.")
                     }
                 }
 
@@ -97,39 +102,48 @@ struct OpeningBookSheet: View {
 private struct OpeningBookPathStepRow: View {
     let step: OpeningBookPathStep
     let isCurrent: Bool
+    let miniBoardSide: CGFloat
+    let boardOrientation: BoardOrientation
+    let moveHighlightColor: Color
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            if let moveSAN = step.moveSAN {
-                Text(moveSAN)
-                    .font(.body.monospaced().weight(.semibold))
-                    .frame(minWidth: 44, alignment: .leading)
-            } else {
-                Image(systemName: "flag")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .frame(minWidth: 44, alignment: .leading)
+        VStack(alignment: .leading, spacing: 8) {
+            if let gap = step.gapBefore {
+                OpeningBookGapRow(gap: gap)
             }
 
-            VStack(alignment: .leading, spacing: 2) {
-                Text(step.display.eco)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                Text(step.display.name)
-                    .font(.subheadline.weight(isCurrent ? .semibold : .regular))
-                    .foregroundStyle(.primary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            HStack(alignment: .center, spacing: 8) {
+                moveColumn
 
-            Spacer(minLength: 0)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(step.display.eco)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.secondary)
+                    Text(step.display.name)
+                        .font(.subheadline.weight(isCurrent ? .semibold : .regular))
+                        .foregroundStyle(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if isCurrent {
+                        Text("Now")
+                            .font(.caption2.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Color.secondary.opacity(0.12), in: Capsule())
+                            .padding(.top, 2)
+                    }
+                }
 
-            if isCurrent {
-                Text("Now")
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Color.secondary.opacity(0.12), in: Capsule())
+                Spacer(minLength: 4)
+
+                MiniChessBoardView(
+                    fen: step.fen,
+                    side: miniBoardSide,
+                    orientation: boardOrientation,
+                    highlightedFrom: step.moveFrom,
+                    highlightedTo: step.moveTo,
+                    highlightColor: moveHighlightColor
+                )
             }
         }
         .padding(.vertical, 2)
@@ -137,12 +151,64 @@ private struct OpeningBookPathStepRow: View {
         .accessibilityLabel(accessibilityLabel)
     }
 
-    private var accessibilityLabel: String {
-        let current = isCurrent ? ", current" : ""
+    @ViewBuilder
+    private var moveColumn: some View {
         if let moveSAN = step.moveSAN {
-            return "\(moveSAN), \(step.display.name), ECO \(step.display.eco)\(current)"
+            VStack(alignment: .leading, spacing: 1) {
+                if let moveNumberLabel = step.moveNumberLabel {
+                    Text(moveNumberLabel)
+                        .font(.caption2.monospaced())
+                        .foregroundStyle(.secondary)
+                }
+                Text(moveSAN)
+                    .font(.body.monospaced().weight(.semibold))
+            }
+            .frame(minWidth: 52, alignment: .leading)
+        } else {
+            Image(systemName: "flag")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .frame(minWidth: 52, alignment: .leading)
         }
-        return "\(step.display.name), ECO \(step.display.eco)\(current)"
+    }
+
+    private var accessibilityLabel: String {
+        var parts: [String] = []
+        if let gap = step.gapBefore {
+            parts.append(gap.summary)
+        }
+        if let moveNumberLabel = step.moveNumberLabel, let moveSAN = step.moveSAN {
+            parts.append("\(moveNumberLabel) \(moveSAN)")
+        } else if let moveSAN = step.moveSAN {
+            parts.append(moveSAN)
+        }
+        parts.append("\(step.display.name), ECO \(step.display.eco)")
+        if isCurrent {
+            parts.append("current")
+        }
+        return parts.joined(separator: ", ")
+    }
+}
+
+private struct OpeningBookGapRow: View {
+    let gap: OpeningBookOutOfBookGap
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "arrow.triangle.swap")
+                .font(.caption.weight(.semibold))
+            Text(gap.summary)
+                .font(.caption)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.secondary.opacity(0.10), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(gap.summary)
     }
 }
 

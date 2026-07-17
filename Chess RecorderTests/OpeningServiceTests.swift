@@ -78,10 +78,41 @@ final class OpeningServiceTests: XCTestCase {
         XCTAssertNil(path.first?.moveSAN)
         XCTAssertEqual(path.first?.display, .starting)
 
+        let e4Step = path.first(where: { $0.moveSAN == "e4" })
+        XCTAssertEqual(e4Step?.fullMoveNumber, 1)
+        XCTAssertEqual(e4Step?.isWhiteMove, true)
+        XCTAssertEqual(e4Step?.moveNumberLabel, "1.")
+
         let transitionSANs = path.compactMap(\.moveSAN)
         XCTAssertTrue(transitionSANs.contains("e4"))
         // Distinct opening labels only — consecutive identical names are collapsed.
         let labels = path.map(\.display.label)
         XCTAssertEqual(labels.count, Set(labels).count)
+    }
+
+    func testOutOfBookGapSummaryFormatting() {
+        let single = OpeningBookOutOfBookGap(
+            plyCount: 1,
+            startFullMoveNumber: 9,
+            startIsWhiteMove: true,
+            endFullMoveNumber: 9,
+            endIsWhiteMove: true,
+            firstSAN: "Ne4",
+            lastSAN: "Ne4"
+        )
+        XCTAssertEqual(single.summary, "Out of book · 9. Ne4")
+
+        let range = OpeningBookOutOfBookGap(
+            plyCount: 3,
+            startFullMoveNumber: 9,
+            startIsWhiteMove: true,
+            endFullMoveNumber: 10,
+            endIsWhiteMove: true,
+            firstSAN: "Ne4",
+            lastSAN: "Bd2"
+        )
+        XCTAssertEqual(range.summary, "Out of book · 9. Ne4 … 10. Bd2")
+        XCTAssertEqual(range.startMoveLabel, "9.")
+        XCTAssertEqual(OpeningBookOutOfBookGap.moveLabel(fullMove: 8, isWhite: false), "8...")
     }
 }

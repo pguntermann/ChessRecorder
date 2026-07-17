@@ -30,14 +30,87 @@ struct OpeningBookContinuation: Identifiable, Equatable, Hashable {
     var id: String { fenAfter + "|" + san }
 }
 
+/// Gap where the played line left the opening book before rejoining at a later step.
+struct OpeningBookOutOfBookGap: Equatable, Hashable {
+    /// Number of plies that were outside the book.
+    let plyCount: Int
+    let startFullMoveNumber: Int
+    let startIsWhiteMove: Bool
+    let endFullMoveNumber: Int
+    let endIsWhiteMove: Bool
+    let firstSAN: String?
+    let lastSAN: String?
+
+    var startMoveLabel: String {
+        Self.moveLabel(fullMove: startFullMoveNumber, isWhite: startIsWhiteMove)
+    }
+
+    var endMoveLabel: String {
+        Self.moveLabel(fullMove: endFullMoveNumber, isWhite: endIsWhiteMove)
+    }
+
+    var summary: String {
+        if plyCount <= 1 {
+            if let firstSAN {
+                return "Out of book · \(startMoveLabel) \(firstSAN)"
+            }
+            return "Out of book · \(startMoveLabel)"
+        }
+        if let firstSAN, let lastSAN {
+            return "Out of book · \(startMoveLabel) \(firstSAN) … \(endMoveLabel) \(lastSAN)"
+        }
+        return "Out of book · \(startMoveLabel)–\(endMoveLabel) (\(plyCount) moves)"
+    }
+
+    static func moveLabel(fullMove: Int, isWhite: Bool) -> String {
+        isWhite ? "\(fullMove)." : "\(fullMove)..."
+    }
+}
+
 /// One step in the played opening progression up to the current position.
 struct OpeningBookPathStep: Identifiable, Equatable, Hashable {
     /// Move that reached this opening label; `nil` for the starting position.
     let moveSAN: String?
     let display: OpeningDisplay
     let fen: String
+    /// Squares of `moveSAN` for mini-board highlighting; `nil` at the start.
+    let moveFrom: ChessPosition?
+    let moveTo: ChessPosition?
+    /// Full-move number of `moveSAN` (1-based); `nil` at the start.
+    let fullMoveNumber: Int?
+    /// Whether `moveSAN` was played by White; `nil` at the start.
+    let isWhiteMove: Bool?
+    /// When non-nil, the line left the book for these plies immediately before this step.
+    let gapBefore: OpeningBookOutOfBookGap?
 
-    var id: String { "\(fen)|\(moveSAN ?? "")|\(display.label)" }
+    var id: String {
+        "\(fen)|\(moveSAN ?? "")|\(display.label)|\(fullMoveNumber.map(String.init) ?? "0")|\(gapBefore?.plyCount ?? 0)"
+    }
+
+    var moveNumberLabel: String? {
+        guard let fullMoveNumber, let isWhiteMove else { return nil }
+        return OpeningBookOutOfBookGap.moveLabel(fullMove: fullMoveNumber, isWhite: isWhiteMove)
+    }
+
+    init(
+        moveSAN: String?,
+        display: OpeningDisplay,
+        fen: String,
+        moveFrom: ChessPosition? = nil,
+        moveTo: ChessPosition? = nil,
+        fullMoveNumber: Int? = nil,
+        isWhiteMove: Bool? = nil,
+        gapBefore: OpeningBookOutOfBookGap? = nil
+    ) {
+        self.moveSAN = moveSAN
+        self.display = display
+        self.fen = fen
+        self.moveFrom = moveFrom
+        self.moveTo = moveTo
+        self.fullMoveNumber = fullMoveNumber
+        self.isWhiteMove = isWhiteMove
+        self.gapBefore = gapBefore
+    }
 }
 
 private struct EcoEntry: Decodable {
@@ -151,6 +224,7 @@ final class OpeningService {
     }
 
     /// Builds the sequence of distinct opening labels reached along the main line to `game`'s current ply.
+    /// Out-of-book stretches are recorded as `gapBefore` on the step that rejoins the book.
     func buildPath(to game: ChessGame) -> [OpeningBookPathStep] {
         guard isLoaded else { return [] }
 
@@ -158,6 +232,8 @@ final class OpeningService {
         let moves = Array(game.moves.prefix(max(fens.count - 1, 0)))
         var steps: [OpeningBookPathStep] = []
         var lastDisplay: OpeningDisplay?
+        /// First fen index that left the book since the last in-book position.
+        var outOfBookStartIndex: Int?
 
         for (index, fen) in fens.enumerated() {
             let match: OpeningDisplay?
@@ -166,19 +242,69 @@ final class OpeningService {
             } else {
                 match = lookupOpening(fen: fen)
             }
-            guard let match else { continue }
-            guard match != lastDisplay else { continue }
 
-            let moveSAN: String?
-            if index == 0 {
-                moveSAN = nil
-            } else if index - 1 < moves.count {
-                moveSAN = moves[index - 1].san
-            } else {
-                moveSAN = nil
+            guard let match else {
+                if outOfBookStartIndex == nil, index > 0 {
+                    outOfBookStartIndex = index
+                }
+                continue
             }
 
-            steps.append(OpeningBookPathStep(moveSAN: moveSAN, display: match, fen: fen))
+            let gapBefore: OpeningBookOutOfBookGap?
+            if let gapStart = outOfBookStartIndex, gapStart <= index - 1 {
+                gapBefore = Self.outOfBookGap(
+                    fromPlyIndex: gapStart,
+                    toPlyIndex: index - 1,
+                    moves: moves
+                )
+            } else {
+                gapBefore = nil
+            }
+            outOfBookStartIndex = nil
+
+            // Collapse consecutive identical labels, but always keep a step after leaving the book.
+            if match == lastDisplay, gapBefore == nil {
+                continue
+            }
+
+            let moveSAN: String?
+            let moveFrom: ChessPosition?
+            let moveTo: ChessPosition?
+            let fullMoveNumber: Int?
+            let isWhiteMove: Bool?
+            if index == 0 {
+                moveSAN = nil
+                moveFrom = nil
+                moveTo = nil
+                fullMoveNumber = nil
+                isWhiteMove = nil
+            } else if index - 1 < moves.count {
+                let move = moves[index - 1]
+                moveSAN = move.san
+                moveFrom = move.from
+                moveTo = move.to
+                fullMoveNumber = (index + 1) / 2
+                isWhiteMove = index % 2 == 1
+            } else {
+                moveSAN = nil
+                moveFrom = nil
+                moveTo = nil
+                fullMoveNumber = nil
+                isWhiteMove = nil
+            }
+
+            steps.append(
+                OpeningBookPathStep(
+                    moveSAN: moveSAN,
+                    display: match,
+                    fen: fen,
+                    moveFrom: moveFrom,
+                    moveTo: moveTo,
+                    fullMoveNumber: fullMoveNumber,
+                    isWhiteMove: isWhiteMove,
+                    gapBefore: gapBefore
+                )
+            )
             lastDisplay = match
         }
 
@@ -186,6 +312,27 @@ final class OpeningService {
             steps = [OpeningBookPathStep(moveSAN: nil, display: .starting, fen: fens.first ?? fenFallback)]
         }
         return steps
+    }
+
+    /// `plyIndex` is the fen-sequence index after that ply (1 = after White's first move).
+    private static func outOfBookGap(
+        fromPlyIndex: Int,
+        toPlyIndex: Int,
+        moves: [ChessMove]
+    ) -> OpeningBookOutOfBookGap {
+        let start = max(fromPlyIndex, 1)
+        let end = max(toPlyIndex, start)
+        let firstMoveIndex = start - 1
+        let lastMoveIndex = end - 1
+        return OpeningBookOutOfBookGap(
+            plyCount: end - start + 1,
+            startFullMoveNumber: (start + 1) / 2,
+            startIsWhiteMove: start % 2 == 1,
+            endFullMoveNumber: (end + 1) / 2,
+            endIsWhiteMove: end % 2 == 1,
+            firstSAN: moves.indices.contains(firstMoveIndex) ? moves[firstMoveIndex].san : nil,
+            lastSAN: moves.indices.contains(lastMoveIndex) ? moves[lastMoveIndex].san : nil
+        )
     }
 
     private var fenFallback: String {

@@ -245,6 +245,40 @@ final class PGNArchiveTests: XCTestCase {
         XCTAssertEqual(archive.games.first { $0.id == gameID }?.moves[0].quality, .good)
     }
 
+    func testClearAllMoveAssessmentsRemovesQualityAndCPL() {
+        let archive = PGNArchive()
+        let game = ChessGame()
+
+        archive.ensureActiveGameExists(metadata: testMetadata)
+        playE4E5(on: game)
+        archive.syncActiveGame(from: game, metadata: testMetadata)
+        let gameID = archive.activeGameID!
+
+        XCTAssertTrue(
+            archive.applyMoveAssessment(
+                gameID: gameID,
+                moveIndex: 0,
+                quality: .mistake,
+                centipawnLoss: 120,
+                expectedSAN: "e4"
+            )
+        )
+        XCTAssertTrue(
+            archive.applyMoveAssessment(
+                gameID: gameID,
+                moveIndex: 1,
+                quality: .book,
+                expectedSAN: "e5"
+            )
+        )
+
+        XCTAssertEqual(archive.clearAllMoveAssessments(), 2)
+        XCTAssertNil(archive.games.first { $0.id == gameID }?.moves[0].quality)
+        XCTAssertNil(archive.games.first { $0.id == gameID }?.moves[0].centipawnLoss)
+        XCTAssertNil(archive.games.first { $0.id == gameID }?.moves[1].quality)
+        XCTAssertEqual(archive.clearAllMoveAssessments(), 0)
+    }
+
     func testSyncActiveGamePreservesExistingMoveQualities() {
         let archive = PGNArchive()
         let game = ChessGame()

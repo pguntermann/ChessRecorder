@@ -251,6 +251,12 @@ struct ContentView: View {
                 pendingSpeechModelWork: $pendingSpeechModelWork,
                 onStopRecording: {
                     speechRecognizer.stopRecording()
+                },
+                onPurgeMoveAssessments: {
+                    purgeMoveAssessmentsAndReanalyze()
+                },
+                onImportPGN: { pgn in
+                    try importPGNGames(from: pgn)
                 }
             )
         }
@@ -564,6 +570,22 @@ struct ContentView: View {
             playedMoveSAN: playedMove.san
         )
         moveAssessment.enqueue(job, archive: pgnArchive)
+    }
+
+    private func purgeMoveAssessmentsAndReanalyze() {
+        moveAssessment.cancelAll()
+        _ = pgnArchive.clearAllMoveAssessments()
+        scheduleSessionPersist()
+        moveAssessment.enqueueUnassessedMoves(in: pgnArchive)
+    }
+
+    @discardableResult
+    private func importPGNGames(from pgn: String) throws -> Int {
+        let imported = try PGNImportService.importGames(from: pgn)
+        let ids = pgnArchive.appendImportedGames(imported)
+        scheduleSessionPersist()
+        moveAssessment.enqueueUnassessedMoves(in: pgnArchive)
+        return ids.count
     }
     
     private func controlToolbar(compact: Bool, availableWidth: CGFloat) -> some View {

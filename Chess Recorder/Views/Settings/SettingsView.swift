@@ -13,7 +13,11 @@ struct SettingsView: View {
     @Bindable var speechRecognizer: SpeechRecognizer
     @Binding var pendingSpeechModelWork: PendingSpeechModelWork
     let onStopRecording: () -> Void
-    
+    var onPurgeMoveAssessments: (() -> Void)? = nil
+    var onImportPGN: ((String) throws -> Int)? = nil
+
+    @State private var showingPurgeAssessmentsConfirm = false
+    @State private var showingPGNImport = false
     @State private var lightColor: Color
     @State private var darkColor: Color
     @State private var coordinateColor: Color
@@ -35,13 +39,17 @@ struct SettingsView: View {
         developerModeStore: DeveloperModeStore,
         speechRecognizer: SpeechRecognizer,
         pendingSpeechModelWork: Binding<PendingSpeechModelWork>,
-        onStopRecording: @escaping () -> Void = {}
+        onStopRecording: @escaping () -> Void = {},
+        onPurgeMoveAssessments: (() -> Void)? = nil,
+        onImportPGN: ((String) throws -> Int)? = nil
     ) {
         self.settingsStore = settingsStore
         self.vocabularyStore = vocabularyStore
         self.developerModeStore = developerModeStore
         self.speechRecognizer = speechRecognizer
         self.onStopRecording = onStopRecording
+        self.onPurgeMoveAssessments = onPurgeMoveAssessments
+        self.onImportPGN = onImportPGN
         _pendingSpeechModelWork = pendingSpeechModelWork
         let settings = settingsStore.settings
         _lightColor = State(initialValue: settings.lightSquareColor.color)
@@ -582,8 +590,18 @@ struct SettingsView: View {
                     Section {
                         Toggle("Screenshot mode", isOn: $developerModeStore.isScreenshotModeEnabled)
                         Toggle("Speech pipeline trace", isOn: $developerModeStore.isSpeechPipelineTracingEnabled)
+                        if onImportPGN != nil {
+                            Button("Import PGN…") {
+                                showingPGNImport = true
+                            }
+                        }
+                        if onPurgeMoveAssessments != nil {
+                            Button("Purge Move Assessments", role: .destructive) {
+                                showingPurgeAssessmentsConfirm = true
+                            }
+                        }
                     } footer: {
-                        Text("Screenshot mode hides the system status bar. Speech pipeline trace logs each ASR and normalization step to the Xcode console when a move is processed.")
+                        Text("Screenshot mode hides the system status bar. Speech pipeline trace logs each ASR and normalization step to the Xcode console when a move is processed. Import PGN appends mainline games from clipboard or file. Purge clears quality marks and CPL on all archived games so assessment runs again.")
                     }
                 }
             }
@@ -592,6 +610,24 @@ struct SettingsView: View {
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { dismiss() }
+                }
+            }
+            .confirmationDialog(
+                "Purge Move Assessments?",
+                isPresented: $showingPurgeAssessmentsConfirm,
+                titleVisibility: .visible
+            ) {
+                Button("Purge and Re-analyze", role: .destructive) {
+                    onPurgeMoveAssessments?()
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Clears all move quality marks and centipawn loss values, then queues a fresh assessment of every game.")
+            }
+            .sheet(isPresented: $showingPGNImport) {
+                DeveloperPGNImportSheet { pgn in
+                    guard let onImportPGN else { return 0 }
+                    return try onImportPGN(pgn)
                 }
             }
         }

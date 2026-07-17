@@ -274,6 +274,26 @@ final class PGNArchive {
         return true
     }
 
+    /// Clears quality and centipawn loss on every stored move so assessment can run again.
+    @discardableResult
+    func clearAllMoveAssessments() -> Int {
+        var cleared = 0
+        for gameIndex in games.indices {
+            var didClearGame = false
+            for moveIndex in games[gameIndex].moves.indices {
+                let move = games[gameIndex].moves[moveIndex]
+                guard move.quality != nil || move.centipawnLoss != nil else { continue }
+                games[gameIndex].moves[moveIndex] = move.withQuality(nil, centipawnLoss: nil)
+                cleared += 1
+                didClearGame = true
+            }
+            if didClearGame {
+                bumpContentRevision(affecting: games[gameIndex].id)
+            }
+        }
+        return cleared
+    }
+
     private func mergedMoves(preservingQualitiesFrom oldMoves: [ChessMove], newMoves: [ChessMove]) -> [ChessMove] {
         var merged = newMoves
         for index in merged.indices {
@@ -392,6 +412,35 @@ final class PGNArchive {
         activeGameID = nil
         gameContentRevisions.removeAll()
         bumpContentRevision(affecting: previousIDs)
+    }
+
+    /// Appends imported games without changing the active game.
+    /// File order is oldest→newest (export order); archive keeps newest-first.
+    @discardableResult
+    func appendImportedGames(_ imported: [PGNImportService.ImportedGame]) -> [UUID] {
+        guard !imported.isEmpty else { return [] }
+
+        var addedIDs: [UUID] = []
+        for game in imported {
+            let id = UUID()
+            games.insert(
+                RecordedGame(
+                    id: id,
+                    moves: game.moves,
+                    round: 0,
+                    result: game.result,
+                    date: game.date,
+                    eco: game.eco,
+                    openingName: nil,
+                    metadata: game.metadata
+                ),
+                at: 0
+            )
+            addedIDs.append(id)
+        }
+        renumberRounds()
+        bumpContentRevision(affecting: Set(addedIDs))
+        return addedIDs
     }
 
     func applySessionSnapshot(_ snapshot: SessionSnapshot) {

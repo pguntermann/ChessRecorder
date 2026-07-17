@@ -97,20 +97,24 @@ enum EngineAnalysisDisplayBuilder {
     }
 
     static func nextDepth(after depth: Int, targetDepth: Int, unlimited: Bool) -> Int? {
-        let candidate: Int
+        let step: Int
         switch depth {
         case ..<10:
-            candidate = depth + 2
+            step = 2
         case ..<20:
-            candidate = depth + 4
+            step = 4
         default:
-            candidate = depth + 8
+            step = 8
         }
+        let candidate = depth + step
 
         if unlimited {
             return candidate <= maxDepth ? candidate : nil
         }
-        return candidate <= targetDepth ? candidate : nil
+
+        // Always include the configured max, even when the normal step would overshoot it.
+        guard depth < targetDepth else { return nil }
+        return min(candidate, targetDepth)
     }
 
     static func hasNextDepth(after depth: Int, targetDepth: Int, unlimited: Bool) -> Bool {
@@ -124,9 +128,22 @@ enum EngineAnalysisDisplayBuilder {
         isFinal: Bool
     ) -> String {
         if unlimited {
-            return isFinal ? "Depth \(currentDepth) (uncapped)" : "Depth \(currentDepth) (updating)"
+            if isFinal {
+                return "Depth \(currentDepth) (uncapped)"
+            }
+            if let next = nextDepth(after: currentDepth, targetDepth: targetDepth, unlimited: true) {
+                return "Depth \(currentDepth) (next \(next))"
+            }
+            return "Depth \(currentDepth) (updating)"
         }
-        return isFinal ? "Depth \(currentDepth)" : "Depth \(currentDepth) of \(targetDepth)"
+
+        if isFinal {
+            return "Depth \(currentDepth)"
+        }
+        if let next = nextDepth(after: currentDepth, targetDepth: targetDepth, unlimited: false) {
+            return "Depth \(currentDepth) of \(targetDepth) (next \(next))"
+        }
+        return "Depth \(currentDepth) of \(targetDepth)"
     }
 
     static func statusMessage(for error: Error, fallbackDepth: Int? = nil, unlimited: Bool = false) -> String {

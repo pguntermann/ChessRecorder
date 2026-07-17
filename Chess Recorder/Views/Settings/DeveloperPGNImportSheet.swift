@@ -98,7 +98,14 @@ struct DeveloperPGNImportSheet: View {
 
     private func pasteFromClipboard() {
         #if canImport(UIKit)
-        if let string = UIPasteboard.general.string, !string.isEmpty {
+        let board = UIPasteboard.general
+        if let string = board.string, !string.isEmpty {
+            pgnText = string
+            errorMessage = nil
+            statusMessage = "Pasted from clipboard."
+            return
+        }
+        if let string = board.strings?.first(where: { !$0.isEmpty }) {
             pgnText = string
             errorMessage = nil
             statusMessage = "Pasted from clipboard."
@@ -113,7 +120,7 @@ struct DeveloperPGNImportSheet: View {
             return
         }
         #endif
-        errorMessage = "Clipboard has no text."
+        errorMessage = "Clipboard has no text. On iPhone/iPad, allow Paste when prompted, or paste into the text field manually."
         statusMessage = nil
     }
 

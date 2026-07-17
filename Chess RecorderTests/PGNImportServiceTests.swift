@@ -99,6 +99,53 @@ final class PGNImportServiceTests: XCTestCase {
         XCTAssertNil(restore.games.first?.moves[0].quality)
     }
 
+    func testImportEnPassantCaptureInMovetext() throws {
+        let pgn = """
+        [Event "?"]
+        [Site "?"]
+        [Date "2024.01.15"]
+        [Round "1"]
+        [White "W"]
+        [Black "B"]
+        [Result "*"]
+
+        1. e4 c5 2. Nf3 e6 3. d4 cxd4 4. Nxd4 Nf6 5. Nc3 Nc6 6. Nxc6 bxc6 7. e5 Nd5 8. Ne4 Ba6 9. Bg5 Qa5+ 10. c3 h6 11. Bd2 f5 12. exf6
+        """
+        let imported = try PGNImportService.importGames(from: pgn)
+        XCTAssertEqual(imported.count, 1)
+        let last = imported[0].moves.last?.san ?? ""
+        XCTAssertTrue(last.hasPrefix("exf6"), "Expected en passant SAN, got \(last)")
+    }
+
+    func testImportWrappedMovetextWithoutResultTag() throws {
+        let pgn = """
+        [Event "?"]
+        [Site "?"]
+        [Date "2024.01.15"]
+        [Round "?"]
+        [White "Engine (Level 2)"]
+        [Black "Player"]
+
+        1. e4 c5 2. Nf3 e6 3. d4 cxd4 4. Nxd4 Nf6 5. Nc3 Nc6 6. Nxc6 bxc6 7. e5 Nd5 8.
+        Ne4 Ba6 9. Bg5 Qa5+ 10. c3 h6 11. Bd2 f5 12. exf6 Nxf6 13. Nxf6+ gxf6 14. Bxa6
+        Qxa6 15. Bf4 e5 16. Bc1 d5 17. Qg4 h5 18. Qf5 Bg7 19. Qg6+ Kf8 20. b3 Qb7 21.
+        Ba3+ Kg8 22. Bc5 Qf7 23. Qg3 a6 24. O-O Rd8 25. Rfd1 Rh7 26. Rd2 Kh8 27. Re2
+        Re8 28. Qd3 Bf8 29. Be3 e4 30. Qd4 Bh6 31. Bxh6 Rxh6 32. Rd1 Qg7 33. f3 f5 34.
+        Qxg7+ Kxg7 35. Rde1 Rhe6 36. fxe4 dxe4 37. Rf1 Kg6 38. Kf2 Kg5 39. Ke3 c5 40.
+        h4+ Kg4 41. Ref2 Rf6 42. b4 c4 43. Rf4+ Kg3 44. Rd1 Kxg2 45. Rf2+ Kg3 46. Rg1+
+        Kh3 47. Kf4 e3 48. Re2 Rfe6 49. Kf3 Re4 50. b5 axb5 51. Rg3+ Kxh4 52. Rg7 Rg4
+        53. Rh7 Kg5 54. Rg7+ Kh6 55. Rb7 Reg8 56. Rb6+ Kh7 57. a3 Rg3+ 58. Kf4 h4 59.
+        Rb7+ R8g7 60. Rb6 h3 61. Re6 Rg2 62. R6xe3 h2 63. Re1 h1=Q 64. Re6 Rg1 65. R1e2
+        0-1
+        """
+        let imported = try PGNImportService.importGames(from: pgn)
+        XCTAssertEqual(imported.count, 1)
+        XCTAssertEqual(imported[0].moves.count, 129, "65 full moves → 129 plies (Black resigns before White's 65th reply completes a pair)")
+        XCTAssertEqual(imported[0].metadata.white, "Engine (Level 2)")
+        XCTAssertEqual(imported[0].metadata.black, "Player")
+        XCTAssertEqual(imported[0].result, .blackWins)
+    }
+
     func testImportRejectsNonStandardStart() {
         let pgn = """
         [Event "Custom"]

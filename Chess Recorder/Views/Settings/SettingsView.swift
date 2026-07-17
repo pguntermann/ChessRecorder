@@ -343,7 +343,7 @@ struct SettingsView: View {
                             set: { newValue in
                                 settingsStore.update { $0.openingBookMiniBoardSide = newValue.rounded() }
                             }
-                        ), in: 48...144, step: 4)
+                        ), in: AppSettings.minOpeningBookMiniBoardSide...AppSettings.maxOpeningBookMiniBoardSide, step: 4)
                     }
                     .disabled(!settingsStore.settings.openingNameVisible)
                 } header: {

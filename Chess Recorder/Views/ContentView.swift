@@ -280,6 +280,11 @@ struct ContentView: View {
                 boardOrientation: settingsStore.settings.openingBookMiniBoardFollowsOrientation
                     ? boardOrientation
                     : .whiteAtBottom,
+                miniBoardAppearance: MiniChessBoardAppearance(
+                    lightSquareColor: settingsStore.settings.lightSquareColor.color,
+                    darkSquareColor: settingsStore.settings.darkSquareColor.color,
+                    pieceSizePercent: settingsStore.settings.pieceSizePercent
+                ),
                 moveHighlightColor: settingsStore.settings.lastMoveArrowColor.color,
                 openingService: openingService
             )

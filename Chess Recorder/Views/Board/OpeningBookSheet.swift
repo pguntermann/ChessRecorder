@@ -14,6 +14,7 @@ struct OpeningBookSheet: View {
     let pathToCurrent: [OpeningBookPathStep]
     let miniBoardSide: CGFloat
     let boardOrientation: BoardOrientation
+    let miniBoardAppearance: MiniChessBoardAppearance
     let moveHighlightColor: Color
     let openingService: OpeningService
 
@@ -31,6 +32,7 @@ struct OpeningBookSheet: View {
                                     isCurrent: index == pathToCurrent.count - 1 && isInBook,
                                     miniBoardSide: miniBoardSide,
                                     boardOrientation: boardOrientation,
+                                    miniBoardAppearance: miniBoardAppearance,
                                     moveHighlightColor: moveHighlightColor,
                                     openingService: openingService
                                 )
@@ -61,6 +63,7 @@ struct OpeningBookSheet: View {
                             initiallyExpanded: true,
                             miniBoardSide: miniBoardSide,
                             boardOrientation: boardOrientation,
+                            miniBoardAppearance: miniBoardAppearance,
                             moveHighlightColor: moveHighlightColor,
                             openingService: openingService
                         )
@@ -105,6 +108,7 @@ private struct OpeningBookPathStepRow: View {
     let isCurrent: Bool
     let miniBoardSide: CGFloat
     let boardOrientation: BoardOrientation
+    let miniBoardAppearance: MiniChessBoardAppearance
     let moveHighlightColor: Color
     let openingService: OpeningService
 
@@ -120,6 +124,7 @@ private struct OpeningBookPathStepRow: View {
                     fen: step.fen,
                     miniBoardSide: miniBoardSide,
                     boardOrientation: boardOrientation,
+                    miniBoardAppearance: miniBoardAppearance,
                     moveHighlightColor: moveHighlightColor,
                     openingService: openingService
                 )
@@ -159,6 +164,7 @@ private struct OpeningBookPathStepRow: View {
                 fen: step.fen,
                 side: miniBoardSide,
                 orientation: boardOrientation,
+                appearance: miniBoardAppearance,
                 highlightedFrom: step.moveFrom,
                 highlightedTo: step.moveTo,
                 highlightColor: moveHighlightColor
@@ -215,6 +221,7 @@ private struct OpeningBookPositionLinesView: View {
     let fen: String
     let miniBoardSide: CGFloat
     let boardOrientation: BoardOrientation
+    let miniBoardAppearance: MiniChessBoardAppearance
     let moveHighlightColor: Color
     let openingService: OpeningService
 
@@ -231,6 +238,7 @@ private struct OpeningBookPositionLinesView: View {
                     initiallyExpanded: true,
                     miniBoardSide: miniBoardSide,
                     boardOrientation: boardOrientation,
+                    miniBoardAppearance: miniBoardAppearance,
                     moveHighlightColor: moveHighlightColor,
                     openingService: openingService
                 )
@@ -277,6 +285,7 @@ private struct OpeningBookTreeNodeView: View {
     var initiallyExpanded: Bool = false
     let miniBoardSide: CGFloat
     let boardOrientation: BoardOrientation
+    let miniBoardAppearance: MiniChessBoardAppearance
     let moveHighlightColor: Color
     let openingService: OpeningService
 
@@ -294,6 +303,7 @@ private struct OpeningBookTreeNodeView: View {
         initiallyExpanded: Bool = false,
         miniBoardSide: CGFloat,
         boardOrientation: BoardOrientation,
+        miniBoardAppearance: MiniChessBoardAppearance,
         moveHighlightColor: Color,
         openingService: OpeningService
     ) {
@@ -306,6 +316,7 @@ private struct OpeningBookTreeNodeView: View {
         self.initiallyExpanded = initiallyExpanded
         self.miniBoardSide = miniBoardSide
         self.boardOrientation = boardOrientation
+        self.miniBoardAppearance = miniBoardAppearance
         self.moveHighlightColor = moveHighlightColor
         self.openingService = openingService
         _isExpanded = State(initialValue: initiallyExpanded)
@@ -337,6 +348,7 @@ private struct OpeningBookTreeNodeView: View {
                             depth: depth + 1,
                             miniBoardSide: miniBoardSide,
                             boardOrientation: boardOrientation,
+                            miniBoardAppearance: miniBoardAppearance,
                             moveHighlightColor: moveHighlightColor,
                             openingService: openingService
                         )
@@ -368,6 +380,7 @@ private struct OpeningBookTreeNodeView: View {
                         fen: fen,
                         side: miniBoardSide,
                         orientation: boardOrientation,
+                        appearance: miniBoardAppearance,
                         highlightedFrom: moveFrom,
                         highlightedTo: moveTo,
                         highlightColor: moveHighlightColor

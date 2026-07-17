@@ -398,7 +398,9 @@ extension AppSettings {
     static let defaultMoveAssessmentMistakeColor = CodableColor(red: 0.95, green: 0.45, blue: 0.2)
     static let defaultMoveAssessmentBlunderColor = CodableColor(red: 0.9, green: 0.2, blue: 0.2)
     static let defaultMoveAssessmentMissColor = CodableColor(red: 1.0, green: 0.45, blue: 0.75)
-    static let defaultOpeningBookMiniBoardSide = 92.0
+    static let defaultOpeningBookMiniBoardSide = 120.0
+    static let minOpeningBookMiniBoardSide = 72.0
+    static let maxOpeningBookMiniBoardSide = 144.0
 
     static let maxEngineAnalysisDepth = 30.0
     static let maxMoveAssessmentDepth = 25.0
@@ -436,7 +438,10 @@ extension AppSettings {
     }
 
     var cappedOpeningBookMiniBoardSide: CGFloat {
-        CGFloat(min(max(openingBookMiniBoardSide, 48), 144))
+        CGFloat(min(
+            max(openingBookMiniBoardSide, Self.minOpeningBookMiniBoardSide),
+            Self.maxOpeningBookMiniBoardSide
+        ))
     }
 
     var usesOutsideCoordinates: Bool {

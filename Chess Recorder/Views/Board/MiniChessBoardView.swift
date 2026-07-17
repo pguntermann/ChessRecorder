@@ -6,22 +6,35 @@
 import ChessKit
 import SwiftUI
 
+/// Square colors and piece scale shared with the main board settings.
+struct MiniChessBoardAppearance {
+    var lightSquareColor: Color
+    var darkSquareColor: Color
+    /// Fraction of a square’s edge used for the piece (same as `AppSettings.pieceSizePercent`).
+    var pieceSizePercent: Double
+
+    static let `default` = MiniChessBoardAppearance(
+        lightSquareColor: Color(red: 0.86, green: 0.93, blue: 0.98),
+        darkSquareColor: Color(red: 0.36, green: 0.52, blue: 0.71),
+        pieceSizePercent: 0.9
+    )
+}
+
 /// Read-only miniature board for opening-book previews (no interaction).
 struct MiniChessBoardView: View {
     let fen: String
     var side: CGFloat = 72
     var orientation: BoardOrientation = .whiteAtBottom
+    var appearance: MiniChessBoardAppearance = .default
     /// Squares tinted for the move that reached this position (from / to).
     var highlightedFrom: ChessPosition? = nil
     var highlightedTo: ChessPosition? = nil
     var highlightColor: Color = Color(red: 0.85, green: 0.65, blue: 0.1)
 
-    private let lightSquare = Color(red: 0.86, green: 0.93, blue: 0.98)
-    private let darkSquare = Color(red: 0.36, green: 0.52, blue: 0.71)
-
     var body: some View {
         Canvas { context, size in
             let square = size.width / 8
+            let pieceInset = square * CGFloat(1 - appearance.pieceSizePercent) / 2
             let pieces = Self.pieces(from: fen)
 
             for rank in 0..<8 {
@@ -37,7 +50,7 @@ struct MiniChessBoardView: View {
                     )
                     context.fill(
                         Path(rect),
-                        with: .color(isLight ? lightSquare : darkSquare)
+                        with: .color(isLight ? appearance.lightSquareColor : appearance.darkSquareColor)
                     )
 
                     if isHighlighted(file: file, rank: rank) {
@@ -49,8 +62,7 @@ struct MiniChessBoardView: View {
 
                     if let piece = pieces[file][rank],
                        let image = context.resolveSymbol(id: piece.imageName) {
-                        let inset = square * 0.08
-                        context.draw(image, in: rect.insetBy(dx: inset, dy: inset))
+                        context.draw(image, in: rect.insetBy(dx: pieceInset, dy: pieceInset))
                     }
                 }
             }

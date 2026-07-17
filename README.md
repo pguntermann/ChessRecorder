@@ -157,6 +157,8 @@ Issues and pull requests are welcome on [GitHub](https://github.com/pguntermann/
 
 Philipp Guntermann — [pguntermann@me.com](mailto:pguntermann@me.com)
 
+Privacy Policy: [PRIVACY.md](PRIVACY.md)
+
 ## Acknowledgments
 
 Chess Recorder builds on several open-source projects:

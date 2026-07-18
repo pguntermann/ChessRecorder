@@ -6,7 +6,7 @@
 import ChessKit
 import Foundation
 
-enum LegalMoveResolver {
+nonisolated enum LegalMoveResolver {
 
     private static let confusedFileGroups: [Set<Character>] = [
         ["e", "g", "a"],

@@ -37,6 +37,8 @@ struct ContentView: View {
     @State private var gameSwitchSlideOffset: CGFloat = 0
     @State private var isGameSwitchAnimating = false
     @State private var gameSwitchContainerWidth: CGFloat = 0
+    /// Prepared ChessKit snapshots keyed by game ID — avoids replaying on every switch.
+    @State private var preparedGameCache: [UUID: PreparedGameCacheEntry] = [:]
     /// Defers archive/PGN work until piece animation finishes so notation rebuilds don't stutter the tween.
     @State private var deferredArchiveWorkTask: Task<Void, Never>?
     
@@ -132,7 +134,8 @@ struct ContentView: View {
                 sessionStore.schedulePersist(snapshot: SessionSnapshot(archive: pgnArchive))
             }
             engineAnalysis.onBecameIdleForMoveAssessment = {
-                moveAssessment.setLiveAnalysisBusy(false)
+                // Route through the gate so game-switch still keeps assessment paused.
+                syncMoveAssessmentLiveAnalysisGate()
             }
             await speechRecognizer.startup(with: settingsStore.settings.defaultRecognitionLanguage)
             speechRecognizer.setInitializationPhase(.preparingEngine)
@@ -150,6 +153,7 @@ struct ContentView: View {
             openingService.refresh(game: game)
             moveAssessment.enqueueUnassessedMoves(in: pgnArchive)
             isAppReady = true
+            prefetchPreparedGamesInBackground()
         }
         .onDisappear {
             Task {
@@ -199,10 +203,14 @@ struct ContentView: View {
             )
         }
         .onChange(of: game.moves.count) { oldCount, newCount in
+            // Archive/game-switch applies a full main line at once — defer opening/engine/persist
+            // work until finalize, or the MainActor hitch shows up as a blank mid-slide pause.
+            guard !isApplyingArchiveSelection else { return }
+
             openingService.refresh(game: game)
 
-            let isForwardMove = newCount > oldCount && !isApplyingArchiveSelection
-            let isTakeback = newCount < oldCount && !isApplyingArchiveSelection
+            let isForwardMove = newCount > oldCount
+            let isTakeback = newCount < oldCount
             let animationDuration = settingsStore.settings.moveAnimationDuration
 
             if isTakeback {
@@ -247,10 +255,12 @@ struct ContentView: View {
             }
         }
         .onChange(of: game.activePlyIndex) { _, _ in
+            guard !isApplyingArchiveSelection else { return }
             refreshEngineIfAppropriate()
             openingService.refresh(game: game)
         }
         .onChange(of: game.gameResult) { _, _ in
+            guard !isApplyingArchiveSelection else { return }
             syncLiveBoardToArchiveIfRecording()
             scheduleSessionPersist()
             if game.isGameOver {
@@ -487,6 +497,7 @@ struct ContentView: View {
                     assessmentColors: settingsStore.settings.moveAssessmentColors,
                     iconHitSize: iconHitSize,
                     isChromeReady: isAppReady,
+                    isTipPinSuspended: isGameSwitchAnimating,
                     onGoToFirst: navigateToFirst,
                     onGoToPrevious: navigateBack,
                     onGoToNext: navigateForward,
@@ -567,8 +578,11 @@ struct ContentView: View {
     }
 
     private func syncMoveAssessmentLiveAnalysisGate() {
-        let busy = settingsStore.settings.engineAnalysisVisible
-            && engineAnalysis.isBusyForMoveAssessment
+        // Keep assessment paused during game-switch slides — suspending live analysis would
+        // otherwise unblock the assessment queue and contend with prepare / animation.
+        let busy = isGameSwitchAnimating
+            || (settingsStore.settings.engineAnalysisVisible
+                && engineAnalysis.isBusyForMoveAssessment)
         moveAssessment.setLiveAnalysisBusy(busy)
     }
 
@@ -906,6 +920,7 @@ struct ContentView: View {
     
     private func clearPGN() {
         moveAssessment.cancelAll()
+        preparedGameCache.removeAll()
         pgnArchive.resetAll()
         game.resetGame()
         speechRecognizer.resetTranscriptDisplay()
@@ -913,11 +928,26 @@ struct ContentView: View {
     }
 
     private struct PreparedGameSwitch {
-        let staging: ChessGame
+        let transfer: ChessGameBackgroundPreparation.Transfer?
         let recordedGame: RecordedGame?
     }
 
+    private struct PreparedGameCacheEntry {
+        let moveCount: Int
+        let result: PGNResult
+        let transfer: ChessGameBackgroundPreparation.Transfer
+    }
+
+    /// Carries move lists into a detached replay task.
+    private struct GameReplayInput: @unchecked Sendable {
+        let moves: [ChessMove]
+        let result: PGNResult
+    }
+
     private func syncOutgoingGameToArchive() {
+        if let activeID = pgnArchive.activeGameID {
+            preparedGameCache.removeValue(forKey: activeID)
+        }
         if !pgnArchive.activeGameIsReviewOnly {
             pgnArchive.syncActiveGame(from: game, opening: openingService.display, metadata: currentPGNMetadata)
         }
@@ -928,16 +958,67 @@ struct ContentView: View {
 
         guard let id,
               let recordedGame = pgnArchive.games.first(where: { $0.id == id }) else {
-            return PreparedGameSwitch(staging: ChessGame(), recordedGame: nil)
+            return PreparedGameSwitch(transfer: nil, recordedGame: nil)
         }
 
-        let moves = recordedGame.moves
-        let result = recordedGame.result
-        let staging = await Task.detached(priority: .userInitiated) {
-            ChessGame.prepared(from: moves, result: result)
+        if let cached = preparedGameCache[id],
+           cached.moveCount == recordedGame.moves.count,
+           cached.result == recordedGame.result {
+            return PreparedGameSwitch(transfer: cached.transfer, recordedGame: recordedGame)
+        }
+
+        let input = GameReplayInput(moves: recordedGame.moves, result: recordedGame.result)
+        // Off-main ChessKit replay — ChessGameBackgroundPreparation is nonisolated so this
+        // does not bounce back onto the MainActor under default actor isolation.
+        let transfer = await Task.detached(priority: .userInitiated) {
+            ChessGameBackgroundPreparation.prepareTransfer(from: input.moves, result: input.result)
         }.value
 
-        return PreparedGameSwitch(staging: staging, recordedGame: recordedGame)
+        preparedGameCache[id] = PreparedGameCacheEntry(
+            moveCount: recordedGame.moves.count,
+            result: recordedGame.result,
+            transfer: transfer
+        )
+
+        return PreparedGameSwitch(transfer: transfer, recordedGame: recordedGame)
+    }
+
+    /// Warm the switch cache so the first slide does not wait on ChessKit replay.
+    private func prefetchPreparedGamesInBackground() {
+        struct PrefetchItem: @unchecked Sendable {
+            let id: UUID
+            let moves: [ChessMove]
+            let result: PGNResult
+        }
+
+        let items = pgnArchive.games.map {
+            PrefetchItem(id: $0.id, moves: $0.moves, result: $0.result)
+        }
+        guard !items.isEmpty else { return }
+
+        Task.detached(priority: .utility) {
+            let prepared: [(UUID, Int, PGNResult, ChessGameBackgroundPreparation.Transfer)] = items.map { item in
+                let transfer = ChessGameBackgroundPreparation.prepareTransfer(
+                    from: item.moves,
+                    result: item.result
+                )
+                return (item.id, item.moves.count, item.result, transfer)
+            }
+            await MainActor.run {
+                for (id, moveCount, result, transfer) in prepared {
+                    if let existing = preparedGameCache[id],
+                       existing.moveCount != moveCount || existing.result != result {
+                        // A live switch already wrote a newer entry while we were prefetching.
+                        continue
+                    }
+                    preparedGameCache[id] = PreparedGameCacheEntry(
+                        moveCount: moveCount,
+                        result: result,
+                        transfer: transfer
+                    )
+                }
+            }
+        }
     }
 
     /// Board-only swap at the slide midpoint. Heavy archive/engine/opening work waits until
@@ -945,11 +1026,8 @@ struct ContentView: View {
     private func commitPreparedGameSwitchBoardOnly(_ prepared: PreparedGameSwitch?) {
         guard let prepared else { return }
 
-        if prepared.recordedGame != nil {
-            game.replaceMainLine(with: prepared.staging)
-            if let recordedGame = prepared.recordedGame, recordedGame.result != .ongoing {
-                game.declareResult(recordedGame.result)
-            }
+        if let transfer = prepared.transfer {
+            game.applyPreparedTransfer(transfer)
         } else {
             game.resetGame()
         }
@@ -980,7 +1058,6 @@ struct ContentView: View {
         }
 
         syncOutgoingGameToArchive()
-        engineAnalysis.suspendInFlightAnalysis()
 
         let previousID = pgnArchive.activeGameID
         let direction = gameSwitchDirection(from: previousID, to: id)
@@ -992,17 +1069,27 @@ struct ContentView: View {
                 return
             }
 
+            // Pause assessment before suspending analysis so the idle callback cannot resume it.
             isGameSwitchAnimating = true
-            defer { isGameSwitchAnimating = false }
+            syncMoveAssessmentLiveAnalysisGate()
+            engineAnalysis.suspendInFlightAnalysis()
+            defer {
+                isGameSwitchAnimating = false
+                syncMoveAssessmentLiveAnalysisGate()
+            }
 
+            // Start ChessKit replay immediately; the animator waits for it while the old
+            // board stays on-screen, then runs a continuous slide-out → swap → slide-in.
+            let preparedTask = Task { await prepareLoadedGame(for: id) }
             var prepared: PreparedGameSwitch?
+
             await GameSwitchSlideAnimator.run(
                 direction: direction,
                 distance: slideDistance,
                 setOffset: { gameSwitchSlideOffset = $0 },
                 prepareSwap: {
                     // Do not setActiveGame here — notation rebuild must wait until after slide-in.
-                    prepared = await prepareLoadedGame(for: id)
+                    prepared = await preparedTask.value
                 },
                 swapContent: { commitPreparedGameSwitchBoardOnly(prepared) }
             )
@@ -1029,7 +1116,6 @@ struct ContentView: View {
         }
 
         let direction = gameSwitchDirection(from: previousID, to: nextActiveID)
-        engineAnalysis.suspendInFlightAnalysis()
 
         Task { @MainActor in
             await Task.yield()
@@ -1040,15 +1126,22 @@ struct ContentView: View {
             }
 
             isGameSwitchAnimating = true
-            defer { isGameSwitchAnimating = false }
+            syncMoveAssessmentLiveAnalysisGate()
+            engineAnalysis.suspendInFlightAnalysis()
+            defer {
+                isGameSwitchAnimating = false
+                syncMoveAssessmentLiveAnalysisGate()
+            }
 
+            let preparedTask = Task { await prepareLoadedGame(for: nextActiveID) }
             var prepared: PreparedGameSwitch?
+
             await GameSwitchSlideAnimator.run(
                 direction: direction,
                 distance: slideDistance,
                 setOffset: { gameSwitchSlideOffset = $0 },
                 prepareSwap: {
-                    prepared = await prepareLoadedGame(for: nextActiveID)
+                    prepared = await preparedTask.value
                 },
                 swapContent: { commitPreparedGameSwitchBoardOnly(prepared) }
             )

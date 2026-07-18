@@ -6,7 +6,7 @@
 import ChessKit
 import Foundation
 
-enum ChessKitMapping {
+nonisolated enum ChessKitMapping {
     static func appPieceType(_ kind: Piece.Kind) -> PieceType {
         switch kind {
         case .pawn: .pawn

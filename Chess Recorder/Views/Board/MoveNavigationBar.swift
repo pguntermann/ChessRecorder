@@ -13,6 +13,8 @@ struct MoveNavigationBar: View {
     var iconHitSize: CGFloat = 44
     /// False while the startup overlay covers the board. Defer tip-pinning until chrome is visible.
     var isChromeReady: Bool = true
+    /// True during game-switch slides — defer tip-pin until after the transition.
+    var isTipPinSuspended: Bool = false
     var onGoToFirst: () -> Void
     var onGoToPrevious: () -> Void
     var onGoToNext: () -> Void
@@ -21,6 +23,7 @@ struct MoveNavigationBar: View {
     var onFlipBoard: () -> Void
 
     @State private var tipPinTask: Task<Void, Never>?
+    @State private var pendingTipPinAfterResume = false
 
     var body: some View {
         HStack(spacing: 6) {
@@ -120,18 +123,29 @@ struct MoveNavigationBar: View {
                 guard ready else { return }
                 scheduleTipPinIfNeeded(using: proxy)
             }
+            .onChange(of: isTipPinSuspended) { _, suspended in
+                if suspended {
+                    tipPinTask?.cancel()
+                    tipPinTask = nil
+                } else if pendingTipPinAfterResume {
+                    pendingTipPinAfterResume = false
+                    scheduleTipPinIfNeeded(using: proxy)
+                }
+            }
             .onChange(of: game.activePlyIndex) { _, _ in
+                guard !isTipPinSuspended else { return }
                 scrollToActiveMove(using: proxy, animated: true)
             }
             .onChange(of: game.moves.count) { _, _ in
                 if game.isAtLatestMove {
                     scheduleTipPinIfNeeded(using: proxy)
                 } else {
+                    guard !isTipPinSuspended else { return }
                     scrollToActiveMove(using: proxy, animated: true)
                 }
             }
             .onChange(of: moveStripLayoutKey) { _, _ in
-                guard game.isAtLatestMove else { return }
+                guard !isTipPinSuspended, game.isAtLatestMove else { return }
                 scrollToActiveMove(using: proxy, animated: false)
             }
         }
@@ -150,6 +164,11 @@ struct MoveNavigationBar: View {
 
     private func scheduleTipPinIfNeeded(using proxy: ScrollViewProxy) {
         guard isChromeReady, game.isAtLatestMove, !game.moves.isEmpty else { return }
+
+        if isTipPinSuspended {
+            pendingTipPinAfterResume = true
+            return
+        }
 
         tipPinTask?.cancel()
         tipPinTask = Task { @MainActor in

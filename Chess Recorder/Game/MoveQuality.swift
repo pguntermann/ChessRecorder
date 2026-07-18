@@ -6,7 +6,7 @@
 import LucidEngine
 import SwiftUI
 
-enum MoveQuality: String, Equatable, Sendable, CaseIterable {
+nonisolated enum MoveQuality: String, Equatable, Sendable, CaseIterable {
     case blunder
     case mistake
     case inaccuracy

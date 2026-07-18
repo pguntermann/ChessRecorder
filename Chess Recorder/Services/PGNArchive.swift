@@ -5,7 +5,7 @@
 
 import Foundation
 
-enum PGNResult: String {
+nonisolated enum PGNResult: String, Sendable {
     case ongoing = "*"
     case whiteWins = "1-0"
     case blackWins = "0-1"

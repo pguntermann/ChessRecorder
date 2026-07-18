@@ -8,7 +8,7 @@
 import ChessKit
 import Foundation
 
-enum PieceType: String {
+nonisolated enum PieceType: String, Sendable {
     case pawn = ""
     case knight = "N"
     case bishop = "B"
@@ -17,7 +17,7 @@ enum PieceType: String {
     case king = "K"
 }
 
-enum PieceColor {
+nonisolated enum PieceColor: Sendable {
     case white, black
 
     var opposite: PieceColor {
@@ -49,7 +49,7 @@ struct ChessPiece: Identifiable, Equatable {
     }
 }
 
-struct ChessPosition: Equatable, Hashable {
+nonisolated struct ChessPosition: Equatable, Hashable, Sendable {
     let file: Int  // 0-7 (a-h)
     let rank: Int  // 0-7 (1-8)
 
@@ -78,7 +78,7 @@ struct ChessPosition: Equatable, Hashable {
     }
 }
 
-struct ChessMove {
+nonisolated struct ChessMove: Sendable {
     let san: String
     let piece: PieceType
     let from: ChessPosition
@@ -424,14 +424,27 @@ class ChessGame {
         return replayMainLine(recordedMoves)
     }
 
-    /// Builds a fully replayed game for staged archive activation (e.g. during slide transitions).
+    /// Builds a fully replayed game for staged archive activation (MainActor convenience).
     static func prepared(from moves: [ChessMove], result: PGNResult = .ongoing) -> ChessGame {
         let prepared = ChessGame()
-        _ = prepared.loadMainLine(moves: moves)
-        if result != .ongoing {
-            prepared.declareResult(result)
-        }
+        prepared.applyPreparedTransfer(ChessGameBackgroundPreparation.prepareTransfer(from: moves, result: result))
         return prepared
+    }
+
+    /// Applies a transfer produced by off-main `ChessGameBackgroundPreparation` (cheap snapshot restore).
+    func applyPreparedTransfer(_ transfer: ChessGameBackgroundPreparation.Transfer) {
+        restoreSnapshot(
+            GameSnapshot(
+                kitBoard: transfer.kitBoard,
+                kitGame: transfer.kitGame,
+                currentIndex: transfer.currentIndex,
+                moves: transfer.moves,
+                declaredResult: transfer.declaredResult,
+                statusMessageOverride: transfer.statusMessageOverride,
+                gameResult: transfer.gameResult,
+                activePlyIndex: transfer.activePlyIndex
+            )
+        )
     }
 
     /// Replaces this game's main line with another game's replayed state.

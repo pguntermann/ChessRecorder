@@ -60,7 +60,9 @@ enum GameSwitchDirection {
 
 @MainActor
 enum GameSwitchSlideAnimator {
-    /// Slides content out, awaits `prepareSwap`, applies `swapContent`, then slides back in.
+    /// Awaits `prepareSwap` while the outgoing board is still visible, then slides out, swaps,
+    /// and slides in. Prepare must not run after slide-out — that left a blank gap when replay
+    /// took longer than the slide duration.
     /// Returns only after the slide-in animation has finished so callers can defer heavy work.
     static func run(
         direction: GameSwitchDirection,
@@ -87,12 +89,11 @@ enum GameSwitchSlideAnimator {
         }
         await Task.yield()
 
-        async let preparation: Void = prepareSwap()
+        // Keep the old board on-screen until ChessKit replay finishes.
+        await prepareSwap()
 
         setOffset(multiplier * distance)
         try? await Task.sleep(for: .seconds(duration))
-
-        await preparation
 
         swapContent()
 

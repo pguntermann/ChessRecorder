@@ -118,4 +118,28 @@ final class ChessGameTests: XCTestCase {
         XCTAssertEqual(game.executeVoiceCandidates(["Nfxd4"]), "Nxd4")
         XCTAssertEqual(game.moves.last?.from.notation, "f3")
     }
+
+    func testPrepareTransferAppliesOffMainReplayOntoLiveGame() async {
+        let source = ChessGame()
+        XCTAssertTrue(source.performMove(from: ChessPosition(file: 4, rank: 1), to: ChessPosition(file: 4, rank: 3)))
+        XCTAssertTrue(source.performMove(from: ChessPosition(file: 4, rank: 6), to: ChessPosition(file: 4, rank: 4)))
+        let archivedMoves = source.moves
+
+        struct Input: @unchecked Sendable {
+            let moves: [ChessMove]
+        }
+        let input = Input(moves: archivedMoves)
+        let transfer = await Task.detached(priority: .userInitiated) {
+            ChessGameBackgroundPreparation.prepareTransfer(from: input.moves, result: .ongoing)
+        }.value
+
+        let live = ChessGame()
+        XCTAssertTrue(live.performMove(from: ChessPosition(file: 6, rank: 0), to: ChessPosition(file: 5, rank: 2)))
+        live.applyPreparedTransfer(transfer)
+
+        XCTAssertEqual(live.moves.count, 2)
+        XCTAssertEqual(live.moves.map(\.san), ["e4", "e5"])
+        XCTAssertTrue(live.isAtLatestMove)
+        XCTAssertEqual(live.fen(), source.fen())
+    }
 }

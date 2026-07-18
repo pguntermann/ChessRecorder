@@ -16,6 +16,7 @@ final class ChessTranscriptNormalizerTests: XCTestCase {
 
     private let cases: [NormalizationCase] = [
         NormalizationCase(id: "en.night-to-knight", language: .english, input: "night f3", expected: "knight f3"),
+        NormalizationCase(id: "en.before-to-b4", language: .english, input: "before", expected: "b4"),
         NormalizationCase(id: "en.detects-capture", language: .english, input: "detects c4", expected: "d takes c4"),
         NormalizationCase(id: "en.hey-siri-a3", language: .english, input: "hey siri", expected: "a3"),
         NormalizationCase(id: "en.see-three-c3", language: .english, input: "see three", expected: "c3"),
@@ -80,6 +81,7 @@ final class ChessTranscriptNormalizerTests: XCTestCase {
     func testSpokenFileLetterUsesLexicon() {
         XCTAssertEqual(ChessTranscriptNormalizer.spokenFileLetter(for: "ah", language: .german), "a")
         XCTAssertEqual(ChessTranscriptNormalizer.spokenFileLetter(for: "see", language: .english), "c")
+        XCTAssertEqual(ChessTranscriptNormalizer.spokenFileLetter(for: "age", language: .english), "h")
     }
 
     func testGermanCastlingMoveCandidates() {

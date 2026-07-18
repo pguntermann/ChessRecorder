@@ -15,6 +15,20 @@
       "updatedAt" : "2026-01-01T00:00:00Z"
     },
     {
+      "heard" : "age",
+      "id" : "A7B8C9D0-E1F2-4345-AB12-678901234567",
+      "languageCode" : "en-US",
+      "replacement" : "h",
+      "updatedAt" : "2026-01-01T00:00:00Z"
+    },
+    {
+      "heard" : "before",
+      "id" : "B8C9D0E1-F2A3-4456-BC23-789012345678",
+      "languageCode" : "en-US",
+      "replacement" : "b4",
+      "updatedAt" : "2026-01-01T00:00:00Z"
+    },
+    {
       "heard" : "dish shop",
       "id" : "C1D2E3F4-A5B6-7890-CDEF-123456789001",
       "languageCode" : "en-US",

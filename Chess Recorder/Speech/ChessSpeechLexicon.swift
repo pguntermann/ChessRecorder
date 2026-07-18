@@ -92,13 +92,13 @@ enum ChessSpeechLexicon {
                     "de": "d", "dee": "d",
                     "ee": "e", "he": "e",
                     "gee": "g",
-                    "aitch": "h", "each": "h",
+                    "aitch": "h", "each": "h", "age": "h",
                     "eff": "f", "ef": "f",
                     "a": "a"
                 ],
                 ambiguousFileTokens: ["hey", "ay"],
                 movePrepositions: ["to", "too", "two"],
-                runtimeHomophoneTokens: ["see", "sea", "bee", "dee", "gee", "aitch", "hey", "ay"]
+                runtimeHomophoneTokens: ["see", "sea", "bee", "dee", "gee", "aitch", "hey", "ay", "age"]
             )
         case .german:
             return LanguageLexicon(

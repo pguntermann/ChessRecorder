@@ -63,7 +63,8 @@ enum TranscriptReplacementRules {
       rule("en.rock-square-prefix", #"\b(rock|look)\s+([a-h][18])\b"#, "rook $2"),
       rule("en.knit", #"\bknit\b"#, "knight"),
       rule("en.nite", #"\bnite\b"#, "knight"),
-      rule("en.night", #"\bnight\b"#, "knight")
+      rule("en.night", #"\bnight\b"#, "knight"),
+      rule("en.before-square", #"\bbefore\b"#, "b4")
     ]
     + englishFileBeforeRankRules(lexicon: lexicon)
   }
@@ -89,7 +90,7 @@ enum TranscriptReplacementRules {
       rule("en.file-d-rank", #"\bdee\s+(?=\#(rank))\b"#, "d "),
       rule("en.file-e-rank", #"\b(he|ee)\s+(?=\#(rank))\b"#, "e "),
       rule("en.file-g-rank", #"\bgee\s+(?=\#(rank))\b"#, "g "),
-      rule("en.file-h-rank", #"\b(aitch|each)\s+(?=\#(rank))\b"#, "h "),
+      rule("en.file-h-rank", #"\b(aitch|each|age)\s+(?=\#(rank))\b"#, "h "),
       rule("en.file-f-rank", #"\b(eff|ef)\s+(?=\#(rank))\b"#, "f ")
     ]
   }

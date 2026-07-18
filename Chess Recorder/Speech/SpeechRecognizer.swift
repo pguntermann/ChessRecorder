@@ -86,6 +86,8 @@ class SpeechRecognizer {
     private var lastSeenCaptureFile: Character?
     /// ASR sometimes revises a capture destination file on the final hypothesis ("dame schlagt a" → "dame schlagt e8").
     private var lastPartialCaptureDestinationFile: Character?
+    /// Last hypothesis in this utterance that still contains letters (for digit-only collapse recovery).
+    private var lastChessyASRPartial: String?
     private var audioSessionObserverTokens: [NSObjectProtocol] = []
     private var recognitionRecoveryTask: Task<Void, Never>?
     private var recordingSessionStartedAt: Date?
@@ -417,6 +419,9 @@ class SpeechRecognizer {
         lastAcceptedSpeechKey = nil
         lastAcceptedAtGeneration = -1
         lastScheduledTranscript = nil
+        lastChessyASRPartial = nil
+        lastSeenCaptureFile = nil
+        lastPartialCaptureDestinationFile = nil
         
         try RecordingAudioSession.activateForCapture(log: logSpeechDiagnostic)
         logSpeechDiagnostic("audio route: \(Self.audioRouteDescription())")
@@ -653,6 +658,7 @@ class SpeechRecognizer {
         lastProcessedMove = nil
         lastSeenCaptureFile = nil
         lastPartialCaptureDestinationFile = nil
+        lastChessyASRPartial = nil
         clearFailureState()
 
         Task { @MainActor in
@@ -672,6 +678,7 @@ class SpeechRecognizer {
         lastAcceptedAtGeneration = -1
         lastSeenCaptureFile = nil
         lastPartialCaptureDestinationFile = nil
+        lastChessyASRPartial = nil
         clearDictationPauseIndicator()
         stableTranscriptTask?.cancel()
         stableTranscriptTask = nil
@@ -762,7 +769,22 @@ class SpeechRecognizer {
             }
             
             guard let result else { return }
-            let rawASR = result.bestTranscription.formattedString
+            let bestASR = result.bestTranscription.formattedString
+            let alternatives = result.transcriptions.map(\.formattedString)
+            let selection = ASRHypothesisSelector.select(
+                best: bestASR,
+                alternatives: alternatives,
+                previousChessyPartial: self.lastChessyASRPartial
+            )
+            if selection.replacedDigitOnlyBest, self.isSpeechPipelineTracingEnabled {
+                self.logSpeechDiagnostic(
+                    "ASR digit-only best rejected: \"\(bestASR)\" → \"\(selection.text)\""
+                )
+            }
+            if ASRHypothesisSelector.containsLetter(selection.text) {
+                self.lastChessyASRPartial = selection.text
+            }
+            let rawASR = selection.text
             self.lastASRTranscriptBeforeMerge = rawASR
             if self.isSpeechPipelineTracingEnabled {
                 self.logSpeechDiagnostic(Self.formatASRCallbackTrace(result, generation: generation))

@@ -982,13 +982,25 @@ enum GameReportPDFComposer {
     private static func chartCardHeight(for image: UIImage) -> CGFloat {
         let padding: CGFloat = 10
         let titleH: CGFloat = 28
-        let maxImageH: CGFloat = 148
+        let imageSize = chartImageSize(for: image, contentWidth: Theme.contentWidth, padding: padding)
+        return padding + titleH + imageSize.height + padding
+    }
+
+    /// Prefer full card width; only shrink if the resulting height would exceed `maxImageHeight`.
+    private static func chartImageSize(
+        for image: UIImage,
+        contentWidth: CGFloat,
+        padding: CGFloat,
+        maxImageHeight: CGFloat = 280
+    ) -> CGSize {
         let aspect = image.size.width / max(image.size.height, 1)
-        var imageH = (Theme.contentWidth - padding * 2) / aspect
-        if imageH > maxImageH {
-            imageH = maxImageH
+        var imageW = contentWidth - padding * 2
+        var imageH = imageW / aspect
+        if imageH > maxImageHeight {
+            imageH = maxImageHeight
+            imageW = imageH * aspect
         }
-        return padding + titleH + imageH + padding
+        return CGSize(width: imageW, height: imageH)
     }
 
     private static func drawChartCard(
@@ -1002,14 +1014,9 @@ enum GameReportPDFComposer {
         let width = Theme.contentWidth
         let padding: CGFloat = 10
         let titleH: CGFloat = 28
-        let maxImageH: CGFloat = 148
-        let aspect = image.size.width / max(image.size.height, 1)
-        var imageW = width - padding * 2
-        var imageH = imageW / aspect
-        if imageH > maxImageH {
-            imageH = maxImageH
-            imageW = imageH * aspect
-        }
+        let imageSize = chartImageSize(for: image, contentWidth: width, padding: padding)
+        let imageW = imageSize.width
+        let imageH = imageSize.height
         let cardH = padding + titleH + imageH + padding
         let cardRect = CGRect(x: x, y: y, width: width, height: cardH)
         fillRoundedRect(cardRect, color: Theme.cardFill, radius: 8)
@@ -1035,7 +1042,7 @@ enum GameReportPDFComposer {
         )
 
         let imageRect = CGRect(
-            x: x + padding + (width - padding * 2 - imageW) / 2,
+            x: x + padding,
             y: y + padding + titleH,
             width: imageW,
             height: imageH

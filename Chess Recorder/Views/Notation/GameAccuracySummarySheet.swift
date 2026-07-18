@@ -301,9 +301,14 @@ struct GameAccuracySummarySheet: View {
 
     @MainActor
     private func renderChartImage<Content: View>(_ content: Content) -> UIImage? {
+        // Give the Chart itself enough height for Y labels + X labels + legend, then add
+        // outer margins so ImageRenderer does not clip glyph overhang.
         let chartView = content
-            .frame(width: 520, height: 200)
-            .padding(12)
+            .frame(width: 488, height: 248, alignment: .center)
+            .padding(.top, 12)
+            .padding(.leading, 16)
+            .padding(.trailing, 10)
+            .padding(.bottom, 14)
             .background(Color.white)
         let renderer = ImageRenderer(content: chartView)
         renderer.scale = 2
@@ -693,7 +698,7 @@ struct GameAccuracySummarySheet: View {
             GameAccuracySummary.Side.white.label: whiteStroke,
             GameAccuracySummary.Side.black.label: blackStroke
         ])
-        .chartLegend(position: .bottom, alignment: .center)
+        .chartLegend(position: .bottom, alignment: .center, spacing: printFriendly ? 10 : 8)
         .chartXScale(domain: xScale.domain(maxMoveNumber: maxMove))
         .chartXAxis {
             AxisMarks(values: axisMarks.map(\.x)) { value in

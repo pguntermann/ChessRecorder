@@ -195,4 +195,43 @@ final class MoveAssessmentClassifierTests: XCTestCase {
             -MoveAssessmentClassifier.mateDisplayCentipawns
         )
     }
+
+    func testWhitePerspectiveTerminalMateZeroUsesMoverSide() {
+        // Engine interrupt / mate(0) after White delivers mate → +10.00.
+        XCTAssertEqual(
+            MoveAssessmentClassifier.whitePerspectiveCentipawns(
+                rawScoreAfter: .mate(0),
+                moveIndex: 0
+            ),
+            MoveAssessmentClassifier.mateDisplayCentipawns
+        )
+        // Black delivers mate → −10.00 white POV.
+        XCTAssertEqual(
+            MoveAssessmentClassifier.whitePerspectiveCentipawns(
+                rawScoreAfter: .mate(0),
+                moveIndex: 1
+            ),
+            -MoveAssessmentClassifier.mateDisplayCentipawns
+        )
+    }
+
+    func testWhitePerspectiveCheckmateOverridesEngineZeroCentipawns() {
+        XCTAssertEqual(
+            MoveAssessmentClassifier.whitePerspectiveCentipawns(
+                rawScoreAfter: .centipawns(0),
+                moveIndex: 0,
+                deliveredCheckmate: true
+            ),
+            MoveAssessmentClassifier.mateDisplayCentipawns
+        )
+        XCTAssertEqual(
+            MoveAssessmentClassifier.whitePerspectiveCentipawns(
+                rawScoreAfter: .centipawns(0),
+                moveIndex: 5,
+                deliveredCheckmate: true
+            ),
+            -MoveAssessmentClassifier.mateDisplayCentipawns
+        )
+    }
+
 }

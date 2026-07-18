@@ -455,7 +455,15 @@ struct GameAccuracySummary: Equatable, Sendable {
         var criticalCandidates: [(ply: Int, quality: MoveQuality, cpl: Int)] = []
 
         for (index, move) in moves.enumerated() {
-            if let cp = move.evaluationWhiteCentipawns {
+            if move.isCheckmate {
+                let cp = MoveAssessmentClassifier.mateDisplayCentipawns(forDeliveredMateAtMoveIndex: index)
+                evaluationProgress.append(
+                    EvaluationPoint(
+                        ply: index + 1,
+                        evaluationPawns: Self.clampedEvaluationPawns(centipawns: cp)
+                    )
+                )
+            } else if let cp = move.evaluationWhiteCentipawns {
                 evaluationProgress.append(
                     EvaluationPoint(
                         ply: index + 1,

@@ -73,10 +73,28 @@ enum MoveAssessmentClassifier: Sendable {
     /// Mates map to ±`mateDisplayCentipawns` so they sit on the ±10 pawn chart edge.
     nonisolated static let mateDisplayCentipawns = 1_000
 
-    nonisolated static func whitePerspectiveCentipawns(rawScoreAfter: Score, moveIndex: Int) -> Int {
+    /// - Parameter deliveredCheckmate: When the played move mates, engines often return
+    ///   `.centipawns(0)` or `.mate(0)` for the terminal FEN — neither is a useful chart value.
+    nonisolated static func whitePerspectiveCentipawns(
+        rawScoreAfter: Score,
+        moveIndex: Int,
+        deliveredCheckmate: Bool = false
+    ) -> Int {
+        if deliveredCheckmate {
+            return mateDisplayCentipawns(forDeliveredMateAtMoveIndex: moveIndex)
+        }
+        // Interrupt / terminal path uses mate(0); POV invert is a no-op on zero.
+        if case .mate(0) = rawScoreAfter {
+            return mateDisplayCentipawns(forDeliveredMateAtMoveIndex: moveIndex)
+        }
         // After White's move (even index), side-to-move is Black → invert to White POV.
         let whiteScore = moveIndex % 2 == 0 ? inverted(rawScoreAfter) : rawScoreAfter
         return displayCentipawns(whiteScore)
+    }
+
+    nonisolated static func mateDisplayCentipawns(forDeliveredMateAtMoveIndex moveIndex: Int) -> Int {
+        // The side that just moved delivered mate.
+        moveIndex % 2 == 0 ? mateDisplayCentipawns : -mateDisplayCentipawns
     }
 
     nonisolated static func displayCentipawns(_ score: Score) -> Int {
@@ -88,6 +106,7 @@ enum MoveAssessmentClassifier: Sendable {
         case .mate(let moves) where moves < 0:
             return -mateDisplayCentipawns
         case .mate:
+            // mate(0) is handled in `whitePerspectiveCentipawns` with move context.
             return 0
         }
     }

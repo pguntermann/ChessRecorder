@@ -12,6 +12,7 @@ struct MoveAssessmentJob: Sendable, Equatable {
     let fenBeforeMove: String
     let fenAfterMove: String
     let playedMoveSAN: String
+    let isCheckmate: Bool
 }
 
 struct MoveAssessmentProgress: Equatable, Sendable {
@@ -158,7 +159,8 @@ final class MoveAssessmentService {
                     moveIndex: moveIndex,
                     fenBeforeMove: fens[moveIndex],
                     fenAfterMove: fenAfter,
-                    playedMoveSAN: playedSAN
+                    playedMoveSAN: playedSAN,
+                    isCheckmate: game.moves[moveIndex].isCheckmate
                 )
                 enqueue(job, archive: archive, logEnqueue: false)
                 queued += 1
@@ -273,7 +275,8 @@ final class MoveAssessmentService {
                     await MainActor.run {
                         let evalCP = MoveAssessmentClassifier.whitePerspectiveCentipawns(
                             rawScoreAfter: result.rawScoreAfter,
-                            moveIndex: job.moveIndex
+                            moveIndex: job.moveIndex,
+                            deliveredCheckmate: job.isCheckmate
                         )
                         let applied = archive.applyMoveAssessment(
                             gameID: job.gameID,

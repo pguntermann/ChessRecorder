@@ -336,6 +336,28 @@ final class GameAccuracySummaryTests: XCTestCase {
         XCTAssertEqual(summary.evaluationCriticalPlies.map(\.ply), [3])
     }
 
+    func testEvaluationProgressMapsCheckmateToMateEdgeEvenWhenStoredEvalIsZero() {
+        let moves = [
+            move("e4", quality: .good, centipawnLoss: 0, evaluationWhiteCentipawns: 40),
+            move("e5", quality: .good, centipawnLoss: 0, evaluationWhiteCentipawns: 20),
+            move("Qh5", quality: .good, centipawnLoss: 0, evaluationWhiteCentipawns: 0, isCheckmate: true)
+        ]
+        let summary = GameAccuracySummary(moves: moves)
+
+        XCTAssertEqual(summary.evaluationProgress.map(\.ply), [0, 1, 2, 3])
+        XCTAssertEqual(summary.evaluationProgress.map(\.evaluationPawns), [0, 0.40, 0.20, 10])
+    }
+
+    func testEvaluationProgressMapsBlackCheckmateToNegativeMateEdge() {
+        let moves = [
+            move("e4", quality: .good, centipawnLoss: 0, evaluationWhiteCentipawns: 30),
+            move("Qh4", quality: .good, centipawnLoss: 0, evaluationWhiteCentipawns: 0, isCheckmate: true)
+        ]
+        let summary = GameAccuracySummary(moves: moves)
+
+        XCTAssertEqual(summary.evaluationProgress.last?.evaluationPawns, -10)
+    }
+
     func testEvaluationProgressAbsentWithoutStoredEvals() {
         let moves = [
             move("e4", quality: .good, centipawnLoss: 0),
@@ -351,7 +373,8 @@ final class GameAccuracySummaryTests: XCTestCase {
         _ san: String,
         quality: MoveQuality?,
         centipawnLoss: Int? = nil,
-        evaluationWhiteCentipawns: Int? = nil
+        evaluationWhiteCentipawns: Int? = nil,
+        isCheckmate: Bool = false
     ) -> ChessMove {
         ChessMove(
             san: san,
@@ -360,7 +383,7 @@ final class GameAccuracySummaryTests: XCTestCase {
             to: ChessPosition(file: 4, rank: 3),
             captures: false,
             isCheck: false,
-            isCheckmate: false,
+            isCheckmate: isCheckmate,
             promotion: nil,
             castling: nil,
             quality: quality,

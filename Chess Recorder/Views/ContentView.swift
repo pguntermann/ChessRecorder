@@ -131,6 +131,9 @@ struct ContentView: View {
                 // moves from ChessGame (no qualities) and can drop mid-assessment updates.
                 sessionStore.schedulePersist(snapshot: SessionSnapshot(archive: pgnArchive))
             }
+            engineAnalysis.onBecameIdleForMoveAssessment = {
+                moveAssessment.setLiveAnalysisBusy(false)
+            }
             await speechRecognizer.startup(with: settingsStore.settings.defaultRecognitionLanguage)
             speechRecognizer.setInitializationPhase(.preparingEngine)
             async let enginePrepare: Void = engineAnalysis.prepare()
@@ -166,6 +169,13 @@ struct ContentView: View {
             if !isVisible {
                 engineAnalysis.stop()
             }
+            syncMoveAssessmentLiveAnalysisGate()
+        }
+        .onChange(of: engineAnalysis.isAnalyzing) { _, _ in
+            syncMoveAssessmentLiveAnalysisGate()
+        }
+        .onChange(of: engineAnalysis.isActive) { _, _ in
+            syncMoveAssessmentLiveAnalysisGate()
         }
         .onChange(of: settingsStore.settings.engineAnalysisDepth) { _, _ in
             engineAnalysis.configure(
@@ -228,7 +238,10 @@ struct ContentView: View {
                 syncLiveBoardToArchiveIfRecording()
                 scheduleSessionPersist()
                 engineAnalysis.stop()
+                syncMoveAssessmentLiveAnalysisGate()
                 stopRecordingIfNeeded()
+                // Game-over cancels the animation-deferred enqueue above — still assess the final move(s).
+                enqueueUnassessedMovesForActiveGameIfNeeded()
             } else {
                 refreshEngineIfAppropriate()
             }
@@ -242,7 +255,9 @@ struct ContentView: View {
             scheduleSessionPersist()
             if game.isGameOver {
                 engineAnalysis.stop()
+                syncMoveAssessmentLiveAnalysisGate()
                 stopRecordingIfNeeded()
+                enqueueUnassessedMovesForActiveGameIfNeeded()
             }
         }
         .sheet(isPresented: $showingSettings) {
@@ -530,6 +545,7 @@ struct ContentView: View {
                 includeMoveAssessmentSymbolsInExport: settingsStore.settings.pgnIncludeMoveAssessmentSymbols,
                 showAccuracySummary: settingsStore.settings.pgnShowAccuracySummary,
                 activeAssessment: moveAssessment.activeAssessment,
+                incompleteAssessmentGameIDs: incompleteAssessmentGameIDs,
                 showMoveAssessments: settingsStore.settings.moveAssessmentEnabled,
                 assessmentColors: settingsStore.settings.moveAssessmentColors,
                 assessmentColorsCacheKey: settingsStore.settings.moveAssessmentColorsCacheKey,
@@ -547,6 +563,26 @@ struct ContentView: View {
     private func refreshEngineIfAppropriate() {
         guard settingsStore.settings.engineAnalysisVisible else { return }
         engineAnalysis.refresh(game: game)
+        syncMoveAssessmentLiveAnalysisGate()
+    }
+
+    private func syncMoveAssessmentLiveAnalysisGate() {
+        let busy = settingsStore.settings.engineAnalysisVisible
+            && engineAnalysis.isBusyForMoveAssessment
+        moveAssessment.setLiveAnalysisBusy(busy)
+    }
+
+    /// Games that still need assessment work (unassessed moves and/or queued jobs).
+    private var incompleteAssessmentGameIDs: Set<UUID> {
+        guard settingsStore.settings.moveAssessmentEnabled else { return [] }
+        // Touch observable assessment state so row icons refresh as the queue drains.
+        _ = moveAssessment.pendingJobCount
+        _ = moveAssessment.activeAssessment
+        var ids = moveAssessment.gameIDsWithQueuedAssessment()
+        for game in pgnArchive.games where game.moves.contains(where: { $0.quality == nil }) {
+            ids.insert(game.id)
+        }
+        return ids
     }
 
     private func enqueueMoveAssessmentForLatestMove() {
@@ -581,6 +617,16 @@ struct ContentView: View {
             isCheckmate: playedMove.isCheckmate
         )
         moveAssessment.enqueue(job, archive: pgnArchive)
+    }
+
+    /// After game over (or analysis release), catch any plies that never made it into the queue.
+    private func enqueueUnassessedMovesForActiveGameIfNeeded() {
+        guard settingsStore.settings.moveAssessmentEnabled,
+              moveAssessment.isEngineReady,
+              pgnArchive.activeGameID != nil else {
+            return
+        }
+        moveAssessment.enqueueUnassessedMoves(in: pgnArchive)
     }
 
     private func purgeMoveAssessmentsAndReanalyze() {

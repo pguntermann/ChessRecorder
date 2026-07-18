@@ -55,6 +55,14 @@ final class EngineAnalysisService {
     private(set) var isEngineReady = false
     private(set) var display = EngineAnalysisDisplay()
 
+    /// Called when a live search finishes (max depth, timeout, cancel, or stop) so move assessment can resume.
+    var onBecameIdleForMoveAssessment: (() -> Void)?
+
+    /// True while live analysis is actively searching — move assessment should wait.
+    var isBusyForMoveAssessment: Bool {
+        isActive && isAnalyzing
+    }
+
     private let engineWorker: EngineAnalysisEngine
     private var analysisTask: Task<Void, Never>?
     private var analysisGeneration = 0
@@ -113,6 +121,7 @@ final class EngineAnalysisService {
     }
 
     func stop() {
+        let wasBusy = isBusyForMoveAssessment
         isActive = false
         analysisGeneration += 1
         analysisTask?.cancel()
@@ -121,12 +130,16 @@ final class EngineAnalysisService {
         isAnalyzing = false
         display = EngineAnalysisDisplay(statusMessage: "Stopped")
         Task { await engineWorker.stopSearch() }
+        if wasBusy {
+            notifyIdleForMoveAssessment()
+        }
     }
 
     /// Cancels in-flight search and clears the board arrow without turning analysis off.
     /// Used during game-switch slides so Stockfish work does not compete with animation frames.
     func suspendInFlightAnalysis() {
         guard isActive else { return }
+        let wasBusy = isBusyForMoveAssessment
         analysisGeneration += 1
         analysisTask?.cancel()
         analysisTask = nil
@@ -139,6 +152,9 @@ final class EngineAnalysisService {
         cleared.statusMessage = "Analyzing…"
         display = cleared
         Task { await engineWorker.stopSearch() }
+        if wasBusy {
+            notifyIdleForMoveAssessment()
+        }
     }
 
     func refresh(game: ChessGame) {
@@ -192,6 +208,7 @@ final class EngineAnalysisService {
                         self.display = pendingDisplay
                         self.pendingDisplay = nil
                     }
+                    self.notifyIdleForMoveAssessment()
                 }
             }
 
@@ -286,5 +303,9 @@ final class EngineAnalysisService {
         }
 
         pendingDisplay = newDisplay
+    }
+
+    private func notifyIdleForMoveAssessment() {
+        onBecameIdleForMoveAssessment?()
     }
 }

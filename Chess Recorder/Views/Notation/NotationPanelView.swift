@@ -20,6 +20,8 @@ struct NotationPanelView: View {
     var includeMoveAssessmentSymbolsInExport: Bool = false
     var showAccuracySummary: Bool = true
     var activeAssessment: MoveAssessmentProgress?
+    /// Games with unassessed moves and/or queued assessment work.
+    var incompleteAssessmentGameIDs: Set<UUID> = []
     var showMoveAssessments: Bool = false
     var assessmentColors: MoveAssessmentColors = .defaults
     var assessmentColorsCacheKey: String = ""
@@ -109,6 +111,8 @@ struct NotationPanelView: View {
                                     assessingMoveIndex: activeAssessment?.gameID == recordedGame.id
                                         ? activeAssessment?.moveIndex
                                         : nil,
+                                    hasIncompleteAssessment: showMoveAssessments
+                                        && incompleteAssessmentGameIDs.contains(recordedGame.id),
                                     showMoveAssessments: showMoveAssessments,
                                     showAccuracySummary: showAccuracySummary,
                                     assessmentColors: assessmentColors,
@@ -156,6 +160,8 @@ struct NotationPanelView: View {
                                 isActive: true,
                                 showMoveHighlight: true,
                                 assessingMoveIndex: nil,
+                                hasIncompleteAssessment: showMoveAssessments
+                                    && game.moves.contains(where: { $0.quality == nil }),
                                 showMoveAssessments: showMoveAssessments,
                                 showAccuracySummary: showAccuracySummary,
                                 assessmentColors: assessmentColors,
@@ -353,6 +359,7 @@ private struct GamePGNRowView: View, Equatable {
     let isActive: Bool
     let showMoveHighlight: Bool
     var assessingMoveIndex: Int? = nil
+    var hasIncompleteAssessment: Bool = false
     var showMoveAssessments: Bool = false
     var showAccuracySummary: Bool = true
     var assessmentColors: MoveAssessmentColors = .defaults
@@ -379,6 +386,7 @@ private struct GamePGNRowView: View, Equatable {
             && lhs.isActive == rhs.isActive
             && lhs.showMoveHighlight == rhs.showMoveHighlight
             && lhs.assessingMoveIndex == rhs.assessingMoveIndex
+            && lhs.hasIncompleteAssessment == rhs.hasIncompleteAssessment
             && lhs.showMoveAssessments == rhs.showMoveAssessments
             && lhs.showAccuracySummary == rhs.showAccuracySummary
             && lhs.assessmentColors == rhs.assessmentColors
@@ -432,6 +440,11 @@ private struct GamePGNRowView: View, Equatable {
                     ProgressView()
                         .controlSize(.mini)
                         .accessibilityLabel("Assessing move quality")
+                } else if hasIncompleteAssessment {
+                    Image(systemName: "hourglass")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .accessibilityLabel("Move assessment incomplete")
                 }
 
                 Spacer()

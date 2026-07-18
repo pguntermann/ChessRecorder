@@ -372,6 +372,13 @@ struct GameAccuracySummary: Equatable, Sendable {
         white.bookCount + black.bookCount
     }
 
+    /// Moves that still have no quality mark (assessment pending or not yet run).
+    var unassessedMoveCount: Int
+
+    var isAssessmentIncomplete: Bool {
+        unassessedMoveCount > 0
+    }
+
     var goodCount: Int { white.goodCount + black.goodCount }
     var inaccuracyCount: Int { white.inaccuracyCount + black.inaccuracyCount }
     var mistakeCount: Int { white.mistakeCount + black.mistakeCount }
@@ -530,6 +537,9 @@ struct GameAccuracySummary: Equatable, Sendable {
             .prefix(Self.evaluationCriticalMarkerLimit)
             .map { EvaluationCriticalPly(ply: $0.ply, quality: $0.quality) }
             .sorted { $0.ply < $1.ply }
+        self.unassessedMoveCount = moves.reduce(0) { count, move in
+            count + (move.quality == nil ? 1 : 0)
+        }
     }
 
     /// Divisor used by `100 - averageCPL / divisor`, matching common CPL accuracy curves.

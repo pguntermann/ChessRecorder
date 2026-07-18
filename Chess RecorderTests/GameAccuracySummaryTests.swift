@@ -369,6 +369,18 @@ final class GameAccuracySummaryTests: XCTestCase {
         XCTAssertEqual(summary.evaluationProgress.first?.evaluationPawns, 0)
     }
 
+    func testUnassessedMoveCountAndIncompleteFlag() {
+        let moves = [
+            move("e4", quality: .good, centipawnLoss: 0),
+            move("e5", quality: nil),
+            move("Nf3", quality: .book),
+            move("Nc6", quality: nil)
+        ]
+        let summary = GameAccuracySummary(moves: moves)
+        XCTAssertEqual(summary.unassessedMoveCount, 2)
+        XCTAssertTrue(summary.isAssessmentIncomplete)
+    }
+
     private func move(
         _ san: String,
         quality: MoveQuality?,

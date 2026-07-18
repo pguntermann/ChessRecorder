@@ -34,7 +34,21 @@ struct GameAccuracySummarySheet: View {
                 } header: {
                     Text("Overview")
                 } footer: {
-                    Text("Accuracy uses average centipawn loss (book excluded). Best-move % is the share of scored moves with 0 CPL. Blunder rate is among all assessed moves.")
+                    Text(overviewFooter)
+                }
+
+                if summary.isAssessmentIncomplete {
+                    Section {
+                        Label {
+                            Text(incompleteAssessmentMessage)
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        } icon: {
+                            Image(systemName: "hourglass")
+                                .foregroundStyle(.secondary)
+                        }
+                        .accessibilityElement(children: .combine)
+                    }
                 }
 
                 if summary.hasEvaluationProgress {
@@ -95,6 +109,18 @@ struct GameAccuracySummarySheet: View {
             }
         }
         .frame(maxWidth: .infinity)
+    }
+
+    private var overviewFooter: String {
+        "Accuracy uses average centipawn loss (book excluded). Best-move % is the share of scored moves with 0 CPL. Blunder rate is among all assessed moves."
+    }
+
+    private var incompleteAssessmentMessage: String {
+        let count = summary.unassessedMoveCount
+        if count == 1 {
+            return "1 move has not been assessed yet. Accuracy and charts reflect assessed moves only."
+        }
+        return "\(count) moves have not been assessed yet. Accuracy and charts reflect assessed moves only."
     }
 
     private var accuracyComparison: some View {

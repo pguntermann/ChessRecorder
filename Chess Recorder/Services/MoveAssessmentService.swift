@@ -33,6 +33,9 @@ final class MoveAssessmentService {
     /// When true (developer mode), logs compact assessment pipeline events.
     var isTracingEnabled = false
 
+    /// When true, engine-backed assessment waits so live analysis can finish first.
+    private var isLiveAnalysisBusy = false
+
     private let engineWorker: MoveAssessmentEngine
     private var processorTask: Task<Void, Never>?
     private var pendingJobs: [MoveAssessmentJob] = []
@@ -193,6 +196,34 @@ final class MoveAssessmentService {
         }
     }
 
+    /// Live engine analysis is searching — pause Stockfish-backed assessment until it goes idle.
+    func setLiveAnalysisBusy(_ busy: Bool) {
+        let wasBusy = isLiveAnalysisBusy
+        isLiveAnalysisBusy = busy
+        if wasBusy && !busy {
+            log("live analysis idle — assessment may proceed queue=\(pendingJobCount)")
+        } else if !wasBusy && busy {
+            log("live analysis busy — assessment waiting queue=\(pendingJobCount)")
+        }
+    }
+
+    /// True when this game still has unassessed moves and/or queued/active assessment work.
+    func hasIncompleteAssessment(for gameID: UUID, moves: [ChessMove]) -> Bool {
+        guard isEnabled else { return false }
+        if moves.contains(where: { $0.quality == nil }) { return true }
+        if activeJob?.gameID == gameID { return true }
+        return pendingJobs.contains { $0.gameID == gameID }
+    }
+
+    /// Game IDs with queued or in-flight assessment jobs (not including unassessed-but-not-yet-enqueued).
+    func gameIDsWithQueuedAssessment() -> Set<UUID> {
+        var ids = Set(pendingJobs.map(\.gameID))
+        if let activeJob {
+            ids.insert(activeJob.gameID)
+        }
+        return ids
+    }
+
     func cancelAll() {
         let removed = pendingJobs.count + (activeJob == nil ? 0 : 1)
         processorTask?.cancel()
@@ -263,6 +294,17 @@ final class MoveAssessmentService {
                 let depth = await MainActor.run { self.configuredDepth }
                 await MainActor.run {
                     self.log("engine \(Self.jobLabel(job)) depth=\(depth) queue=\(self.pendingJobCount)")
+                }
+
+                // Yield the shared Stockfish to live analysis until it reaches max depth / goes idle.
+                while await MainActor.run(body: { self.isLiveAnalysisBusy }) && !Task.isCancelled {
+                    try? await Task.sleep(for: .milliseconds(100))
+                }
+                guard !Task.isCancelled else {
+                    await MainActor.run {
+                        self.log("cancelled while waiting for live analysis \(Self.jobLabel(job))")
+                    }
+                    return
                 }
 
                 do {

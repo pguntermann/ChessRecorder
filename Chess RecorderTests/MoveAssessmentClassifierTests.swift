@@ -179,20 +179,43 @@ final class MoveAssessmentClassifierTests: XCTestCase {
         )
     }
 
-    func testWhitePerspectiveMatesMapToDisplayCap() {
+    func testWhitePerspectiveMatesMapToDisplayCapPlusMateIn() {
         XCTAssertEqual(
             MoveAssessmentClassifier.whitePerspectiveCentipawns(
                 rawScoreAfter: .mate(-3),
                 moveIndex: 0
             ),
-            MoveAssessmentClassifier.mateDisplayCentipawns
+            MoveAssessmentClassifier.mateDisplayCentipawns + 3
         )
         XCTAssertEqual(
             MoveAssessmentClassifier.whitePerspectiveCentipawns(
                 rawScoreAfter: .mate(-2),
                 moveIndex: 1
             ),
-            -MoveAssessmentClassifier.mateDisplayCentipawns
+            -(MoveAssessmentClassifier.mateDisplayCentipawns + 2)
+        )
+    }
+
+    func testFormatEvaluationIncludesMateInNumber() {
+        XCTAssertEqual(MoveAssessmentClassifier.formatEvaluation(centipawns: 42), "+0.42")
+        XCTAssertEqual(MoveAssessmentClassifier.formatEvaluation(centipawns: -155), "-1.55")
+        XCTAssertEqual(
+            MoveAssessmentClassifier.formatEvaluation(
+                centipawns: MoveAssessmentClassifier.mateDisplayCentipawns + 5
+            ),
+            "+#5"
+        )
+        XCTAssertEqual(
+            MoveAssessmentClassifier.formatEvaluation(
+                centipawns: -(MoveAssessmentClassifier.mateDisplayCentipawns + 2)
+            ),
+            "−#2"
+        )
+        XCTAssertEqual(
+            MoveAssessmentClassifier.formatEvaluation(
+                centipawns: MoveAssessmentClassifier.mateDisplayCentipawns
+            ),
+            "+#"
         )
     }
 

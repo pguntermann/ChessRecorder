@@ -11,6 +11,8 @@ struct MoveAssessmentResult: Sendable {
     let centipawnLoss: Int
     let scoreBefore: Score
     let rawScoreAfter: Score
+    /// Engine best move from the position before the played ply (SAN), when available.
+    let bestMoveSAN: String?
 }
 
 /// Serial owner of a dedicated LucidEngine instance for post-move quality assessment.
@@ -43,6 +45,7 @@ actor MoveAssessmentEngine {
         // Keep live analysis from calling sf_stop_search() during this pair of evals.
         try await StockfishSearchLock.withAssessmentSession {
             let beforeAssessment = try await engine.evaluate(fen: fenBefore, depth: depth)
+            let bestMoveSAN = Self.san(for: beforeAssessment.bestMove, fenBefore: fenBefore)
 
             // If the played move is the engine's #1 choice, it cannot be a blunder — even when a
             // concurrent analysis stop corrupts the fenAfter eval and invents a huge CPL.
@@ -55,7 +58,8 @@ actor MoveAssessmentEngine {
                     quality: .good,
                     centipawnLoss: 0,
                     scoreBefore: beforeAssessment.score,
-                    rawScoreAfter: MoveAssessmentClassifier.inverted(beforeAssessment.score)
+                    rawScoreAfter: MoveAssessmentClassifier.inverted(beforeAssessment.score),
+                    bestMoveSAN: bestMoveSAN
                 )
             }
 
@@ -88,8 +92,15 @@ actor MoveAssessmentEngine {
                 quality: quality,
                 centipawnLoss: centipawnLoss,
                 scoreBefore: beforeAssessment.score,
-                rawScoreAfter: rawScoreAfter
+                rawScoreAfter: rawScoreAfter,
+                bestMoveSAN: bestMoveSAN
             )
         }
+    }
+
+    private static func san(for bestMove: Move, fenBefore: String) -> String? {
+        let line = ChessKitMapping.formatEnginePrincipalLineSAN([bestMove.uci], fen: fenBefore)
+        guard line != "—", !line.isEmpty else { return nil }
+        return line
     }
 }

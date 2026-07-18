@@ -24,6 +24,10 @@ enum GameReportPDFComposer {
     struct KeyPosition {
         let title: String
         let subtitle: String
+        /// White-POV evaluation caption for the diagrammed position, e.g. `+0.42` or `+#5`.
+        let evaluationText: String?
+        /// Engine alternative when the played move was inaccurate (SAN).
+        let bestMoveSAN: String?
         /// Insert the diagram after this 0-based move index (−1 = before movetext).
         let afterMoveIndex: Int
         let fen: String
@@ -161,6 +165,8 @@ enum GameReportPDFComposer {
                 KeyPosition(
                     title: transition.label,
                     subtitle: moveLabel(forPly: transition.ply),
+                    evaluationText: evaluationText(atPly: transition.ply, moves: moves, summary: summary),
+                    bestMoveSAN: nil,
                     afterMoveIndex: transition.ply - 1,
                     fen: fens[transition.ply],
                     from: nil,
@@ -177,10 +183,13 @@ enum GameReportPDFComposer {
             guard fenPly < fens.count, !usedPlies.contains(fenPly) else { continue }
             usedPlies.insert(fenPly)
             let move = moves[moveIndex]
+            let showBestMove = move.quality?.showsAssessmentDecoration == true
             result.append(
                 KeyPosition(
                     title: criticalTitle(quality: critical.quality, san: move.san),
                     subtitle: moveLabel(forPly: critical.ply),
+                    evaluationText: evaluationText(atPly: fenPly, moves: moves, summary: summary),
+                    bestMoveSAN: showBestMove ? move.bestMoveSAN : nil,
                     afterMoveIndex: moveIndex,
                     fen: fens[fenPly],
                     from: move.from,
@@ -214,6 +223,29 @@ enum GameReportPDFComposer {
         case .good, .book: label = "Critical"
         }
         return "\(label) · \(san)"
+    }
+
+    /// White-POV eval after `ply` half-moves from the start.
+    private static func evaluationText(
+        atPly ply: Int,
+        moves: [ChessMove],
+        summary: GameAccuracySummary
+    ) -> String? {
+        if ply == 0 { return "0.00" }
+        let moveIndex = ply - 1
+        if moveIndex >= 0, moveIndex < moves.count,
+           let cp = moves[moveIndex].evaluationWhiteCentipawns {
+            return formatEvaluation(centipawns: cp)
+        }
+        if let point = summary.evaluationProgress.last(where: { $0.ply <= ply }),
+           point.ply > 0 || ply == 0 {
+            return String(format: "%+.2f", point.evaluationPawns)
+        }
+        return nil
+    }
+
+    private static func formatEvaluation(centipawns: Int) -> String {
+        MoveAssessmentClassifier.formatEvaluation(centipawns: centipawns)
     }
 
     // MARK: - Page chrome & header
@@ -1202,6 +1234,28 @@ enum GameReportPDFComposer {
             x: captionX,
             width: captionWidth
         )
+        if let evaluationText = position.evaluationText {
+            textY = drawText(
+                "Eval: \(evaluationText)",
+                font: .monospacedDigitSystemFont(ofSize: 10, weight: .semibold),
+                color: Theme.accent,
+                in: .zero,
+                at: textY + 4,
+                x: captionX,
+                width: captionWidth
+            )
+        }
+        if let bestMoveSAN = position.bestMoveSAN, !bestMoveSAN.isEmpty {
+            textY = drawText(
+                "Best: \(bestMoveSAN)",
+                font: .systemFont(ofSize: 10, weight: .semibold),
+                color: .black,
+                in: .zero,
+                at: textY + 3,
+                x: captionX,
+                width: captionWidth
+            )
+        }
 
         let bottom = max(boardY + boardSide, textY) + 10
         drawHorizontalRule(at: bottom, x: Theme.margin, width: Theme.contentWidth, color: Theme.rule, thickness: 0.6)

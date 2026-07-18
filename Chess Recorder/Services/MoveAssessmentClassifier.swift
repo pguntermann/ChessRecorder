@@ -70,7 +70,8 @@ enum MoveAssessmentClassifier: Sendable {
     }
 
     /// White-perspective eval after `moveIndex` (0-based ply), for charting / persistence.
-    /// Mates map to ±`mateDisplayCentipawns` so they sit on the ±10 pawn chart edge.
+    /// Forced mates map to ±(`mateDisplayCentipawns` + mate-in-N) so the chart still clamps at ±10
+    /// pawns while PDF/UI can recover the mate distance (`+#5`).
     nonisolated static let mateDisplayCentipawns = 1_000
 
     /// - Parameter deliveredCheckmate: When the played move mates, engines often return
@@ -93,7 +94,7 @@ enum MoveAssessmentClassifier: Sendable {
     }
 
     nonisolated static func mateDisplayCentipawns(forDeliveredMateAtMoveIndex moveIndex: Int) -> Int {
-        // The side that just moved delivered mate.
+        // The side that just moved delivered mate (no remaining mate-in distance).
         moveIndex % 2 == 0 ? mateDisplayCentipawns : -mateDisplayCentipawns
     }
 
@@ -102,13 +103,27 @@ enum MoveAssessmentClassifier: Sendable {
         case .centipawns(let cp):
             return cp
         case .mate(let moves) where moves > 0:
-            return mateDisplayCentipawns
+            return mateDisplayCentipawns + moves
         case .mate(let moves) where moves < 0:
-            return -mateDisplayCentipawns
+            return -(mateDisplayCentipawns + abs(moves))
         case .mate:
             // mate(0) is handled in `whitePerspectiveCentipawns` with move context.
             return 0
         }
+    }
+
+    /// White-POV eval label, e.g. `+0.42`, `+#5`, or `+#` for a delivered mate.
+    nonisolated static func formatEvaluation(centipawns: Int) -> String {
+        let magnitude = abs(centipawns)
+        guard magnitude >= mateDisplayCentipawns else {
+            return String(format: "%+.2f", Double(centipawns) / 100.0)
+        }
+        let sign = centipawns > 0 ? "+" : "−"
+        let mateIn = magnitude - mateDisplayCentipawns
+        if mateIn > 0 {
+            return "\(sign)#\(mateIn)"
+        }
+        return "\(sign)#"
     }
 
     nonisolated static func centipawnValue(of score: Score) -> Int {

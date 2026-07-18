@@ -15,6 +15,12 @@ struct GameAccuracySummarySheet: View {
         let url: URL
     }
 
+    private struct ChessComAnalysisLink: Identifiable {
+        let id = UUID()
+        let url: URL
+        let pgn: String
+    }
+
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
 
@@ -31,6 +37,7 @@ struct GameAccuracySummarySheet: View {
     @State private var isExportingPDF = false
     @State private var exportErrorMessage: String?
     @State private var pdfExportItem: ShareablePDFExport?
+    @State private var chessComLink: ChessComAnalysisLink?
 
     /// Uses the PGN tag when it has a real value; otherwise `White` / `Black`.
     static func playerDisplayName(from tag: String, fallback: String) -> String {
@@ -44,6 +51,21 @@ struct GameAccuracySummarySheet: View {
             fromMoves: recordedGame.moves,
             result: recordedGame.result,
             maxCharacterCount: LichessAnalysisURL.maxBrowserURLCharacterCount
+        )
+    }
+
+    private var chessComAnalysisURL: URL? {
+        ChessComAnalysisURL.make(
+            fromMoves: recordedGame.moves,
+            result: recordedGame.result,
+            maxCharacterCount: ChessComAnalysisURL.maxBrowserURLCharacterCount
+        )
+    }
+
+    private var chessComPGN: String? {
+        ChessComAnalysisURL.pgnMovetext(
+            from: recordedGame.moves,
+            result: recordedGame.result
         )
     }
 
@@ -130,12 +152,42 @@ struct GameAccuracySummarySheet: View {
                             }
                             .accessibilityElement(children: .combine)
                         }
+
+                        if let url = chessComAnalysisURL, let pgn = chessComPGN {
+                            Button {
+                                chessComLink = ChessComAnalysisLink(url: url, pgn: pgn)
+                            } label: {
+                                Label("Analyze on Chess.com", systemImage: "arrow.up.right.square")
+                            }
+                            .accessibilityHint("Opens Chess.com analysis and copies the PGN")
+                        } else {
+                            Label {
+                                Text("This game is too long to open as a Chess.com analysis link. Share the PGN instead.")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            } icon: {
+                                Image(systemName: "link.badge.plus")
+                                    .foregroundStyle(.secondary)
+                            }
+                            .accessibilityElement(children: .combine)
+                        }
+
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("For the best indepth Desktop analysis, use CARA — the free open source Chess Analysis and Review Application for macOS, Windows and Linux.")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                                .multilineTextAlignment(.leading)
+                                .fixedSize(horizontal: false, vertical: true)
+
+                            Link(destination: AppInfo.caraWebsiteURL) {
+                                Text(AppInfo.caraWebsiteURL.absoluteString)
+                                    .font(.footnote)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            .accessibilityLabel("CARA website")
+                        }
                     } header: {
                         Text("External analysis")
-                    } footer: {
-                        if lichessAnalysisURL != nil {
-                            Text("Opens the moves on Lichess’s analysis board in Safari or the Lichess app.")
-                        }
                     }
                 }
             }
@@ -182,6 +234,9 @@ struct GameAccuracySummarySheet: View {
             #if os(iOS)
             .sheet(item: $pdfExportItem, onDismiss: cleanupPDFExport) { item in
                 ShareSheet(items: [item.url])
+            }
+            .fullScreenCover(item: $chessComLink) { link in
+                ChessComAnalysisBrowser(url: link.url, pgn: link.pgn)
             }
             #endif
             .alert("Export Failed", isPresented: Binding(

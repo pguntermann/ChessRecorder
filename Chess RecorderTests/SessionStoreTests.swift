@@ -252,7 +252,8 @@ final class SessionStoreTests: XCTestCase {
                     castling: nil,
                     quality: nil,
                     centipawnLoss: nil,
-                    evaluationWhiteCentipawns: nil
+                    evaluationWhiteCentipawns: nil,
+                    bestMoveSAN: nil
                 )
             ],
             round: 1,
@@ -721,7 +722,8 @@ private enum SessionTestFixtures {
             castling: move.castling,
             quality: move.quality?.rawValue,
             centipawnLoss: move.centipawnLoss,
-            evaluationWhiteCentipawns: move.evaluationWhiteCentipawns
+            evaluationWhiteCentipawns: move.evaluationWhiteCentipawns,
+            bestMoveSAN: move.bestMoveSAN
         )
     }
 }

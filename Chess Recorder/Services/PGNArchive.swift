@@ -258,6 +258,7 @@ final class PGNArchive {
         quality: MoveQuality,
         centipawnLoss: Int? = nil,
         evaluationWhiteCentipawns: Int? = nil,
+        bestMoveSAN: String? = nil,
         expectedSAN: String,
         expectedFrom: ChessPosition? = nil,
         expectedTo: ChessPosition? = nil
@@ -281,7 +282,8 @@ final class PGNArchive {
         games[index].moves[moveIndex] = move.withQuality(
             quality,
             centipawnLoss: quality == .book ? nil : centipawnLoss,
-            evaluationWhiteCentipawns: quality == .book ? nil : evaluationWhiteCentipawns
+            evaluationWhiteCentipawns: quality == .book ? nil : evaluationWhiteCentipawns,
+            bestMoveSAN: quality == .book ? nil : bestMoveSAN
         )
         // Reassign the game element so @Observable reliably publishes nested move changes.
         games[index] = games[index]
@@ -299,8 +301,14 @@ final class PGNArchive {
                 let move = games[gameIndex].moves[moveIndex]
                 guard move.quality != nil
                     || move.centipawnLoss != nil
-                    || move.evaluationWhiteCentipawns != nil else { continue }
-                games[gameIndex].moves[moveIndex] = move.withQuality(nil, centipawnLoss: nil, evaluationWhiteCentipawns: nil)
+                    || move.evaluationWhiteCentipawns != nil
+                    || move.bestMoveSAN != nil else { continue }
+                games[gameIndex].moves[moveIndex] = move.withQuality(
+                    nil,
+                    centipawnLoss: nil,
+                    evaluationWhiteCentipawns: nil,
+                    bestMoveSAN: nil
+                )
                 cleared += 1
                 didClearGame = true
             }
@@ -324,7 +332,8 @@ final class PGNArchive {
             merged[index] = merged[index].withQuality(
                 quality,
                 centipawnLoss: oldMoves[index].centipawnLoss,
-                evaluationWhiteCentipawns: oldMoves[index].evaluationWhiteCentipawns
+                evaluationWhiteCentipawns: oldMoves[index].evaluationWhiteCentipawns,
+                bestMoveSAN: oldMoves[index].bestMoveSAN
             )
         }
         return merged

@@ -360,6 +360,7 @@ final class MoveAssessmentService {
                             quality: result.quality,
                             centipawnLoss: result.centipawnLoss,
                             evaluationWhiteCentipawns: evalCP,
+                            bestMoveSAN: result.bestMoveSAN,
                             expectedSAN: job.playedMoveSAN,
                             expectedFrom: job.from,
                             expectedTo: job.to

@@ -92,8 +92,10 @@ nonisolated struct ChessMove: Sendable {
     /// Centipawn loss vs best move for this ply (nil for book / unassessed / legacy).
     let centipawnLoss: Int?
     /// White-perspective evaluation after this move, in centipawns.
-    /// Mates are stored at ±1000 so they sit on the ±10 pawn chart edge.
+    /// Forced mates use ±(1000 + mate-in-N); delivered mate is ±1000 (chart edge ±10 pawns).
     let evaluationWhiteCentipawns: Int?
+    /// Engine best move (SAN) from the position before this ply was played.
+    let bestMoveSAN: String?
 
     var algebraicNotation: String { san }
 
@@ -109,7 +111,8 @@ nonisolated struct ChessMove: Sendable {
         castling: String?,
         quality: MoveQuality? = nil,
         centipawnLoss: Int? = nil,
-        evaluationWhiteCentipawns: Int? = nil
+        evaluationWhiteCentipawns: Int? = nil,
+        bestMoveSAN: String? = nil
     ) {
         self.san = san
         self.piece = piece
@@ -123,6 +126,7 @@ nonisolated struct ChessMove: Sendable {
         self.quality = quality
         self.centipawnLoss = centipawnLoss
         self.evaluationWhiteCentipawns = evaluationWhiteCentipawns
+        self.bestMoveSAN = bestMoveSAN
     }
 
     func matchesPositionally(_ other: ChessMove) -> Bool {
@@ -137,7 +141,8 @@ nonisolated struct ChessMove: Sendable {
     func withQuality(
         _ quality: MoveQuality?,
         centipawnLoss: Int? = nil,
-        evaluationWhiteCentipawns: Int? = nil
+        evaluationWhiteCentipawns: Int? = nil,
+        bestMoveSAN: String? = nil
     ) -> ChessMove {
         ChessMove(
             san: san,
@@ -151,7 +156,8 @@ nonisolated struct ChessMove: Sendable {
             castling: castling,
             quality: quality,
             centipawnLoss: centipawnLoss,
-            evaluationWhiteCentipawns: evaluationWhiteCentipawns
+            evaluationWhiteCentipawns: evaluationWhiteCentipawns,
+            bestMoveSAN: bestMoveSAN
         )
     }
 }

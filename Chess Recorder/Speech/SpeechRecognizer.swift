@@ -762,6 +762,9 @@ class SpeechRecognizer {
             guard let result else { return }
             let rawASR = result.bestTranscription.formattedString
             self.lastASRTranscriptBeforeMerge = rawASR
+            if self.isSpeechPipelineTracingEnabled {
+                self.logSpeechDiagnostic(Self.formatASRCallbackTrace(result, generation: generation))
+            }
             let newTranscript = self.mergeCaptureTranscriptCorrections(in: rawASR)
             
             Task { @MainActor in
@@ -1287,6 +1290,33 @@ class SpeechRecognizer {
     
     private func logSpeechDiagnostic(_ message: String) {
         print("SpeechRecognizer: \(message)")
+    }
+
+    /// Compact pre-merge ASR dump: best + N-best + segment confidence/alts.
+    private static func formatASRCallbackTrace(_ result: SFSpeechRecognitionResult, generation: Int) -> String {
+        let best = result.bestTranscription
+        var lines: [String] = [
+            "ASR (gen=\(generation) final=\(result.isFinal)) best=\"\(best.formattedString)\""
+        ]
+
+        let nbest = result.transcriptions.prefix(3).map { "\"\($0.formattedString)\"" }
+        if !nbest.isEmpty {
+            lines.append("  nbest: \(nbest.joined(separator: " | "))")
+        }
+
+        let segments = best.segments.map { segment -> String in
+            let conf = String(format: "%.2f", segment.confidence)
+            var part = "\(segment.substring)(\(conf))"
+            if !segment.alternativeSubstrings.isEmpty {
+                part += "[\(segment.alternativeSubstrings.joined(separator: ","))]"
+            }
+            return part
+        }
+        if !segments.isEmpty {
+            lines.append("  segs: \(segments.joined(separator: " | "))")
+        }
+
+        return lines.joined(separator: "\nSpeechRecognizer: ")
     }
     
     private static func errorDescription(_ error: Error) -> String {

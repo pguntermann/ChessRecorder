@@ -12,7 +12,33 @@ struct MoveAssessmentJob: Sendable, Equatable {
     let fenBeforeMove: String
     let fenAfterMove: String
     let playedMoveSAN: String
+    let from: ChessPosition
+    let to: ChessPosition
     let isCheckmate: Bool
+    /// Failed engine attempts so far; used to retry once before abandoning a ply.
+    let attempt: Int
+
+    init(
+        gameID: UUID,
+        moveIndex: Int,
+        fenBeforeMove: String,
+        fenAfterMove: String,
+        playedMoveSAN: String,
+        from: ChessPosition,
+        to: ChessPosition,
+        isCheckmate: Bool,
+        attempt: Int = 0
+    ) {
+        self.gameID = gameID
+        self.moveIndex = moveIndex
+        self.fenBeforeMove = fenBeforeMove
+        self.fenAfterMove = fenAfterMove
+        self.playedMoveSAN = playedMoveSAN
+        self.from = from
+        self.to = to
+        self.isCheckmate = isCheckmate
+        self.attempt = attempt
+    }
 }
 
 struct MoveAssessmentProgress: Equatable, Sendable {
@@ -133,7 +159,8 @@ final class MoveAssessmentService {
                 }
 
                 let fenAfter = fens[moveIndex + 1]
-                let playedSAN = game.moves[moveIndex].san
+                let recordedMove = game.moves[moveIndex]
+                let playedSAN = recordedMove.san
 
                 if isBookMove(fenBefore: fens[moveIndex], fenAfter: fenAfter) {
                     let applied = archive.applyMoveAssessment(
@@ -141,7 +168,9 @@ final class MoveAssessmentService {
                         moveIndex: moveIndex,
                         quality: .book,
                         centipawnLoss: nil,
-                        expectedSAN: playedSAN
+                        expectedSAN: recordedMove.san,
+                        expectedFrom: recordedMove.from,
+                        expectedTo: recordedMove.to
                     )
                     if applied {
                         booked += 1
@@ -162,8 +191,10 @@ final class MoveAssessmentService {
                     moveIndex: moveIndex,
                     fenBeforeMove: fens[moveIndex],
                     fenAfterMove: fenAfter,
-                    playedMoveSAN: playedSAN,
-                    isCheckmate: game.moves[moveIndex].isCheckmate
+                    playedMoveSAN: recordedMove.san,
+                    from: recordedMove.from,
+                    to: recordedMove.to,
+                    isCheckmate: recordedMove.isCheckmate
                 )
                 enqueue(job, archive: archive, logEnqueue: false)
                 queued += 1
@@ -278,7 +309,9 @@ final class MoveAssessmentService {
                             moveIndex: job.moveIndex,
                             quality: .book,
                             centipawnLoss: nil,
-                            expectedSAN: job.playedMoveSAN
+                            expectedSAN: job.playedMoveSAN,
+                            expectedFrom: job.from,
+                            expectedTo: job.to
                         )
                         if applied {
                             self.onAssessmentApplied?()
@@ -300,9 +333,9 @@ final class MoveAssessmentService {
                 while await MainActor.run(body: { self.isLiveAnalysisBusy }) && !Task.isCancelled {
                     try? await Task.sleep(for: .milliseconds(100))
                 }
-                guard !Task.isCancelled else {
+                if Task.isCancelled {
                     await MainActor.run {
-                        self.log("cancelled while waiting for live analysis \(Self.jobLabel(job))")
+                        self.requeueInterruptedJob(job, reason: "cancelled while waiting for live analysis")
                     }
                     return
                 }
@@ -311,7 +344,8 @@ final class MoveAssessmentService {
                     let result = try await engineWorker.assessMove(
                         fenBefore: job.fenBeforeMove,
                         fenAfter: job.fenAfterMove,
-                        depth: depth
+                        depth: depth,
+                        deliveredCheckmate: job.isCheckmate
                     )
 
                     await MainActor.run {
@@ -326,7 +360,9 @@ final class MoveAssessmentService {
                             quality: result.quality,
                             centipawnLoss: result.centipawnLoss,
                             evaluationWhiteCentipawns: evalCP,
-                            expectedSAN: job.playedMoveSAN
+                            expectedSAN: job.playedMoveSAN,
+                            expectedFrom: job.from,
+                            expectedTo: job.to
                         )
                         if applied {
                             self.onAssessmentApplied?()
@@ -341,17 +377,14 @@ final class MoveAssessmentService {
                         self.finishJob(job)
                     }
                 } catch {
-                    guard !Task.isCancelled else {
+                    if Task.isCancelled {
                         await MainActor.run {
-                            self.log("cancelled during \(Self.jobLabel(job))")
+                            self.requeueInterruptedJob(job, reason: "cancelled during assessment")
                         }
                         return
                     }
                     await MainActor.run {
-                        self.log(
-                            "FAIL \(Self.jobLabel(job)) \(Self.errorDescription(error)) queue=\(self.pendingJobCount)"
-                        )
-                        self.finishJob(job)
+                        self.handleAssessmentFailure(job, error: error, archive: archive)
                     }
                 }
             }
@@ -363,9 +396,78 @@ final class MoveAssessmentService {
             activeJob = nil
         }
         refreshPendingState()
-        if pendingJobs.isEmpty {
-            processorTask = nil
+        // Do not nil `processorTask` here — the loop owns that. Clearing it while the
+        // processor is between jobs lets a second processor start and race the queue.
+    }
+
+    /// Put an in-flight job back so cancel / game-switch cannot leave a permanent hourglass.
+    private func requeueInterruptedJob(_ job: MoveAssessmentJob, reason: String) {
+        if activeJob == job {
+            activeJob = nil
         }
+        pendingJobs.removeAll { $0.gameID == job.gameID && $0.moveIndex == job.moveIndex }
+        pendingJobs.insert(job, at: 0)
+        refreshPendingState()
+        log("requeue \(Self.jobLabel(job)) — \(reason) queue=\(pendingJobCount)")
+    }
+
+    private func handleAssessmentFailure(
+        _ job: MoveAssessmentJob,
+        error: Error,
+        archive: PGNArchive
+    ) {
+        // Mating moves often fail fenAfter eval; still mark them so the hourglass clears.
+        if job.isCheckmate {
+            let evalCP = MoveAssessmentClassifier.whitePerspectiveCentipawns(
+                rawScoreAfter: .mate(0),
+                moveIndex: job.moveIndex,
+                deliveredCheckmate: true
+            )
+            let applied = archive.applyMoveAssessment(
+                gameID: job.gameID,
+                moveIndex: job.moveIndex,
+                quality: .good,
+                centipawnLoss: 0,
+                evaluationWhiteCentipawns: evalCP,
+                expectedSAN: job.playedMoveSAN,
+                expectedFrom: job.from,
+                expectedTo: job.to
+            )
+            if applied {
+                onAssessmentApplied?()
+                log("ok \(Self.jobLabel(job)) good cpl=0 (checkmate fallback) queue=\(pendingJobCount)")
+            } else {
+                log("checkmate fallback apply missed \(Self.jobLabel(job))")
+            }
+            finishJob(job)
+            return
+        }
+
+        if job.attempt < 1 {
+            let retry = MoveAssessmentJob(
+                gameID: job.gameID,
+                moveIndex: job.moveIndex,
+                fenBeforeMove: job.fenBeforeMove,
+                fenAfterMove: job.fenAfterMove,
+                playedMoveSAN: job.playedMoveSAN,
+                from: job.from,
+                to: job.to,
+                isCheckmate: job.isCheckmate,
+                attempt: job.attempt + 1
+            )
+            pendingJobs.removeAll { $0.gameID == job.gameID && $0.moveIndex == job.moveIndex }
+            pendingJobs.insert(retry, at: 0)
+            log(
+                "retry \(Self.jobLabel(job)) after \(Self.errorDescription(error)) queue=\(pendingJobCount)"
+            )
+            finishJob(job)
+            return
+        }
+
+        log(
+            "FAIL \(Self.jobLabel(job)) \(Self.errorDescription(error)) queue=\(pendingJobCount)"
+        )
+        finishJob(job)
     }
 
     private func isBookMove(fenBefore: String, fenAfter: String) -> Bool {

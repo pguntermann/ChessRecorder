@@ -279,6 +279,31 @@ final class PGNArchiveTests: XCTestCase {
         XCTAssertEqual(archive.clearAllMoveAssessments(), 0)
     }
 
+    func testApplyMoveAssessmentAcceptsMatchingSquaresWhenSANDiffers() {
+        let archive = PGNArchive()
+        let game = ChessGame()
+
+        archive.ensureActiveGameExists(metadata: testMetadata)
+        playE4E5(on: game)
+        archive.syncActiveGame(from: game, metadata: testMetadata)
+        let gameID = archive.activeGameID!
+        let move = archive.games.first { $0.id == gameID }!.moves[0]
+
+        // Job still has the pre-sync SAN string, but from/to match the archived ply.
+        XCTAssertTrue(
+            archive.applyMoveAssessment(
+                gameID: gameID,
+                moveIndex: 0,
+                quality: .good,
+                centipawnLoss: 0,
+                expectedSAN: "e2e4",
+                expectedFrom: move.from,
+                expectedTo: move.to
+            )
+        )
+        XCTAssertEqual(archive.games.first { $0.id == gameID }?.moves[0].quality, .good)
+    }
+
     func testSyncActiveGamePreservesExistingMoveQualities() {
         let archive = PGNArchive()
         let game = ChessGame()

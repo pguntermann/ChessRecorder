@@ -636,6 +636,8 @@ struct ContentView: View {
             fenBeforeMove: fenSequence[moveIndex],
             fenAfterMove: fenSequence[moveIndex + 1],
             playedMoveSAN: playedMove.san,
+            from: playedMove.from,
+            to: playedMove.to,
             isCheckmate: playedMove.isCheckmate
         )
         moveAssessment.enqueue(job, archive: pgnArchive)

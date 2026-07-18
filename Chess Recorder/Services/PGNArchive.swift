@@ -258,16 +258,27 @@ final class PGNArchive {
         quality: MoveQuality,
         centipawnLoss: Int? = nil,
         evaluationWhiteCentipawns: Int? = nil,
-        expectedSAN: String
+        expectedSAN: String,
+        expectedFrom: ChessPosition? = nil,
+        expectedTo: ChessPosition? = nil
     ) -> Bool {
         guard let index = games.firstIndex(where: { $0.id == gameID }),
               moveIndex >= 0,
-              moveIndex < games[index].moves.count,
-              games[index].moves[moveIndex].san == expectedSAN else {
+              moveIndex < games[index].moves.count else {
             return false
         }
 
-        games[index].moves[moveIndex] = games[index].moves[moveIndex].withQuality(
+        let move = games[index].moves[moveIndex]
+        // Prefer SAN, but also accept from/to — import enqueue can race with ChessKit SAN
+        // rewrite on activate (e.g. disambiguation / check markers), which left hourglasses stuck.
+        let sanMatches = move.san == expectedSAN
+        let squaresMatch = expectedFrom.map { $0 == move.from } == true
+            && expectedTo.map { $0 == move.to } == true
+        guard sanMatches || squaresMatch else {
+            return false
+        }
+
+        games[index].moves[moveIndex] = move.withQuality(
             quality,
             centipawnLoss: quality == .book ? nil : centipawnLoss,
             evaluationWhiteCentipawns: quality == .book ? nil : evaluationWhiteCentipawns

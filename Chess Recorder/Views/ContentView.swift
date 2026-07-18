@@ -127,7 +127,9 @@ struct ContentView: View {
                 openingService: openingService
             )
             moveAssessment.onAssessmentApplied = {
-                scheduleSessionPersist()
+                // Persist archive as-is. Do not sync the live board here — that rewrites
+                // moves from ChessGame (no qualities) and can drop mid-assessment updates.
+                sessionStore.schedulePersist(snapshot: SessionSnapshot(archive: pgnArchive))
             }
             await speechRecognizer.startup(with: settingsStore.settings.defaultRecognitionLanguage)
             speechRecognizer.setInitializationPhase(.preparingEngine)
@@ -155,10 +157,11 @@ struct ContentView: View {
         .onChange(of: settingsStore.settings.dictationPauseSeconds) { _, newValue in
             speechRecognizer.dictationPauseSeconds = newValue
         }
-        .onChange(of: developerModeStore.isSpeechPipelineTracingEnabled) { _, enabled in
-            speechRecognizer.isSpeechPipelineTracingEnabled =
-                DeveloperModeStore.isAvailable && enabled
-        }
+        .modifier(DeveloperModeFlagSyncModifier(
+            developerModeStore: developerModeStore,
+            speechRecognizer: speechRecognizer,
+            moveAssessment: moveAssessment
+        ))
         .onChange(of: settingsStore.settings.engineAnalysisVisible) { _, isVisible in
             if !isVisible {
                 engineAnalysis.stop()
@@ -468,6 +471,7 @@ struct ContentView: View {
                     showMoveAssessments: settingsStore.settings.moveAssessmentEnabled,
                     assessmentColors: settingsStore.settings.moveAssessmentColors,
                     iconHitSize: iconHitSize,
+                    isChromeReady: isAppReady,
                     onGoToFirst: navigateToFirst,
                     onGoToPrevious: navigateBack,
                     onGoToNext: navigateForward,
@@ -749,6 +753,10 @@ struct ContentView: View {
     private func setupSpeechRecognizer() {
         speechRecognizer.isSpeechPipelineTracingEnabled =
             DeveloperModeStore.isAvailable && developerModeStore.isSpeechPipelineTracingEnabled
+        speechRecognizer.isSpeechRecognitionFailureDiagnosticsEnabled =
+            DeveloperModeStore.isAvailable && developerModeStore.isSpeechRecognitionFailureDiagnosticsEnabled
+        moveAssessment.isTracingEnabled =
+            DeveloperModeStore.isAvailable && developerModeStore.isMoveAssessmentTracingEnabled
         speechRecognizer.onMoveCandidatesDetected = { candidates, preferCaptures in
             self.processVoiceMoveCandidates(candidates, preferCaptures: preferCaptures)
         }
@@ -1222,6 +1230,36 @@ private struct BoardWithEvaluationLayout: View {
             return nil
         }
         return AnalysisArrowMove(from: move.from, to: move.to)
+    }
+}
+
+/// Keeps developer-mode tracing flags in sync without bloating `ContentView.body` type-checking.
+private struct DeveloperModeFlagSyncModifier: ViewModifier {
+    @Bindable var developerModeStore: DeveloperModeStore
+    var speechRecognizer: SpeechRecognizer
+    var moveAssessment: MoveAssessmentService
+
+    func body(content: Content) -> some View {
+        content
+            .onChange(of: developerModeStore.isSpeechPipelineTracingEnabled) { _, _ in
+                applyFlags()
+            }
+            .onChange(of: developerModeStore.isSpeechRecognitionFailureDiagnosticsEnabled) { _, _ in
+                applyFlags()
+            }
+            .onChange(of: developerModeStore.isMoveAssessmentTracingEnabled) { _, _ in
+                applyFlags()
+            }
+    }
+
+    private func applyFlags() {
+        let available = DeveloperModeStore.isAvailable
+        speechRecognizer.isSpeechPipelineTracingEnabled =
+            available && developerModeStore.isSpeechPipelineTracingEnabled
+        speechRecognizer.isSpeechRecognitionFailureDiagnosticsEnabled =
+            available && developerModeStore.isSpeechRecognitionFailureDiagnosticsEnabled
+        moveAssessment.isTracingEnabled =
+            available && developerModeStore.isMoveAssessmentTracingEnabled
     }
 }
 

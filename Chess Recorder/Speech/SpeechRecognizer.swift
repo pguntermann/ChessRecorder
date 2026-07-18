@@ -94,6 +94,7 @@ class SpeechRecognizer {
     private var lastPartialLoggedGeneration = 0
     private var lastASRTranscriptBeforeMerge = ""
     var isSpeechPipelineTracingEnabled = false
+    var isSpeechRecognitionFailureDiagnosticsEnabled = false
     
     private let undoCooldown: TimeInterval = 1.0
     private let finalPauseNanoseconds: UInt64 = 150_000_000
@@ -747,6 +748,7 @@ class SpeechRecognizer {
                     }
 
                     self.logSpeechDiagnostic("recognition error: \(Self.errorDescription(error)) (generation=\(generation))")
+                    self.logRecognitionFailureDiagnosticsIfEnabled(error: error, generation: generation)
                     self.consecutiveTerminalRecognitionFailures += 1
                     if self.consecutiveTerminalRecognitionFailures > self.maxTerminalRecognitionRecoveries {
                         self.abandonRecognitionRecovery(
@@ -1292,6 +1294,21 @@ class SpeechRecognizer {
         print("SpeechRecognizer: \(message)")
     }
 
+    private func logRecognitionFailureDiagnosticsIfEnabled(error: Error, generation: Int) {
+        guard isSpeechRecognitionFailureDiagnosticsEnabled else { return }
+        logSpeechDiagnostic(
+            Self.formatRecognitionFailureDiagnostics(
+                error: error,
+                generation: generation,
+                language: currentLanguage,
+                speechRecognizer: speechRecognizer,
+                recognitionRequest: recognitionRequest,
+                languageModelCompilationFailed: languageModelCompilationFailed,
+                hasCustomLanguageModel: ChessLanguageModel.configuration(for: currentLanguage) != nil
+            )
+        )
+    }
+
     /// Compact pre-merge ASR dump: best + N-best + segment confidence/alts.
     private static func formatASRCallbackTrace(_ result: SFSpeechRecognitionResult, generation: Int) -> String {
         let best = result.bestTranscription
@@ -1317,6 +1334,93 @@ class SpeechRecognizer {
         }
 
         return lines.joined(separator: "\nSpeechRecognizer: ")
+    }
+
+    private static func formatRecognitionFailureDiagnostics(
+        error: Error,
+        generation: Int,
+        language: RecognitionLanguage,
+        speechRecognizer: SFSpeechRecognizer?,
+        recognitionRequest: SFSpeechAudioBufferRecognitionRequest?,
+        languageModelCompilationFailed: Bool,
+        hasCustomLanguageModel: Bool
+    ) -> String {
+        let session = AVAudioSession.sharedInstance()
+        #if targetEnvironment(simulator)
+        let runtime = "simulator"
+        #else
+        let runtime = "device"
+        #endif
+
+        var lines: [String] = [
+            "recognition failure diagnostics (gen=\(generation) runtime=\(runtime))",
+            "  error: \(detailedErrorDescription(error))",
+            "  language=\(language.rawValue) speechAuth=\(speechAuthorizationDescription()) micAuth=\(microphonePermissionDescription())",
+            "  recognizer: available=\(speechRecognizer?.isAvailable ?? false) supportsOnDevice=\(speechRecognizer?.supportsOnDeviceRecognition ?? false) locale=\(speechRecognizer?.locale.identifier ?? "nil")",
+            "  request: onDevice=\(recognitionRequest.map { String($0.requiresOnDeviceRecognition) } ?? "nil") customLM=\(recognitionRequest?.customizedLanguageModel != nil) contextualStrings=\(recognitionRequest?.contextualStrings.count ?? 0)",
+            "  clm: compilationFailed=\(languageModelCompilationFailed) configPresent=\(hasCustomLanguageModel)",
+            "  audio: category=\(session.category.rawValue) mode=\(session.mode.rawValue) options=\(session.categoryOptions.rawValue) sampleRate=\(session.sampleRate) ioBuffer=\(session.ioBufferDuration)",
+            "  route: \(audioRouteDescription())"
+        ]
+
+        return lines.joined(separator: "\nSpeechRecognizer: ")
+    }
+
+    private static func detailedErrorDescription(_ error: Error, depth: Int = 0) -> String {
+        let nsError = error as NSError
+        var parts = [
+            "\(nsError.domain) \(nsError.code) \"\(nsError.localizedDescription)\""
+        ]
+        if let reason = nsError.localizedFailureReason, !reason.isEmpty {
+            parts.append("reason=\"\(reason)\"")
+        }
+        if let suggestion = nsError.localizedRecoverySuggestion, !suggestion.isEmpty {
+            parts.append("suggestion=\"\(suggestion)\"")
+        }
+
+        let indent = String(repeating: "  ", count: depth + 1)
+        var lines = [parts.joined(separator: " ")]
+
+        if !nsError.userInfo.isEmpty {
+            let keys = nsError.userInfo.keys.map(String.init(describing:)).sorted()
+            for key in keys {
+                if key == NSLocalizedDescriptionKey
+                    || key == NSLocalizedFailureReasonErrorKey
+                    || key == NSLocalizedRecoverySuggestionErrorKey {
+                    continue
+                }
+                guard let value = nsError.userInfo[key] else { continue }
+                if let underlying = value as? Error {
+                    lines.append("\(indent)userInfo[\(key)] => \(detailedErrorDescription(underlying, depth: depth + 1))")
+                } else {
+                    lines.append("\(indent)userInfo[\(key)] = \(stringifyUserInfoValue(value))")
+                }
+            }
+        }
+
+        return lines.joined(separator: "\nSpeechRecognizer: ")
+    }
+
+    private static func stringifyUserInfoValue(_ value: Any) -> String {
+        switch value {
+        case let string as String:
+            return "\"\(string)\""
+        case let number as NSNumber:
+            return number.stringValue
+        case let url as URL:
+            return url.absoluteString
+        case let data as Data:
+            return "Data(\(data.count) bytes)"
+        case let array as [Any]:
+            return "[\(array.map(stringifyUserInfoValue).joined(separator: ", "))]"
+        case let dict as [AnyHashable: Any]:
+            let body = dict.keys.map(String.init(describing:)).sorted().map { key in
+                "\(key)=\(stringifyUserInfoValue(dict[key] as Any))"
+            }.joined(separator: ", ")
+            return "{\(body)}"
+        default:
+            return String(describing: value)
+        }
     }
     
     private static func errorDescription(_ error: Error) -> String {

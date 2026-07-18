@@ -159,4 +159,40 @@ final class MoveAssessmentClassifierTests: XCTestCase {
             )
         )
     }
+
+    func testWhitePerspectiveCentipawnsInvertsAfterWhiteMove() {
+        // After White moves, STM is Black; raw +40 for Black → White POV −40.
+        XCTAssertEqual(
+            MoveAssessmentClassifier.whitePerspectiveCentipawns(
+                rawScoreAfter: .centipawns(40),
+                moveIndex: 0
+            ),
+            -40
+        )
+        // After Black moves, STM is White; raw +25 stays +25.
+        XCTAssertEqual(
+            MoveAssessmentClassifier.whitePerspectiveCentipawns(
+                rawScoreAfter: .centipawns(25),
+                moveIndex: 1
+            ),
+            25
+        )
+    }
+
+    func testWhitePerspectiveMatesMapToDisplayCap() {
+        XCTAssertEqual(
+            MoveAssessmentClassifier.whitePerspectiveCentipawns(
+                rawScoreAfter: .mate(-3),
+                moveIndex: 0
+            ),
+            MoveAssessmentClassifier.mateDisplayCentipawns
+        )
+        XCTAssertEqual(
+            MoveAssessmentClassifier.whitePerspectiveCentipawns(
+                rawScoreAfter: .mate(-2),
+                moveIndex: 1
+            ),
+            -MoveAssessmentClassifier.mateDisplayCentipawns
+        )
+    }
 }

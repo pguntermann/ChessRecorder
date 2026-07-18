@@ -147,10 +147,10 @@ final class PersonalVocabularyStore {
         onProgress: (@MainActor (_ loaded: Int, _ total: Int) -> Void)? = nil
     ) async -> Int {
         let trainingItems = Self.commonTrainingPhrases(for: language)
-        let recognitionItems = ChessSpeechTrainingPhrases.generatedRecognitionPhraseCounts(for: language)
-        let total = trainingItems.count + recognitionItems.count
+        let recognitionItemCount = ChessSpeechTrainingPhrases.generatedRecognitionPhraseCounts(for: language).count
+        let total = trainingItems.count + recognitionItemCount
         let trainingDone = Self.trainingSeedUpToDate(for: language, in: phrases)
-        let recognitionDone = Self.recognitionSeedUpToDate(for: language, in: phrases)
+        let recognitionDone = Self.recognitionSeedUpToDate()
 
         if trainingDone && recognitionDone {
             if let onProgress {
@@ -163,30 +163,6 @@ final class PersonalVocabularyStore {
 
         var changes = 0
 
-        for retired in Self.retiredBuiltInMovePhrases(for: language) {
-            let before = phrases.count
-            phrases.removeAll {
-                $0.source == .builtIn &&
-                $0.languageCode == language.rawValue &&
-                Self.normalizePhrase($0.phrase, language: language) == retired
-            }
-            if phrases.count != before { changes += 1 }
-        }
-
-        for retired in Self.retiredRecognitionPhrases(for: language) {
-            let before = phrases.count
-            phrases.removeAll {
-                $0.source == .recognitionOnly &&
-                $0.languageCode == language.rawValue &&
-                Self.seedPhraseKey($0.phrase) == Self.seedPhraseKey(retired)
-            }
-            if phrases.count != before { changes += 1 }
-        }
-
-        if changes > 0 {
-            rebuildPhraseIndex()
-        }
-
         var loaded = 0
         if let onProgress {
             await MainActor.run {
@@ -196,6 +172,20 @@ final class PersonalVocabularyStore {
         }
 
         if !trainingDone {
+            for retired in Self.retiredBuiltInMovePhrases(for: language) {
+                let before = phrases.count
+                phrases.removeAll {
+                    $0.source == .builtIn &&
+                    $0.languageCode == language.rawValue &&
+                    Self.normalizePhrase($0.phrase, language: language) == retired
+                }
+                if phrases.count != before { changes += 1 }
+            }
+
+            if changes > 0 {
+                rebuildPhraseIndex()
+            }
+
             for item in trainingItems {
                 let changed = upsert(
                     phrase: item.phrase,
@@ -217,17 +207,23 @@ final class PersonalVocabularyStore {
             loaded += trainingItems.count
         }
 
+        // Recognition boosts are generated at CLM prepare time and must not be written into
+        // personal-vocabulary.json. Persisting them previously re-ran retired remove/re-add and
+        // bumped vocab revision on every cold start, forcing a full language-model rebuild.
         if !recognitionDone {
-            let recognitionChanges = batchUpsertRecognitionPhrases(recognitionItems, language: language)
-            if recognitionChanges > 0 { changes += 1 }
-            loaded += recognitionItems.count
+            changes += 1
+            loaded += recognitionItemCount
             if let onProgress {
                 await MainActor.run {
                     onProgress(loaded, total)
                 }
             }
+            UserDefaults.standard.set(
+                Self.currentBundledRecognitionSeedRevision,
+                forKey: Self.bundledRecognitionSeedRevisionKey
+            )
         } else {
-            loaded += recognitionItems.count
+            loaded += recognitionItemCount
         }
 
         if changes > 0 {
@@ -238,72 +234,12 @@ final class PersonalVocabularyStore {
         if !trainingDone {
             UserDefaults.standard.set(Self.currentBundledTrainingSeedRevision, forKey: Self.bundledTrainingSeedRevisionKey)
         }
-        if !recognitionDone {
-            UserDefaults.standard.set(Self.currentBundledRecognitionSeedRevision, forKey: Self.bundledRecognitionSeedRevisionKey)
-        }
 
         return changes
     }
 
     private static func shouldReportPhraseSeedProgress(loaded: Int, total: Int) -> Bool {
         loaded == total || loaded % 200 == 0
-    }
-
-    /// Fast lookup key for bulk recognition seeding (not used for move-phrase matching).
-    private static func seedPhraseKey(_ phrase: String) -> String {
-        phrase
-            .precomposedStringWithCanonicalMapping
-            .lowercased()
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
-    @discardableResult
-    private func batchUpsertRecognitionPhrases(
-        _ items: [(phrase: String, count: Int)],
-        language: RecognitionLanguage
-    ) -> Int {
-        var changes = 0
-
-        for item in items {
-            let trimmed = item.phrase.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty else { continue }
-
-            let normalized = Self.seedPhraseKey(trimmed)
-            let key = phraseIndexKey(
-                language: language,
-                source: .recognitionOnly,
-                normalizedPhrase: normalized
-            )
-            let targetCount = min(max(item.count, 1), 1_000)
-
-            if let index = phraseIndex[key] {
-                var entry = phrases[index]
-                let changed = entry.count != targetCount || entry.phrase != trimmed
-                guard changed else { continue }
-                entry.count = targetCount
-                entry.phrase = trimmed
-                entry.moveNotation = trimmed
-                entry.updatedAt = Date()
-                phrases[index] = entry
-                changes += 1
-                continue
-            }
-
-            let entry = LearnedPhrase(
-                id: UUID(),
-                phrase: trimmed,
-                moveNotation: trimmed,
-                languageCode: language.rawValue,
-                count: targetCount,
-                updatedAt: Date(),
-                source: .recognitionOnly
-            )
-            phraseIndex[key] = phrases.count
-            phrases.append(entry)
-            changes += 1
-        }
-
-        return changes
     }
     
     @discardableResult
@@ -390,10 +326,17 @@ final class PersonalVocabularyStore {
         save()
     }
     
+    /// Persisted phrase counts for CLM training (excludes legacy `recognitionOnly` rows).
     func speechPhraseCounts(for language: RecognitionLanguage) -> [(phrase: String, count: Int)] {
         phrases
-            .filter { $0.languageCode == language.rawValue }
+            .filter { $0.languageCode == language.rawValue && $0.source != .recognitionOnly }
             .map { ($0.phrase, $0.count) }
+    }
+
+    /// Full CLM phrase list: persisted vocabulary plus runtime-generated recognition boosts.
+    func languageModelPhraseCounts(for language: RecognitionLanguage) -> [(phrase: String, count: Int)] {
+        speechPhraseCounts(for: language)
+            + ChessSpeechTrainingPhrases.generatedRecognitionPhraseCounts(for: language)
     }
     
     /// Short hints for live dictation only (Apple limits contextualStrings to 100).
@@ -826,8 +769,9 @@ final class PersonalVocabularyStore {
     private static let bundledTrainingSeedRevisionKey = "PersonalVocabularyBundledTrainingSeedRevision"
     private static let currentBundledTrainingSeedRevision = 3
     private static let bundledRecognitionSeedRevisionKey = "PersonalVocabularyBundledRecognitionSeedRevision"
-    private static let currentBundledRecognitionSeedRevision = 2
-    private static let legacyRecognitionOnlyPurgeKey = "PersonalVocabularyDidPurgeRecognitionOnly"
+    /// Bump when `generatedRecognitionPhraseCounts` content changes so CLM recompiles once.
+    private static let currentBundledRecognitionSeedRevision = 3
+    private static let legacyRecognitionOnlyPurgeKey = "PersonalVocabularyDidPurgeRecognitionOnlyV2"
 
     private static func trainingSeedUpToDate(
         for language: RecognitionLanguage,
@@ -849,32 +793,10 @@ final class PersonalVocabularyStore {
         return expected.isSubset(of: actual)
     }
 
-    private static func recognitionSeedUpToDate(
-        for language: RecognitionLanguage,
-        in phrases: [LearnedPhrase]
-    ) -> Bool {
-        guard UserDefaults.standard.integer(forKey: bundledRecognitionSeedRevisionKey)
-            >= currentBundledRecognitionSeedRevision else {
-            return false
-        }
-
-        let expectedCount = ChessSpeechTrainingPhrases.generatedRecognitionPhraseCounts(for: language).count
-        let actualCount = phrases.filter {
-            $0.languageCode == language.rawValue && $0.source == .recognitionOnly
-        }.count
-        return actualCount >= expectedCount
-    }
-
-    private static func retiredRecognitionPhrases(for language: RecognitionLanguage) -> [String] {
-        ChessSpeechTrainingPhrases.retiredPromotionBiasedRecognitionPhrases(for: language)
-            + ChessSpeechTrainingPhrases.retiredFileBiasedRecognitionPhrases(for: language) + {
-            switch language {
-            case .english:
-                return ["bishop shop takes d7"]
-            case .german:
-                return []
-            }
-        }()
+    /// Recognition boosts are not stored in vocabulary JSON — only the generator schema version is.
+    private static func recognitionSeedUpToDate() -> Bool {
+        UserDefaults.standard.integer(forKey: bundledRecognitionSeedRevisionKey)
+            >= currentBundledRecognitionSeedRevision
     }
 
     private static func commonTrainingPhrases(for language: RecognitionLanguage) -> [(phrase: String, moveNotation: String, count: Int)] {
@@ -966,16 +888,30 @@ final class PersonalVocabularyStore {
         UserDefaults.standard.set(Self.currentBundledCorrectionsRevision, forKey: Self.bundledCorrectionsRevisionKey)
     }
 
-    /// Drops thousands of legacy `recognitionOnly` rows now covered by runtime generators + CLM templates.
+    /// Drops legacy `recognitionOnly` rows; those phrases are supplied at CLM prepare time instead.
     private func migrateLegacyRecognitionOnlyPhrasesIfNeeded() {
         guard !UserDefaults.standard.bool(forKey: Self.legacyRecognitionOnlyPurgeKey) else { return }
 
         let before = phrases.count
         phrases.removeAll { $0.source == .recognitionOnly }
+        let removedRecognition = phrases.count != before
         UserDefaults.standard.set(true, forKey: Self.legacyRecognitionOnlyPurgeKey)
 
-        guard phrases.count != before else { return }
-        rebuildPhraseIndex()
+        let previousRecognitionRevision = UserDefaults.standard.integer(
+            forKey: Self.bundledRecognitionSeedRevisionKey
+        )
+        UserDefaults.standard.set(
+            Self.currentBundledRecognitionSeedRevision,
+            forKey: Self.bundledRecognitionSeedRevisionKey
+        )
+        let recognitionSchemaAdvanced =
+            previousRecognitionRevision < Self.currentBundledRecognitionSeedRevision
+
+        guard removedRecognition || recognitionSchemaAdvanced else { return }
+
+        if removedRecognition {
+            rebuildPhraseIndex()
+        }
         for language in RecognitionLanguage.allCases {
             bumpRevision(for: language)
         }

@@ -10,6 +10,8 @@ final class DeveloperModeStore {
     private enum Keys {
         static let screenshotModeEnabled = "screenshotModeEnabled"
         static let speechPipelineTracingEnabled = "speechPipelineTracingEnabled"
+        static let speechRecognitionFailureDiagnosticsEnabled = "speechRecognitionFailureDiagnosticsEnabled"
+        static let moveAssessmentTracingEnabled = "moveAssessmentTracingEnabled"
     }
 
     static var isAvailable: Bool {
@@ -33,6 +35,26 @@ final class DeveloperModeStore {
         }
     }
 
+    /// Logs expanded NSError + recognizer/request/audio context on recognition failures.
+    var isSpeechRecognitionFailureDiagnosticsEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(
+                isSpeechRecognitionFailureDiagnosticsEnabled,
+                forKey: Keys.speechRecognitionFailureDiagnosticsEnabled
+            )
+        }
+    }
+
+    /// Logs move-assessment enqueue / book / engine / apply / failure events to the console.
+    var isMoveAssessmentTracingEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(
+                isMoveAssessmentTracingEnabled,
+                forKey: Keys.moveAssessmentTracingEnabled
+            )
+        }
+    }
+
     var showsDeveloperSettings: Bool {
         Self.isAvailable
     }
@@ -48,5 +70,11 @@ final class DeveloperModeStore {
         } else {
             isSpeechPipelineTracingEnabled = UserDefaults.standard.bool(forKey: Keys.speechPipelineTracingEnabled)
         }
+        isSpeechRecognitionFailureDiagnosticsEnabled = UserDefaults.standard.bool(
+            forKey: Keys.speechRecognitionFailureDiagnosticsEnabled
+        )
+        isMoveAssessmentTracingEnabled = UserDefaults.standard.bool(
+            forKey: Keys.moveAssessmentTracingEnabled
+        )
     }
 }

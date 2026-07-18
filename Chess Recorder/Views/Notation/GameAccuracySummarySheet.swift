@@ -37,6 +37,19 @@ struct GameAccuracySummarySheet: View {
                     Text("Accuracy uses average centipawn loss (book excluded). Best-move % is the share of scored moves with 0 CPL. Blunder rate is among all assessed moves.")
                 }
 
+                if summary.hasEvaluationProgress {
+                    Section {
+                        evaluationChart
+                            .frame(height: 200)
+                            .padding(.vertical, 4)
+                            .listRowInsets(EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12))
+                    } header: {
+                        Text("Evaluation")
+                    } footer: {
+                        Text(evaluationChartFooter)
+                    }
+                }
+
                 if summary.white.hasContent || summary.black.hasContent {
                     Section("Move quality") {
                         moveQualityComparison
@@ -142,6 +155,104 @@ struct GameAccuracySummarySheet: View {
             "\(displayName(for: .white)) average CPL \(summary.white.averageCPLText), best-move \(summary.white.bestMoveText), blunder rate \(summary.white.blunderRateText)",
             "\(displayName(for: .black)) average CPL \(summary.black.averageCPLText), best-move \(summary.black.bestMoveText), blunder rate \(summary.black.blunderRateText)"
         ].joined(separator: ". ")
+    }
+
+    private var evaluationChartFooter: String {
+        var parts = [
+            "White’s perspective (±\(Int(GameAccuracySummary.evaluationScaleCapPawns)) pawns). Positive favors White."
+        ]
+        if !summary.evaluationPhaseTransitions.isEmpty {
+            parts.append("Dashed lines mark middlegame and endgame.")
+        }
+        if !summary.evaluationCriticalPlies.isEmpty {
+            parts.append("Dotted lines mark the largest mistakes.")
+        }
+        return parts.joined(separator: " ")
+    }
+
+    private var evaluationChart: some View {
+        let points = summary.evaluationProgress
+        let maxPly = points.map(\.ply).max() ?? 1
+        let yCap = GameAccuracySummary.evaluationScaleCapPawns
+
+        return Chart {
+            ForEach(summary.evaluationCriticalPlies) { critical in
+                RuleMark(x: .value("Critical", critical.ply))
+                    .foregroundStyle(color(for: critical.quality).opacity(0.85))
+                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [2, 3]))
+            }
+
+            ForEach(summary.evaluationPhaseTransitions) { transition in
+                RuleMark(x: .value("Phase", transition.ply))
+                    .foregroundStyle(phaseMarkerColor)
+                    .lineStyle(StrokeStyle(lineWidth: 1.5, dash: [6, 4]))
+            }
+
+            RuleMark(y: .value("Equal", 0))
+                .foregroundStyle(Color.secondary.opacity(0.35))
+                .lineStyle(StrokeStyle(lineWidth: 1))
+
+            ForEach(points) { point in
+                LineMark(
+                    x: .value("Ply", point.ply),
+                    y: .value("Evaluation", point.evaluationPawns)
+                )
+                .foregroundStyle(Color.primary)
+                .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                .interpolationMethod(.linear)
+            }
+        }
+        .chartXScale(domain: 0...max(maxPly, 1))
+        .chartYScale(domain: -yCap...yCap)
+        .chartXAxis {
+            AxisMarks(values: evaluationXAxisValues(maxPly: maxPly)) { value in
+                AxisGridLine()
+                AxisValueLabel {
+                    if let ply = value.as(Int.self) {
+                        Text(evaluationXLabel(forPly: ply))
+                            .font(.caption2)
+                    }
+                }
+            }
+        }
+        .chartYAxis {
+            AxisMarks(position: .leading, values: [-10, -5, 0, 5, 10]) { value in
+                AxisGridLine()
+                AxisValueLabel {
+                    if let pawns = value.as(Double.self) ?? value.as(Int.self).map(Double.init) {
+                        Text(evaluationYLabel(pawns: pawns))
+                            .font(.caption2)
+                    }
+                }
+            }
+        }
+        .accessibilityLabel("Evaluation over the game from White’s perspective")
+    }
+
+    private var phaseMarkerColor: Color {
+        colorScheme == .dark
+            ? Color(red: 0.45, green: 0.65, blue: 1.0)
+            : Color(red: 0.0, green: 0.55, blue: 0.5)
+    }
+
+    private func evaluationXAxisValues(maxPly: Int) -> [Int] {
+        guard maxPly > 0 else { return [0] }
+        let step = max(1, Int((Double(maxPly) / 6.0).rounded(.up)))
+        var values = Array(stride(from: 0, through: maxPly, by: step))
+        if values.last != maxPly {
+            values.append(maxPly)
+        }
+        return values
+    }
+
+    private func evaluationXLabel(forPly ply: Int) -> String {
+        guard ply > 0 else { return "0" }
+        return "\(max(1, (ply + 1) / 2))"
+    }
+
+    private func evaluationYLabel(pawns: Double) -> String {
+        if pawns == 0 { return "0" }
+        return String(format: "%+.0f", pawns)
     }
 
     private func displayName(for side: GameAccuracySummary.Side) -> String {

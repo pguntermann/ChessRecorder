@@ -321,7 +321,38 @@ final class GameAccuracySummaryTests: XCTestCase {
         XCTAssertEqual(scale.plotX(moveNumber: 2), 2)
     }
 
-    private func move(_ san: String, quality: MoveQuality?, centipawnLoss: Int? = nil) -> ChessMove {
+    func testEvaluationProgressStartsAtZeroAndClamps() {
+        let moves = [
+            move("e4", quality: .good, centipawnLoss: 0, evaluationWhiteCentipawns: 25),
+            move("e5", quality: .good, centipawnLoss: 0, evaluationWhiteCentipawns: 10),
+            move("Nf3", quality: .blunder, centipawnLoss: 280, evaluationWhiteCentipawns: -1_500),
+            move("Nc6", quality: .good, centipawnLoss: 0, evaluationWhiteCentipawns: -1_200)
+        ]
+        let summary = GameAccuracySummary(moves: moves)
+
+        XCTAssertTrue(summary.hasEvaluationProgress)
+        XCTAssertEqual(summary.evaluationProgress.map(\.ply), [0, 1, 2, 3, 4])
+        XCTAssertEqual(summary.evaluationProgress.map(\.evaluationPawns), [0, 0.25, 0.10, -10, -10])
+        XCTAssertEqual(summary.evaluationCriticalPlies.map(\.ply), [3])
+    }
+
+    func testEvaluationProgressAbsentWithoutStoredEvals() {
+        let moves = [
+            move("e4", quality: .good, centipawnLoss: 0),
+            move("e5", quality: .mistake, centipawnLoss: 175)
+        ]
+        let summary = GameAccuracySummary(moves: moves)
+        XCTAssertFalse(summary.hasEvaluationProgress)
+        XCTAssertEqual(summary.evaluationProgress.count, 1)
+        XCTAssertEqual(summary.evaluationProgress.first?.evaluationPawns, 0)
+    }
+
+    private func move(
+        _ san: String,
+        quality: MoveQuality?,
+        centipawnLoss: Int? = nil,
+        evaluationWhiteCentipawns: Int? = nil
+    ) -> ChessMove {
         ChessMove(
             san: san,
             piece: .pawn,
@@ -333,7 +364,8 @@ final class GameAccuracySummaryTests: XCTestCase {
             promotion: nil,
             castling: nil,
             quality: quality,
-            centipawnLoss: centipawnLoss
+            centipawnLoss: centipawnLoss,
+            evaluationWhiteCentipawns: evaluationWhiteCentipawns
         )
     }
 }

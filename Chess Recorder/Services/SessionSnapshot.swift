@@ -63,6 +63,7 @@ struct StoredChessMove: Codable, Equatable {
     let castling: String?
     let quality: String?
     let centipawnLoss: Int?
+    let evaluationWhiteCentipawns: Int?
 }
 
 enum SessionSnapshotCoding {
@@ -122,6 +123,7 @@ private extension StoredChessMove {
         castling = move.castling
         quality = move.quality?.rawValue
         centipawnLoss = move.centipawnLoss
+        evaluationWhiteCentipawns = move.evaluationWhiteCentipawns
     }
 
     func makeChessMove() -> ChessMove? {
@@ -145,7 +147,8 @@ private extension StoredChessMove {
             promotion: promotionType,
             castling: castling,
             quality: moveQuality,
-            centipawnLoss: centipawnLoss
+            centipawnLoss: centipawnLoss,
+            evaluationWhiteCentipawns: evaluationWhiteCentipawns
         )
     }
 }

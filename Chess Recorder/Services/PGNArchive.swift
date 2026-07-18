@@ -257,6 +257,7 @@ final class PGNArchive {
         moveIndex: Int,
         quality: MoveQuality,
         centipawnLoss: Int? = nil,
+        evaluationWhiteCentipawns: Int? = nil,
         expectedSAN: String
     ) -> Bool {
         guard let index = games.firstIndex(where: { $0.id == gameID }),
@@ -268,13 +269,16 @@ final class PGNArchive {
 
         games[index].moves[moveIndex] = games[index].moves[moveIndex].withQuality(
             quality,
-            centipawnLoss: quality == .book ? nil : centipawnLoss
+            centipawnLoss: quality == .book ? nil : centipawnLoss,
+            evaluationWhiteCentipawns: quality == .book ? nil : evaluationWhiteCentipawns
         )
+        // Reassign the game element so @Observable reliably publishes nested move changes.
+        games[index] = games[index]
         bumpContentRevision(affecting: gameID)
         return true
     }
 
-    /// Clears quality and centipawn loss on every stored move so assessment can run again.
+    /// Clears quality, centipawn loss, and evaluation on every stored move so assessment can run again.
     @discardableResult
     func clearAllMoveAssessments() -> Int {
         var cleared = 0
@@ -282,12 +286,15 @@ final class PGNArchive {
             var didClearGame = false
             for moveIndex in games[gameIndex].moves.indices {
                 let move = games[gameIndex].moves[moveIndex]
-                guard move.quality != nil || move.centipawnLoss != nil else { continue }
-                games[gameIndex].moves[moveIndex] = move.withQuality(nil, centipawnLoss: nil)
+                guard move.quality != nil
+                    || move.centipawnLoss != nil
+                    || move.evaluationWhiteCentipawns != nil else { continue }
+                games[gameIndex].moves[moveIndex] = move.withQuality(nil, centipawnLoss: nil, evaluationWhiteCentipawns: nil)
                 cleared += 1
                 didClearGame = true
             }
             if didClearGame {
+                games[gameIndex] = games[gameIndex]
                 bumpContentRevision(affecting: games[gameIndex].id)
             }
         }
@@ -298,13 +305,15 @@ final class PGNArchive {
         var merged = newMoves
         for index in merged.indices {
             guard index < oldMoves.count,
-                  oldMoves[index].matchesPositionally(newMoves[index]),
-                  let quality = oldMoves[index].quality else {
+                  oldMoves[index].matchesPositionally(newMoves[index]) else {
                 break
             }
+            // Skip gaps (nil quality) instead of stopping — later assessed plies must be kept.
+            guard let quality = oldMoves[index].quality else { continue }
             merged[index] = merged[index].withQuality(
                 quality,
-                centipawnLoss: oldMoves[index].centipawnLoss
+                centipawnLoss: oldMoves[index].centipawnLoss,
+                evaluationWhiteCentipawns: oldMoves[index].evaluationWhiteCentipawns
             )
         }
         return merged

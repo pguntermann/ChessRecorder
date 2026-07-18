@@ -590,6 +590,14 @@ struct SettingsView: View {
                     Section {
                         Toggle("Screenshot mode", isOn: $developerModeStore.isScreenshotModeEnabled)
                         Toggle("Speech pipeline trace", isOn: $developerModeStore.isSpeechPipelineTracingEnabled)
+                        Toggle(
+                            "Speech failure diagnostics",
+                            isOn: $developerModeStore.isSpeechRecognitionFailureDiagnosticsEnabled
+                        )
+                        Toggle(
+                            "Move assessment trace",
+                            isOn: $developerModeStore.isMoveAssessmentTracingEnabled
+                        )
                         if onImportPGN != nil {
                             Button("Import PGN…") {
                                 showingPGNImport = true
@@ -600,8 +608,6 @@ struct SettingsView: View {
                                 showingPurgeAssessmentsConfirm = true
                             }
                         }
-                    } footer: {
-                        Text("Screenshot mode hides the system status bar. Speech pipeline trace logs each ASR and normalization step to the Xcode console when a move is processed. Import PGN appends mainline games from clipboard or file. Purge clears quality marks and CPL on all archived games so assessment runs again.")
                     }
                 }
             }

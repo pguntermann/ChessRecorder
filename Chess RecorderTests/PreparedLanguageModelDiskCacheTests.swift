@@ -226,6 +226,17 @@ final class PreparedLanguageModelDiskCacheTests: XCTestCase {
         try Data("export".utf8).write(to: PreparedLanguageModelDiskCache.exportURL(for: .german, in: temporaryDirectory))
         try saveManifestMatchingArtifactBundle(for: .german, preparedURL: preparedURL, revision: 1)
 
+        let reason = PreparedLanguageModelDiskCache.restoreSkipReason(
+            for: .german,
+            baseModelVersion: "4.0",
+            vocabRevision: 2,
+            preparedURL: preparedURL,
+            exportURL: PreparedLanguageModelDiskCache.exportURL(for: .german, in: temporaryDirectory),
+            in: temporaryDirectory
+        )
+
+        XCTAssertEqual(reason, "vocab revision mismatch (manifest 1, expected 2)")
+        XCTAssertTrue(PreparedLanguageModelDiskCache.shouldPurgeArtifactsAfterRestoreSkip(reason!))
         XCTAssertFalse(
             PreparedLanguageModelDiskCache.canRestore(
                 for: .german,

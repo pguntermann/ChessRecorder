@@ -52,7 +52,7 @@ enum ChessLanguageModel {
 
         await reportPhase(.preparingSpeechVocabulary, onPhaseChange: onPhaseChange)
         await reportStatus("Collecting phrases for on-device recognition…", onStatusChange: onStatusChange)
-        let personalPhrases = vocabulary.speechPhraseCounts(for: language)
+        let personalPhrases = vocabulary.languageModelPhraseCounts(for: language)
         await reportStatus(
             "Loaded \(personalPhrases.count) phrase\(personalPhrases.count == 1 ? "" : "s") for speech recognition.",
             onStatusChange: onStatusChange
@@ -737,6 +737,7 @@ enum PreparedLanguageModelDiskCache {
             || reason.contains("fingerprint")
             || reason.contains("verification")
             || reason.contains("path mismatch")
+            || reason.contains("vocab revision mismatch")
     }
 
     static func preparedModelFingerprint(

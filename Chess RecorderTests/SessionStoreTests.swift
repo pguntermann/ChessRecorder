@@ -251,7 +251,8 @@ final class SessionStoreTests: XCTestCase {
                     promotion: nil,
                     castling: nil,
                     quality: nil,
-                    centipawnLoss: nil
+                    centipawnLoss: nil,
+                    evaluationWhiteCentipawns: nil
                 )
             ],
             round: 1,
@@ -719,7 +720,8 @@ private enum SessionTestFixtures {
             promotion: move.promotion?.rawValue.isEmpty == false ? move.promotion?.rawValue : nil,
             castling: move.castling,
             quality: move.quality?.rawValue,
-            centipawnLoss: move.centipawnLoss
+            centipawnLoss: move.centipawnLoss,
+            evaluationWhiteCentipawns: move.evaluationWhiteCentipawns
         )
     }
 }

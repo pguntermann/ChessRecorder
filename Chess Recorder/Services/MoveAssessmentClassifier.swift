@@ -69,6 +69,29 @@ enum MoveAssessmentClassifier: Sendable {
         }
     }
 
+    /// White-perspective eval after `moveIndex` (0-based ply), for charting / persistence.
+    /// Mates map to ±`mateDisplayCentipawns` so they sit on the ±10 pawn chart edge.
+    nonisolated static let mateDisplayCentipawns = 1_000
+
+    nonisolated static func whitePerspectiveCentipawns(rawScoreAfter: Score, moveIndex: Int) -> Int {
+        // After White's move (even index), side-to-move is Black → invert to White POV.
+        let whiteScore = moveIndex % 2 == 0 ? inverted(rawScoreAfter) : rawScoreAfter
+        return displayCentipawns(whiteScore)
+    }
+
+    nonisolated static func displayCentipawns(_ score: Score) -> Int {
+        switch score {
+        case .centipawns(let cp):
+            return cp
+        case .mate(let moves) where moves > 0:
+            return mateDisplayCentipawns
+        case .mate(let moves) where moves < 0:
+            return -mateDisplayCentipawns
+        case .mate:
+            return 0
+        }
+    }
+
     nonisolated static func centipawnValue(of score: Score) -> Int {
         switch score {
         case .centipawns(let cp):

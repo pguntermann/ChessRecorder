@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import LucidEngine
 
 /// Aggregated move-quality stats for a recorded game.
 ///
@@ -198,6 +199,48 @@ struct GameAccuracySummary: Equatable, Sendable {
         var id: String { "\(side.rawValue)-\(moveNumber)-\(accuracyPercent)" }
     }
 
+    /// White-POV evaluation after a ply, in pawns (already clamped for display).
+    struct EvaluationPoint: Equatable, Sendable, Identifiable {
+        /// Half-move index: 0 = start, 1 = after White's first move, …
+        let ply: Int
+        /// Evaluation in pawns from White's perspective, clamped to ±`evaluationScaleCapPawns`.
+        let evaluationPawns: Double
+
+        var id: Int { ply }
+
+        /// Full-move number for axis labeling (ply 1–2 → 1, ply 3–4 → 2, …).
+        var moveNumber: Int {
+            max(1, (ply + 1) / 2)
+        }
+    }
+
+    struct EvaluationPhaseTransition: Equatable, Sendable, Identifiable {
+        enum Kind: String, Equatable, Sendable {
+            case middlegame
+            case endgame
+        }
+
+        let kind: Kind
+        /// Half-move index where the phase begins.
+        let ply: Int
+
+        var id: String { "\(kind.rawValue)-\(ply)" }
+
+        var label: String {
+            switch kind {
+            case .middlegame: return "Middlegame"
+            case .endgame: return "Endgame"
+            }
+        }
+    }
+
+    struct EvaluationCriticalPly: Equatable, Sendable, Identifiable {
+        let ply: Int
+        let quality: MoveQuality
+
+        var id: Int { ply }
+    }
+
     /// Piecewise X mapping that compresses book moves before the first scored point.
     ///
     /// Example: first scored move at 8 → a short `0...7` prefix, then 8, 9, …
@@ -310,6 +353,12 @@ struct GameAccuracySummary: Equatable, Sendable {
     var accuracyProgress: [AccuracyProgressPoint]
     /// Same move numbers as `accuracyProgress`, with CPL scaled by each side's final scored count.
     var cumulativeAccuracyProgress: [AccuracyProgressPoint]
+    /// White-POV evaluation story: ply 0 at 0.0, then each move that stored an eval.
+    var evaluationProgress: [EvaluationPoint]
+    /// Full-move numbers where middlegame / endgame begin (for vertical phase markers).
+    var evaluationPhaseTransitions: [EvaluationPhaseTransition]
+    /// Worst CPL swings (mistakes/blunders/misses) for sparse critical markers.
+    var evaluationCriticalPlies: [EvaluationCriticalPly]
 
     var assessedMoveCount: Int {
         white.assessedMoveCount + black.assessedMoveCount
@@ -335,6 +384,10 @@ struct GameAccuracySummary: Equatable, Sendable {
 
     var hasAccuracyProgress: Bool {
         accuracyProgress.count >= 2
+    }
+
+    var hasEvaluationProgress: Bool {
+        evaluationProgress.count >= 2
     }
 
     func accuracyProgress(for mode: AccuracyProgressMode) -> [AccuracyProgressPoint] {
@@ -390,17 +443,35 @@ struct GameAccuracySummary: Equatable, Sendable {
         }
     }
 
-    init(moves: [ChessMove]) {
+    init(moves: [ChessMove], fenSequence: [String]? = nil) {
         var white = SideStats()
         var black = SideStats()
         var whiteCPL = 0.0
         var blackCPL = 0.0
         var prefixes: [(side: Side, moveNumber: Int, totalCPL: Double, scoredMoves: Int)] = []
+        var evaluationProgress: [EvaluationPoint] = [
+            EvaluationPoint(ply: 0, evaluationPawns: 0)
+        ]
+        var criticalCandidates: [(ply: Int, quality: MoveQuality, cpl: Int)] = []
 
         for (index, move) in moves.enumerated() {
+            if let cp = move.evaluationWhiteCentipawns {
+                evaluationProgress.append(
+                    EvaluationPoint(
+                        ply: index + 1,
+                        evaluationPawns: Self.clampedEvaluationPawns(centipawns: cp)
+                    )
+                )
+            }
+
             guard let quality = move.quality else { continue }
             let side: Side = index % 2 == 0 ? .white : .black
             let moveNumber = index / 2 + 1
+
+            if quality == .mistake || quality == .blunder || quality == .miss,
+               let cpl = move.centipawnLoss, cpl > 0 {
+                criticalCandidates.append((ply: index + 1, quality: quality, cpl: cpl))
+            }
 
             if side == .white {
                 Self.apply(move, quality: quality, to: &white, cplSum: &whiteCPL)
@@ -442,6 +513,15 @@ struct GameAccuracySummary: Equatable, Sendable {
                 scoredMoves: finalCount
             )
         }
+        self.evaluationProgress = evaluationProgress
+        self.evaluationPhaseTransitions = Self.phaseTransitions(
+            fenSequence: fenSequence ?? ChessGame.prepared(from: moves).fenSequenceFromStart()
+        )
+        self.evaluationCriticalPlies = criticalCandidates
+            .sorted { $0.cpl > $1.cpl }
+            .prefix(Self.evaluationCriticalMarkerLimit)
+            .map { EvaluationCriticalPly(ply: $0.ply, quality: $0.quality) }
+            .sorted { $0.ply < $1.ply }
     }
 
     /// Divisor used by `100 - averageCPL / divisor`, matching common CPL accuracy curves.
@@ -450,6 +530,31 @@ struct GameAccuracySummary: Equatable, Sendable {
     static let averageCPLCap: Double = 500
     static let minimumAccuracyPercent: Double = 5
     static let maximumAccuracyPercent: Double = 100
+    /// Eval chart Y cap in pawns (±10), matching common desktop eval graphs.
+    static let evaluationScaleCapPawns: Double = 10
+    static let evaluationCriticalMarkerLimit = 3
+
+    static func clampedEvaluationPawns(centipawns: Int) -> Double {
+        let pawns = Double(centipawns) / 100.0
+        return min(max(pawns, -evaluationScaleCapPawns), evaluationScaleCapPawns)
+    }
+
+    static func phaseTransitions(fenSequence: [String]) -> [EvaluationPhaseTransition] {
+        guard fenSequence.count >= 2 else { return [] }
+        let phases = GamePhaseDetector.detect(fens: fenSequence)
+        var transitions: [EvaluationPhaseTransition] = []
+        if let middlegame = phases.middlegame {
+            transitions.append(
+                EvaluationPhaseTransition(kind: .middlegame, ply: middlegame.lowerBound)
+            )
+        }
+        if let endgame = phases.endgame {
+            transitions.append(
+                EvaluationPhaseTransition(kind: .endgame, ply: endgame.lowerBound)
+            )
+        }
+        return transitions
+    }
 
     /// Effective CPL for accuracy. Book is excluded. Values are capped at `averageCPLCap`.
     /// Legacy qualities without stored CPL map from the previous point scores via `(100 - points) * 3.5`.

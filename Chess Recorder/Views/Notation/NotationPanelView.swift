@@ -118,6 +118,8 @@ struct NotationPanelView: View {
                                     contentRevision: pgnArchive.contentRevision(for: recordedGame.id),
                                     onActivate: { onActivateGame?(recordedGame.id) }
                                 )
+                                // Keep stable identity so the accuracy sheet isn't dismissed when
+                                // contentRevision bumps during in-flight assessment.
                                 .equatable()
                                 .contextMenu {
                                     Button {
@@ -360,11 +362,10 @@ private struct GamePGNRowView: View, Equatable {
     var onActivate: (() -> Void)? = nil
 
     @State private var showingAccuracySummary = false
-    @State private var cachedAccuracy: CachedAccuracySummary?
 
     static func == (lhs: GamePGNRowView, rhs: GamePGNRowView) -> Bool {
         // Intentionally omit `presentation` — AttributedString equality is O(moves).
-        // `contentRevision` + move count cover movetext/quality invalidation.
+        // `contentRevision` covers movetext/quality invalidation.
         lhs.recordedGame.id == rhs.recordedGame.id
             && lhs.recordedGame.moves.count == rhs.recordedGame.moves.count
             && lhs.recordedGame.result == rhs.recordedGame.result
@@ -386,12 +387,6 @@ private struct GamePGNRowView: View, Equatable {
             && lhs.contentRevision == rhs.contentRevision
     }
 
-    private struct CachedAccuracySummary {
-        let revision: UInt64
-        let moveCount: Int
-        let summary: GameAccuracySummary?
-    }
-
     private var isAssessingMoves: Bool {
         assessingMoveIndex != nil
     }
@@ -404,31 +399,8 @@ private struct GamePGNRowView: View, Equatable {
 
     private var accuracySummary: GameAccuracySummary? {
         guard showMoveAssessments, showAccuracySummary else { return nil }
-        if let cachedAccuracy,
-           cachedAccuracy.revision == contentRevision,
-           cachedAccuracy.moveCount == recordedGame.moves.count {
-            return cachedAccuracy.summary
-        }
         let summary = GameAccuracySummary(moves: recordedGame.moves)
         return summary.hasContent ? summary : nil
-    }
-
-    private func refreshAccuracyCache() {
-        guard showMoveAssessments, showAccuracySummary else {
-            cachedAccuracy = nil
-            return
-        }
-        if let cachedAccuracy,
-           cachedAccuracy.revision == contentRevision,
-           cachedAccuracy.moveCount == recordedGame.moves.count {
-            return
-        }
-        let summary = GameAccuracySummary(moves: recordedGame.moves)
-        cachedAccuracy = CachedAccuracySummary(
-            revision: contentRevision,
-            moveCount: recordedGame.moves.count,
-            summary: summary.hasContent ? summary : nil
-        )
     }
 
     var body: some View {
@@ -550,12 +522,9 @@ private struct GamePGNRowView: View, Equatable {
             Rectangle()
                 .fill(isActive ? Color.accentColor.opacity(0.08) : Color.clear)
         }
-        .onAppear(perform: refreshAccuracyCache)
-        .onChange(of: contentRevision) { _, _ in refreshAccuracyCache() }
-        .onChange(of: recordedGame.moves.count) { _, _ in refreshAccuracyCache() }
         .sheet(isPresented: $showingAccuracySummary) {
             GameAccuracySummarySheet(
-                summary: cachedAccuracy?.summary ?? GameAccuracySummary(moves: recordedGame.moves),
+                summary: accuracySummary ?? GameAccuracySummary(moves: recordedGame.moves),
                 roundTitle: "Round \(recordedGame.round)",
                 result: recordedGame.result,
                 whiteName: GameAccuracySummarySheet.playerDisplayName(
@@ -568,6 +537,9 @@ private struct GamePGNRowView: View, Equatable {
                 ),
                 assessmentColors: assessmentColors
             )
+            // Refresh sheet contents when assessments arrive; keep row identity stable
+            // so `showingAccuracySummary` is not reset (which would dismiss the sheet).
+            .id(contentRevision)
         }
     }
 

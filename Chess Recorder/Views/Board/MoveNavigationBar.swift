@@ -11,12 +11,16 @@ struct MoveNavigationBar: View {
     var showMoveAssessments: Bool = false
     var assessmentColors: MoveAssessmentColors = .defaults
     var iconHitSize: CGFloat = 44
+    /// False while the startup overlay covers the board. Defer tip-pinning until chrome is visible.
+    var isChromeReady: Bool = true
     var onGoToFirst: () -> Void
     var onGoToPrevious: () -> Void
     var onGoToNext: () -> Void
     var onGoToLatest: () -> Void
     var onGoToPly: (Int) -> Void
     var onFlipBoard: () -> Void
+
+    @State private var tipPinTask: Task<Void, Never>?
 
     var body: some View {
         HStack(spacing: 6) {
@@ -61,6 +65,10 @@ struct MoveNavigationBar: View {
             .accessibilityLabel("Turn board")
         }
         .padding(.horizontal, 4)
+        .onDisappear {
+            tipPinTask?.cancel()
+            tipPinTask = nil
+        }
     }
 
     private var turnIndicator: some View {
@@ -81,6 +89,8 @@ struct MoveNavigationBar: View {
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     } else {
+                        // Lazy: keep token cost low on ContentView redraws. Tip-pinning must
+                        // walk IDs so trailing cells are realized before the final scrollTo.
                         LazyHStack(spacing: 4) {
                             ForEach(Array(game.moves.enumerated()), id: \.offset) { index, move in
                                 if index % 2 == 0 {
@@ -104,19 +114,25 @@ struct MoveNavigationBar: View {
                 .padding(.vertical, 2)
             }
             .onAppear {
-                scrollToActiveMove(using: proxy, animated: false)
+                scheduleTipPinIfNeeded(using: proxy)
+            }
+            .onChange(of: isChromeReady) { _, ready in
+                guard ready else { return }
+                scheduleTipPinIfNeeded(using: proxy)
             }
             .onChange(of: game.activePlyIndex) { _, _ in
                 scrollToActiveMove(using: proxy, animated: true)
             }
             .onChange(of: game.moves.count) { _, _ in
-                // LazyHStack often hasn't measured the new trailing token yet on the first pass.
-                scrollToActiveMove(using: proxy, animated: true)
-                scheduleFollowUpScroll(using: proxy)
+                if game.isAtLatestMove {
+                    scheduleTipPinIfNeeded(using: proxy)
+                } else {
+                    scrollToActiveMove(using: proxy, animated: true)
+                }
             }
             .onChange(of: moveStripLayoutKey) { _, _ in
-                // Annotation symbols / underlines widen tokens after assessment completes.
-                scheduleFollowUpScroll(using: proxy)
+                guard game.isAtLatestMove else { return }
+                scrollToActiveMove(using: proxy, animated: false)
             }
         }
         .frame(height: iconHitSize)
@@ -130,6 +146,80 @@ struct MoveNavigationBar: View {
     private func quality(at index: Int) -> MoveQuality? {
         guard showMoveAssessments, index < moveQualities.count else { return nil }
         return moveQualities[index]
+    }
+
+    private func scheduleTipPinIfNeeded(using proxy: ScrollViewProxy) {
+        guard isChromeReady, game.isAtLatestMove, !game.moves.isEmpty else { return }
+
+        tipPinTask?.cancel()
+        tipPinTask = Task { @MainActor in
+            // Let the startup overlay finish fading and the strip receive a real width.
+            try? await Task.sleep(for: .milliseconds(280))
+            guard !Task.isCancelled else { return }
+            await pinToLatestMove(using: proxy)
+        }
+    }
+
+    /// Walks move IDs toward the tip so `LazyHStack` realizes cells before the final pin.
+    private func pinToLatestMove(using proxy: ScrollViewProxy) async {
+        let count = game.moves.count
+        guard count > 0, game.isAtLatestMove else { return }
+
+        let lastIndex = count - 1
+        // Coarse waypoints force lazy materialization without visiting every ply.
+        let step = max(1, count / 6)
+        var waypoint = 0
+        while waypoint < lastIndex {
+            guard !Task.isCancelled, game.isAtLatestMove, game.moves.count == count else { return }
+            proxy.scrollTo("move-\(waypoint)", anchor: .trailing)
+            await Task.yield()
+            try? await Task.sleep(for: .milliseconds(16))
+            waypoint += step
+        }
+
+        guard !Task.isCancelled, game.isAtLatestMove else { return }
+        proxy.scrollTo("move-\(lastIndex)", anchor: .trailing)
+        // One follow-up after the last token has been measured.
+        await Task.yield()
+        try? await Task.sleep(for: .milliseconds(32))
+        guard !Task.isCancelled, game.isAtLatestMove, game.moves.count == count else { return }
+        proxy.scrollTo("move-\(lastIndex)", anchor: .trailing)
+    }
+
+    private func scrollToActiveMove(using proxy: ScrollViewProxy, animated: Bool) {
+        guard isChromeReady else { return }
+
+        if game.isAtLatestMove {
+            // New moves at the tip: last ID was just inserted and should already be nearby.
+            let targetID = game.moves.isEmpty ? nil : "move-\(game.moves.count - 1)"
+            guard let targetID else { return }
+            if animated {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    proxy.scrollTo(targetID, anchor: .trailing)
+                }
+            } else {
+                proxy.scrollTo(targetID, anchor: .trailing)
+            }
+            return
+        }
+
+        let targetID: String
+        let anchor: UnitPoint
+        if game.activePlyIndex == 0 {
+            targetID = "number-0"
+            anchor = .leading
+        } else {
+            targetID = "move-\(game.activePlyIndex - 1)"
+            anchor = .center
+        }
+
+        if animated {
+            withAnimation(.easeInOut(duration: 0.2)) {
+                proxy.scrollTo(targetID, anchor: anchor)
+            }
+        } else {
+            proxy.scrollTo(targetID, anchor: anchor)
+        }
     }
 
     private func moveNumberToken(id: String, text: String, moveIndex: Int) -> some View {
@@ -195,37 +285,6 @@ struct MoveNavigationBar: View {
         let annotation = quality?.annotationSymbol ?? ""
         let assessment = quality.map { ", \($0.rawValue)" } ?? ""
         return "\(prefix)\(move.algebraicNotation)\(annotation)\(assessment)"
-    }
-
-    private func scrollToActiveMove(using proxy: ScrollViewProxy, animated: Bool) {
-        let targetID: String?
-        if game.activePlyIndex == 0 {
-            targetID = game.moves.isEmpty ? nil : "number-0"
-        } else {
-            targetID = "move-\(game.activePlyIndex - 1)"
-        }
-
-        guard let targetID else { return }
-
-        // At the live edge, pin to trailing so the newest (often wider) token stays fully visible.
-        let anchor: UnitPoint = game.isAtLatestMove ? .trailing : .center
-
-        if animated {
-            withAnimation(.easeInOut(duration: 0.2)) {
-                proxy.scrollTo(targetID, anchor: anchor)
-            }
-        } else {
-            proxy.scrollTo(targetID, anchor: anchor)
-        }
-    }
-
-    private func scheduleFollowUpScroll(using proxy: ScrollViewProxy) {
-        DispatchQueue.main.async {
-            scrollToActiveMove(using: proxy, animated: false)
-        }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            scrollToActiveMove(using: proxy, animated: false)
-        }
     }
 
     private func navigationButton(

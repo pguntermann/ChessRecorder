@@ -91,6 +91,9 @@ struct ChessMove {
     let quality: MoveQuality?
     /// Centipawn loss vs best move for this ply (nil for book / unassessed / legacy).
     let centipawnLoss: Int?
+    /// White-perspective evaluation after this move, in centipawns.
+    /// Mates are stored at ±1000 so they sit on the ±10 pawn chart edge.
+    let evaluationWhiteCentipawns: Int?
 
     var algebraicNotation: String { san }
 
@@ -105,7 +108,8 @@ struct ChessMove {
         promotion: PieceType?,
         castling: String?,
         quality: MoveQuality? = nil,
-        centipawnLoss: Int? = nil
+        centipawnLoss: Int? = nil,
+        evaluationWhiteCentipawns: Int? = nil
     ) {
         self.san = san
         self.piece = piece
@@ -118,6 +122,7 @@ struct ChessMove {
         self.castling = castling
         self.quality = quality
         self.centipawnLoss = centipawnLoss
+        self.evaluationWhiteCentipawns = evaluationWhiteCentipawns
     }
 
     func matchesPositionally(_ other: ChessMove) -> Bool {
@@ -129,7 +134,11 @@ struct ChessMove {
             && castling == other.castling
     }
 
-    func withQuality(_ quality: MoveQuality?, centipawnLoss: Int? = nil) -> ChessMove {
+    func withQuality(
+        _ quality: MoveQuality?,
+        centipawnLoss: Int? = nil,
+        evaluationWhiteCentipawns: Int? = nil
+    ) -> ChessMove {
         ChessMove(
             san: san,
             piece: piece,
@@ -141,7 +150,8 @@ struct ChessMove {
             promotion: promotion,
             castling: castling,
             quality: quality,
-            centipawnLoss: centipawnLoss
+            centipawnLoss: centipawnLoss,
+            evaluationWhiteCentipawns: evaluationWhiteCentipawns
         )
     }
 }

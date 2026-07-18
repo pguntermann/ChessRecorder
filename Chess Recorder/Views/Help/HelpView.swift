@@ -185,6 +185,7 @@ struct HelpView: View {
             .frame(maxWidth: .infinity)
 
             attributionSection
+            caraSection
         }
     }
 
@@ -224,6 +225,27 @@ struct HelpView: View {
                 bulletLink("License", destination: AppInfo.licenseURL)
                 bulletLink("Third-party licenses", destination: AppInfo.thirdPartyLicensesURL)
             }
+        }
+        .helpSectionCard()
+    }
+
+    private var caraSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Also check out")
+                .font(.headline)
+
+            Text("CARA — the free, open-source Chess Analysis and Review Application for Windows, macOS, and Linux.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Link(destination: AppInfo.caraWebsiteURL) {
+                Text(AppInfo.caraWebsiteURL.absoluteString)
+                    .font(.subheadline)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(.top, 2)
+            .accessibilityLabel("CARA website")
         }
         .helpSectionCard()
     }

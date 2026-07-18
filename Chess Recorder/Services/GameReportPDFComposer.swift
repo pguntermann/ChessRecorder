@@ -1279,14 +1279,27 @@ enum GameReportPDFComposer {
         paragraph.lineSpacing = 3
         paragraph.paragraphSpacing = 2
 
+        let regularFont = UIFont.monospacedSystemFont(ofSize: 10.5, weight: .regular)
+        let boldFont = UIFont.monospacedSystemFont(ofSize: 10.5, weight: .bold)
+
         let base = NSMutableAttributedString(
             string: movetext,
             attributes: [
-                .font: UIFont.monospacedSystemFont(ofSize: 10.5, weight: .regular),
+                .font: regularFont,
                 .foregroundColor: UIColor.black,
                 .paragraphStyle: paragraph
             ]
         )
+
+        // Bold move numbers (`1.`, `23.`) and the trailing result token.
+        if let numberRegex = try? NSRegularExpression(pattern: #"\b\d+\."#) {
+            let full = NSRange(location: 0, length: (movetext as NSString).length)
+            numberRegex.enumerateMatches(in: movetext, options: [], range: full) { match, _, _ in
+                guard let match else { return }
+                base.addAttribute(.font, value: boldFont, range: match.range)
+            }
+        }
+        boldTrailingResult(in: base, of: movetext, font: boldFont)
 
         var searchStart = movetext.startIndex
         for move in moves {
@@ -1308,6 +1321,18 @@ enum GameReportPDFComposer {
             searchStart = range.upperBound
         }
         return base
+    }
+
+    private static func boldTrailingResult(
+        in attributed: NSMutableAttributedString,
+        of movetext: String,
+        font: UIFont
+    ) {
+        let results = ["1-0", "0-1", "1/2-1/2", "*"]
+        let trimmed = movetext.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let result = results.first(where: { trimmed.hasSuffix($0) }) else { return }
+        guard let range = movetext.range(of: result, options: .backwards) else { return }
+        attributed.addAttribute(.font, value: font, range: NSRange(range, in: movetext))
     }
 
     // MARK: - Shared drawing helpers

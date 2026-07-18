@@ -14,6 +14,7 @@ struct AppAcknowledgment: Identifiable {
 
 enum AppInfo {
     static let repositoryURL = URL(string: "https://github.com/pguntermann/ChessRecorder")!
+    static let caraWebsiteURL = URL(string: "https://pguntermann.github.io/CARA/")!
     static let authorName = "Philipp Guntermann"
     static let copyrightYear = 2026
     static let contactEmail = "pguntermann@me.com"

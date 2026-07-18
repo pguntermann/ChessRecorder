@@ -560,6 +560,11 @@ struct ContentView: View {
                 showMoveAssessments: settingsStore.settings.moveAssessmentEnabled,
                 assessmentColors: settingsStore.settings.moveAssessmentColors,
                 assessmentColorsCacheKey: settingsStore.settings.moveAssessmentColorsCacheKey,
+                boardAppearance: MiniChessBoardAppearance(
+                    lightSquareColor: settingsStore.settings.lightSquareColor.color,
+                    darkSquareColor: settingsStore.settings.darkSquareColor.color,
+                    pieceSizePercent: settingsStore.settings.pieceSizePercent
+                ),
                 engineAnalysisVisible: settingsStore.settings.engineAnalysisVisible,
                 engineAnalysisUseAlgebraicNotation: settingsStore.settings.engineAnalysisUseAlgebraicNotation,
                 engineAnalysis: engineAnalysis,

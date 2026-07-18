@@ -5,25 +5,46 @@
 
 import Charts
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#endif
 
 struct GameAccuracySummarySheet: View {
+    private struct ShareablePDFExport: Identifiable {
+        let id = UUID()
+        let url: URL
+    }
+
     @Environment(\.dismiss) private var dismiss
     @Environment(\.colorScheme) private var colorScheme
 
     let summary: GameAccuracySummary
+    let recordedGame: RecordedGame
     let roundTitle: String
     var result: PGNResult = .ongoing
     var whiteName: String = GameAccuracySummary.Side.white.label
     var blackName: String = GameAccuracySummary.Side.black.label
     var assessmentColors: MoveAssessmentColors = .defaults
+    var boardAppearance: MiniChessBoardAppearance = .default
 
     @State private var progressMode: GameAccuracySummary.AccuracyProgressMode = .running
+    @State private var isExportingPDF = false
+    @State private var exportErrorMessage: String?
+    @State private var pdfExportItem: ShareablePDFExport?
 
     /// Uses the PGN tag when it has a real value; otherwise `White` / `Black`.
     static func playerDisplayName(from tag: String, fallback: String) -> String {
         let trimmed = tag.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed != "?" else { return fallback }
         return trimmed
+    }
+
+    private var lichessAnalysisURL: URL? {
+        LichessAnalysisURL.make(
+            fromMoves: recordedGame.moves,
+            result: recordedGame.result,
+            maxCharacterCount: LichessAnalysisURL.maxBrowserURLCharacterCount
+        )
     }
 
     var body: some View {
@@ -90,15 +111,148 @@ struct GameAccuracySummarySheet: View {
                         Text(accuracyProgressFooter)
                     }
                 }
+
+                if !recordedGame.moves.isEmpty {
+                    Section {
+                        if let url = lichessAnalysisURL {
+                            Link(destination: url) {
+                                Label("Analyze on Lichess", systemImage: "arrow.up.right.square")
+                            }
+                            .accessibilityHint("Opens this game on the Lichess analysis board")
+                        } else {
+                            Label {
+                                Text("This game is too long to open as a Lichess analysis link. Share the PGN instead.")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            } icon: {
+                                Image(systemName: "link.badge.plus")
+                                    .foregroundStyle(.secondary)
+                            }
+                            .accessibilityElement(children: .combine)
+                        }
+                    } header: {
+                        Text("External analysis")
+                    } footer: {
+                        if lichessAnalysisURL != nil {
+                            Text("Opens the moves on Lichess’s analysis board in Safari or the Lichess app.")
+                        }
+                    }
+                }
             }
             .navigationTitle(roundTitle)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    Button {
+                        exportPDF()
+                    } label: {
+                        if isExportingPDF {
+                            ProgressView()
+                        } else {
+                            Label("PDF", systemImage: "square.and.arrow.up")
+                        }
+                    }
+                    .disabled(isExportingPDF)
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { dismiss() }
+                        .disabled(isExportingPDF)
                 }
             }
+            .overlay {
+                if isExportingPDF {
+                    ZStack {
+                        Color.black.opacity(0.18)
+                            .ignoresSafeArea()
+                        VStack(spacing: 14) {
+                            ProgressView()
+                                .controlSize(.large)
+                            Text("Preparing PDF…")
+                                .font(.subheadline.weight(.medium))
+                                .foregroundStyle(.primary)
+                        }
+                        .padding(.horizontal, 28)
+                        .padding(.vertical, 22)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("Preparing PDF")
+                }
+            }
+            #if os(iOS)
+            .sheet(item: $pdfExportItem, onDismiss: cleanupPDFExport) { item in
+                ShareSheet(items: [item.url])
+            }
+            #endif
+            .alert("Export Failed", isPresented: Binding(
+                get: { exportErrorMessage != nil },
+                set: { if !$0 { exportErrorMessage = nil } }
+            )) {
+                Button("OK", role: .cancel) { exportErrorMessage = nil }
+            } message: {
+                Text(exportErrorMessage ?? "")
+            }
         }
+    }
+
+    private func cleanupPDFExport() {
+        if let pdfExportItem {
+            try? FileManager.default.removeItem(at: pdfExportItem.url)
+        }
+        pdfExportItem = nil
+    }
+
+    @MainActor
+    private func exportPDF() {
+        guard !isExportingPDF else { return }
+        isExportingPDF = true
+        exportErrorMessage = nil
+
+        Task { @MainActor in
+            // Let the overlay/spinner paint before the heavy render work.
+            await Task.yield()
+
+            let evaluationChartImage = summary.hasEvaluationProgress
+                ? renderChartImage(evaluationChart)
+                : nil
+            let accuracyChartImage = summary.hasAccuracyProgress
+                ? renderChartImage(chartMarks(for: .running, printFriendly: true).frame(height: 200))
+                : nil
+            let cumulativeAccuracyChartImage = summary.hasAccuracyProgress
+                ? renderChartImage(chartMarks(for: .cumulative, printFriendly: true).frame(height: 200))
+                : nil
+
+            do {
+                let url = try GameReportPDFComposer.writeTemporaryPDF(
+                    input: GameReportPDFComposer.Input(
+                        recordedGame: recordedGame,
+                        summary: summary,
+                        whiteName: whiteName,
+                        blackName: blackName,
+                        boardAppearance: boardAppearance,
+                        assessmentColors: assessmentColors,
+                        evaluationChartImage: evaluationChartImage,
+                        accuracyChartImage: accuracyChartImage,
+                        cumulativeAccuracyChartImage: cumulativeAccuracyChartImage
+                    )
+                )
+                pdfExportItem = ShareablePDFExport(url: url)
+            } catch {
+                exportErrorMessage = error.localizedDescription
+            }
+            isExportingPDF = false
+        }
+    }
+
+    @MainActor
+    private func renderChartImage<Content: View>(_ content: Content) -> UIImage? {
+        let chartView = content
+            .frame(width: 520, height: 200)
+            .padding(12)
+            .background(Color.white)
+        let renderer = ImageRenderer(content: chartView)
+        renderer.scale = 2
+        return renderer.uiImage
     }
 
     private var overviewSection: some View {
@@ -456,12 +610,19 @@ struct GameAccuracySummarySheet: View {
         .animation(.easeInOut(duration: 0.28), value: progressMode)
     }
 
-    private func chartMarks(for mode: GameAccuracySummary.AccuracyProgressMode) -> some View {
+    private func chartMarks(
+        for mode: GameAccuracySummary.AccuracyProgressMode,
+        printFriendly: Bool = false
+    ) -> some View {
         let points = summary.accuracyProgress(for: mode)
         let xScale = accuracyProgressXScale
         let scoredMoves = points.map(\.moveNumber)
         let maxMove = scoredMoves.max() ?? xScale.firstScoredMove
         let axisMarks = xScale.axisMarks(scoredMoves: scoredMoves)
+        let whiteStroke = printFriendly
+            ? Color(red: 0.12, green: 0.42, blue: 0.72) // Blue reads clearly on print / white PDF
+            : sideAccent(.white)
+        let blackStroke = printFriendly ? Color.black : sideAccent(.black)
 
         return Chart {
             // Draw Black under White so overlapping segments stay a clean light stroke
@@ -474,8 +635,8 @@ struct GameAccuracySummarySheet: View {
             }
         }
         .chartForegroundStyleScale([
-            GameAccuracySummary.Side.white.label: sideAccent(.white),
-            GameAccuracySummary.Side.black.label: sideAccent(.black)
+            GameAccuracySummary.Side.white.label: whiteStroke,
+            GameAccuracySummary.Side.black.label: blackStroke
         ])
         .chartLegend(position: .bottom, alignment: .center)
         .chartXScale(domain: xScale.domain(maxMoveNumber: maxMove))

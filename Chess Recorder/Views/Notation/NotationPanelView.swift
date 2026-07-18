@@ -25,6 +25,7 @@ struct NotationPanelView: View {
     var showMoveAssessments: Bool = false
     var assessmentColors: MoveAssessmentColors = .defaults
     var assessmentColorsCacheKey: String = ""
+    var boardAppearance: MiniChessBoardAppearance = .default
     let engineAnalysisVisible: Bool
     let engineAnalysisUseAlgebraicNotation: Bool
     @Bindable var engineAnalysis: EngineAnalysisService
@@ -130,6 +131,7 @@ struct NotationPanelView: View {
                                     showMoveAssessments: showMoveAssessments,
                                     showAccuracySummary: showAccuracySummary,
                                     assessmentColors: assessmentColors,
+                                    boardAppearance: boardAppearance,
                                     // Freeze ply props on inactive rows so they don't redraw on navigation.
                                     activePlyIndex: isActiveGame ? game.activePlyIndex : recordedGame.moves.count,
                                     isAtLatestMove: isActiveGame ? game.isAtLatestMove : true,
@@ -179,6 +181,7 @@ struct NotationPanelView: View {
                                 showMoveAssessments: showMoveAssessments,
                                 showAccuracySummary: showAccuracySummary,
                                 assessmentColors: assessmentColors,
+                                boardAppearance: boardAppearance,
                                 activePlyIndex: game.activePlyIndex,
                                 isAtLatestMove: game.isAtLatestMove
                             )
@@ -383,6 +386,7 @@ private struct GamePGNRowView: View, Equatable {
     var showMoveAssessments: Bool = false
     var showAccuracySummary: Bool = true
     var assessmentColors: MoveAssessmentColors = .defaults
+    var boardAppearance: MiniChessBoardAppearance = .default
     var activePlyIndex: Int = 0
     var isAtLatestMove: Bool = true
     var contentRevision: UInt64 = 0
@@ -410,6 +414,7 @@ private struct GamePGNRowView: View, Equatable {
             && lhs.showMoveAssessments == rhs.showMoveAssessments
             && lhs.showAccuracySummary == rhs.showAccuracySummary
             && lhs.assessmentColors == rhs.assessmentColors
+            && lhs.boardAppearance == rhs.boardAppearance
             && lhs.activePlyIndex == rhs.activePlyIndex
             && lhs.isAtLatestMove == rhs.isAtLatestMove
             && lhs.contentRevision == rhs.contentRevision
@@ -558,6 +563,7 @@ private struct GamePGNRowView: View, Equatable {
         .sheet(isPresented: $showingAccuracySummary) {
             GameAccuracySummarySheet(
                 summary: accuracySummary ?? GameAccuracySummary(moves: recordedGame.moves),
+                recordedGame: recordedGame,
                 roundTitle: "Round \(recordedGame.round)",
                 result: recordedGame.result,
                 whiteName: GameAccuracySummarySheet.playerDisplayName(
@@ -568,7 +574,8 @@ private struct GamePGNRowView: View, Equatable {
                     from: recordedGame.metadata.black,
                     fallback: GameAccuracySummary.Side.black.label
                 ),
-                assessmentColors: assessmentColors
+                assessmentColors: assessmentColors,
+                boardAppearance: boardAppearance
             )
             // Refresh sheet contents when assessments arrive; keep row identity stable
             // so `showingAccuracySummary` is not reset (which would dismiss the sheet).

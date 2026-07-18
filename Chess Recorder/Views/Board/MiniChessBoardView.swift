@@ -7,7 +7,7 @@ import ChessKit
 import SwiftUI
 
 /// Square colors and piece scale shared with the main board settings.
-struct MiniChessBoardAppearance {
+struct MiniChessBoardAppearance: Equatable {
     var lightSquareColor: Color
     var darkSquareColor: Color
     /// Fraction of a square’s edge used for the piece (same as `AppSettings.pieceSizePercent`).

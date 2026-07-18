@@ -631,7 +631,7 @@ struct SettingsView: View {
                 Text("Clears all move quality marks and centipawn loss values, then queues a fresh assessment of every game.")
             }
             .sheet(isPresented: $showingPGNImport) {
-                DeveloperPGNImportSheet { pgn in
+                PGNImportSheet { pgn in
                     guard let onImportPGN else { return 0 }
                     return try onImportPGN(pgn)
                 }

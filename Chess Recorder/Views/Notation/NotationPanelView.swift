@@ -29,12 +29,14 @@ struct NotationPanelView: View {
     let engineAnalysisUseAlgebraicNotation: Bool
     @Bindable var engineAnalysis: EngineAnalysisService
     var onClearPGN: (() -> Void)?
+    var onImportPGN: ((String) throws -> Int)?
     var onActivateGame: ((UUID) -> Void)?
     var onDeleteGame: ((UUID) -> Void)?
     var onGameTagsEdited: (() -> Void)?
 
     @State private var exportItem: ShareablePGNExport?
     @State private var gamePendingTagEdit: RecordedGame?
+    @State private var showingPGNImport = false
     @State private var cachedFullPGN = ""
     @State private var cachedRows: [UUID: GameRowPresentation] = [:]
     @State private var presentationCacheKey = ""
@@ -60,9 +62,21 @@ struct NotationPanelView: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 HStack {
-                    Text("PGN Notation")
+                    Text("Notation")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
+
+                    if onImportPGN != nil {
+                        Button {
+                            showingPGNImport = true
+                        } label: {
+                            Image(systemName: "square.and.arrow.down")
+                                .font(.subheadline)
+                                .imageScale(.medium)
+                        }
+                        .accessibilityLabel("Import PGN")
+                        .padding(.leading, 4)
+                    }
 
                     Spacer()
 
@@ -198,6 +212,12 @@ struct NotationPanelView: View {
             ) { metadata, date in
                 pgnArchive.updateGameTags(id: recordedGame.id, metadata: metadata, date: date)
                 onGameTagsEdited?()
+            }
+        }
+        .sheet(isPresented: $showingPGNImport) {
+            PGNImportSheet { pgn in
+                guard let onImportPGN else { return 0 }
+                return try onImportPGN(pgn)
             }
         }
         #endif

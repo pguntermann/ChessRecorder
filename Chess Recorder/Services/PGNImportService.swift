@@ -19,6 +19,9 @@ enum PGNImportService {
     enum ImportError: LocalizedError, Equatable {
         case emptyInput
         case noGamesParsed
+        case notPGN
+        case inputTooLarge(byteCount: Int, limitBytes: Int)
+        case tooManyGames(found: Int, limit: Int)
         case nonStandardStart(gameIndex: Int)
         case parseFailed(gameIndex: Int, detail: String)
 
@@ -28,12 +31,33 @@ enum PGNImportService {
                 return "Clipboard or file is empty."
             case .noGamesParsed:
                 return "No PGN games were found."
+            case .notPGN:
+                return "This doesn’t look like a PGN file. Choose a .pgn export or paste standard chess game notation."
+            case .inputTooLarge(_, let limitBytes):
+                let limitMB = Double(limitBytes) / 1_000_000
+                return String(
+                    format: "This PGN is too large. Maximum size is %.1f MB.",
+                    limitMB
+                )
+            case .tooManyGames(let found, let limit):
+                return "This file contains \(found) games. Chess Recorder can import at most \(limit) games at a time — split the file and try again."
             case .nonStandardStart(let gameIndex):
                 return "Game \(gameIndex + 1) uses a non-standard starting position (SetUp/FEN), which is not supported."
             case .parseFailed(let gameIndex, let detail):
                 return "Could not parse game \(gameIndex + 1): \(detail)"
             }
         }
+    }
+
+    /// Hard cap on games per import (product limit for a recorder, not a database).
+    static let maxGamesPerImport = 20
+    /// Show a non-database disclaimer when more than this many games were imported.
+    static let largeImportNoticeThreshold = 10
+    /// Reject oversized paste/file payloads before parsing.
+    static let maxInputUTF8ByteCount = 512_000
+
+    static func shouldShowLargeImportNotice(importedCount: Int) -> Bool {
+        importedCount > largeImportNoticeThreshold
     }
 
     /// Splits a multi-game PGN (as produced by Chess Recorder export) into single-game strings.
@@ -69,12 +93,32 @@ enum PGNImportService {
         return games
     }
 
+    /// Counts only chunks that look like real PGN (tags and/or numbered movetext), not blank-line prose.
+    static func estimateGameCount(in text: String) -> Int {
+        pgnGameCandidates(in: text).count
+    }
+
+    /// True when the text contains at least one PGN-looking game.
+    static func looksLikePGN(_ text: String) -> Bool {
+        estimateGameCount(in: text) > 0
+    }
+
     static func importGames(from pgn: String) throws -> [ImportedGame] {
         let trimmed = pgn.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw ImportError.emptyInput }
 
-        let gameTexts = splitGames(in: trimmed)
-        guard !gameTexts.isEmpty else { throw ImportError.noGamesParsed }
+        let utf8Count = trimmed.utf8.count
+        guard utf8Count <= maxInputUTF8ByteCount else {
+            throw ImportError.inputTooLarge(byteCount: utf8Count, limitBytes: maxInputUTF8ByteCount)
+        }
+
+        let gameTexts = pgnGameCandidates(in: trimmed)
+        guard !gameTexts.isEmpty else {
+            throw splitGames(in: trimmed).isEmpty ? ImportError.noGamesParsed : ImportError.notPGN
+        }
+        guard gameTexts.count <= maxGamesPerImport else {
+            throw ImportError.tooManyGames(found: gameTexts.count, limit: maxGamesPerImport)
+        }
 
         var imported: [ImportedGame] = []
         for (gameIndex, gameText) in gameTexts.enumerated() {
@@ -97,6 +141,32 @@ enum PGNImportService {
 
         guard !imported.isEmpty else { throw ImportError.noGamesParsed }
         return imported
+    }
+
+    /// Splits on blank lines, then keeps only chunks that resemble PGN games.
+    private static func pgnGameCandidates(in text: String) -> [String] {
+        splitGames(in: text).filter(looksLikePGNGame)
+    }
+
+    private static func looksLikePGNGame(_ text: String) -> Bool {
+        let tags = parseTags(in: text)
+        let hasSevenTagRoster =
+            tags["Event"] != nil
+            || tags["Site"] != nil
+            || tags["Date"] != nil
+            || tags["Round"] != nil
+            || tags["White"] != nil
+            || tags["Black"] != nil
+            || tags["Result"] != nil
+        if hasSevenTagRoster { return true }
+        if tags["FEN"] != nil || tags["SetUp"] != nil || tags["ECO"] != nil { return true }
+
+        let movetext = extractMovetext(from: text).text
+        // Numbered move: "1.e4", "12... Nf6", "8. O-O"
+        if movetext.range(of: #"\b\d+\.+[.\s]*[A-Za-z0-9]"#, options: .regularExpression) != nil {
+            return true
+        }
+        return false
     }
 
     // MARK: - ChessKit path

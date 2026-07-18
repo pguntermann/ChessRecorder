@@ -166,4 +166,76 @@ final class PGNImportServiceTests: XCTestCase {
             }
         }
     }
+
+    func testImportRejectsTooManyGames() {
+        let oneGame = """
+        [Event "?"]
+        [Site "?"]
+        [Date "2026.07.18"]
+        [Round "1"]
+        [White "W"]
+        [Black "B"]
+        [Result "*"]
+
+        1. e4 e5 *
+        """
+        let limit = PGNImportService.maxGamesPerImport
+        let pgn = Array(repeating: oneGame, count: limit + 1).joined(separator: "\n\n")
+        XCTAssertThrowsError(try PGNImportService.importGames(from: pgn)) { error in
+            guard case PGNImportService.ImportError.tooManyGames(let found, let reportedLimit) = error else {
+                return XCTFail("Expected tooManyGames, got \(error)")
+            }
+            XCTAssertEqual(found, limit + 1)
+            XCTAssertEqual(reportedLimit, limit)
+        }
+    }
+
+    func testLargeImportNoticeThreshold() {
+        XCTAssertFalse(PGNImportService.shouldShowLargeImportNotice(importedCount: 10))
+        XCTAssertTrue(PGNImportService.shouldShowLargeImportNotice(importedCount: 11))
+        XCTAssertTrue(PGNImportService.shouldShowLargeImportNotice(importedCount: 20))
+    }
+
+    func testImportRejectsNonPGNProse() {
+        let prose = """
+        Hello world.
+
+        This is just a plain text file with blank lines.
+
+
+        It should not be counted as chess games.
+        """
+        XCTAssertEqual(PGNImportService.estimateGameCount(in: prose), 0)
+        XCTAssertFalse(PGNImportService.looksLikePGN(prose))
+        XCTAssertThrowsError(try PGNImportService.importGames(from: prose)) { error in
+            guard case PGNImportService.ImportError.notPGN = error else {
+                return XCTFail("Expected notPGN, got \(error)")
+            }
+        }
+    }
+
+    func testEstimateGameCountIgnoresProseBetweenRealGames() throws {
+        let real = """
+        [Event "?"]
+        [Site "?"]
+        [Date "2026.07.18"]
+        [Round "1"]
+        [White "W"]
+        [Black "B"]
+        [Result "*"]
+
+        1. e4 e5 *
+        """
+        let mixed = """
+        Notes from practice.
+
+        \(real)
+
+        More notes that are not PGN.
+        """
+        XCTAssertEqual(PGNImportService.estimateGameCount(in: mixed), 1)
+        let imported = try PGNImportService.importGames(from: mixed)
+        XCTAssertEqual(imported.count, 1)
+        XCTAssertEqual(imported[0].moves.map(\.san), ["e4", "e5"])
+    }
 }

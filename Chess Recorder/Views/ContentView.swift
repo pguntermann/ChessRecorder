@@ -564,6 +564,9 @@ struct ContentView: View {
                 engineAnalysisUseAlgebraicNotation: settingsStore.settings.engineAnalysisUseAlgebraicNotation,
                 engineAnalysis: engineAnalysis,
                 onClearPGN: clearPGN,
+                onImportPGN: { pgn in
+                    try importPGNGames(from: pgn)
+                },
                 onActivateGame: activateGame,
                 onDeleteGame: deleteGame,
                 onGameTagsEdited: scheduleSessionPersist
@@ -656,6 +659,11 @@ struct ContentView: View {
         let ids = pgnArchive.appendImportedGames(imported)
         scheduleSessionPersist()
         moveAssessment.enqueueUnassessedMoves(in: pgnArchive)
+        prefetchPreparedGamesInBackground()
+        // Last game in the PGN lands at the top of the newest-first archive.
+        if let focusID = ids.last {
+            activateGame(id: focusID)
+        }
         return ids.count
     }
     

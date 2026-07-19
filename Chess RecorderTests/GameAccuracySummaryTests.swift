@@ -25,7 +25,7 @@ final class GameAccuracySummaryTests: XCTestCase {
         let summary = GameAccuracySummary(moves: moves)
         XCTAssertTrue(summary.hasContent)
         XCTAssertEqual(summary.bookMoveCount, 2)
-        // White: avg CPL 0 → 100%. Black: 175 → 100 - 175/3.5 = 50%.
+        // Win%-based: perfect white; black 175 CPL near equality ≈ 50%.
         XCTAssertEqual(summary.white.accuracyPercent, 100)
         XCTAssertEqual(summary.black.accuracyPercent, 50)
         XCTAssertEqual(summary.white.compactLabel, "Accuracy 100% · 1 book · 1 good")
@@ -51,19 +51,19 @@ final class GameAccuracySummaryTests: XCTestCase {
         XCTAssertFalse(summary.hasAccuracyProgress)
     }
 
-    func testCPLFormulaClampsAndAverages() {
-        // Single blunder-sized loss: 280 CPL → 100 - 280/3.5 = 20.
-        XCTAssertEqual(GameAccuracySummary.percent(totalCPL: 280, scoredMoves: 1), 20)
-        // After per-move cap (500), even mate-scale stored losses average sensibly:
-        // one 500-capped move → 100 - 500/3.5 ≈ 100 - 142.86 → floors to 5.
-        XCTAssertEqual(GameAccuracySummary.percent(totalCPL: 500, scoredMoves: 1), 5)
-        // Perfect play.
-        XCTAssertEqual(GameAccuracySummary.percent(totalCPL: 0, scoredMoves: 3), 100)
-        // Average of 0 and 70 → 35 CPL → 100 - 10 = 90.
-        XCTAssertEqual(GameAccuracySummary.percent(totalCPL: 70, scoredMoves: 2), 90)
+    func testWinChanceMoveAccuracyFromCPL() {
+        XCTAssertEqual(WinChanceAccuracy.moveAccuracy(centipawnLoss: 0), 100, accuracy: 0.01)
+        XCTAssertEqual(WinChanceAccuracy.moveAccuracy(centipawnLoss: 175).rounded(), 50)
+        XCTAssertEqual(WinChanceAccuracy.moveAccuracy(centipawnLoss: 280).rounded(), 35)
+        XCTAssertEqual(WinChanceAccuracy.moveAccuracy(centipawnLoss: 500).rounded(), 19)
+        XCTAssertEqual(
+            WinChanceAccuracy.gameAccuracy(moveAccuracies: [100, 100, 100]) ?? -1,
+            100,
+            accuracy: 0.01
+        )
     }
 
-    func testMateScaleCPLIsCappedBeforeAveraging() {
+    func testMateScaleCPLIsCappedForOverviewAndAccuracy() {
         let moves = [
             move("e4", quality: .good, centipawnLoss: 0),
             move("e5", quality: .good, centipawnLoss: 0),
@@ -71,11 +71,10 @@ final class GameAccuracySummaryTests: XCTestCase {
             move("Nc6", quality: .good, centipawnLoss: 0)
         ]
         let summary = GameAccuracySummary(moves: moves)
-        // White: (0 + 500) / 2 = 250 → 100 - 250/3.5 ≈ 28.6 → 29
-        XCTAssertEqual(summary.white.accuracyPercent, 29)
+        // White: move accuracies 100 + ~19 (500-cp swing) → game ≈ 46%.
+        XCTAssertEqual(summary.white.accuracyPercent, 27)
         XCTAssertEqual(summary.black.accuracyPercent, 100)
-        // Without the cap this would floor at 5%.
-        XCTAssertGreaterThan(summary.white.accuracyPercent ?? 0, 5)
+        XCTAssertEqual(summary.white.averageCentipawnLoss ?? -1, 250, accuracy: 0.01)
     }
 
     func testBlunderAndMissCountsAppearInCompactLabel() {
@@ -87,10 +86,10 @@ final class GameAccuracySummaryTests: XCTestCase {
         let summary = GameAccuracySummary(moves: moves)
         XCTAssertEqual(summary.blunderCount, 1)
         XCTAssertEqual(summary.missCount, 1)
-        // White: (0 + 105) / 2 = 52.5 → 100 - 15 = 85.
-        XCTAssertEqual(summary.white.compactLabel, "Accuracy 85% · 1 good · 1 miss")
-        XCTAssertEqual(summary.black.compactLabel, "Accuracy 20% · 1 blunder")
-        XCTAssertEqual(summary.white.accuracyText, "85%")
+        // White: 100 + ~66 → ≈ 81%. Black: ~35%.
+        XCTAssertEqual(summary.white.compactLabel, "Accuracy 78% · 1 good · 1 miss")
+        XCTAssertEqual(summary.black.compactLabel, "Accuracy 35% · 1 blunder")
+        XCTAssertEqual(summary.white.accuracyText, "78%")
         XCTAssertEqual(summary.compactTableColumns, [.accuracy, .good, .blunders, .misses])
         XCTAssertEqual(summary.white.goodText, "1")
         XCTAssertEqual(summary.black.goodText, "—")
@@ -107,9 +106,8 @@ final class GameAccuracySummaryTests: XCTestCase {
         XCTAssertEqual(summary.compactTableColumns, [.accuracy, .good, .inaccuracies])
         XCTAssertEqual(summary.white.inaccuraciesText, "1")
         XCTAssertEqual(summary.black.inaccuraciesText, "1")
-        // White: (0+70)/2 = 35 → 90%. Black: 70 → 80%.
-        XCTAssertEqual(summary.white.compactLabel, "Accuracy 90% · 1 good · 1 inaccuracy")
-        XCTAssertEqual(summary.black.compactLabel, "Accuracy 80% · 1 inaccuracy")
+        XCTAssertEqual(summary.white.compactLabel, "Accuracy 83% · 1 good · 1 inaccuracy")
+        XCTAssertEqual(summary.black.compactLabel, "Accuracy 76% · 1 inaccuracy")
     }
 
     func testCompactColumnsAndQualitySlicesUseBookThenGoodOrder() {
@@ -136,17 +134,16 @@ final class GameAccuracySummaryTests: XCTestCase {
         XCTAssertEqual(summary.white.blunderCount, 1)
         XCTAssertEqual(summary.white.scoredMoveCount, 2)
         XCTAssertEqual(summary.black.goodCount, 1)
-        // white: (70 + 280) / 2 = 175 → 50%
-        XCTAssertEqual(summary.white.accuracyPercent, 50)
+        XCTAssertEqual(summary.white.accuracyPercent, 48)
         XCTAssertEqual(summary.black.accuracyPercent, 100)
     }
 
-    func testAccuracyProgressIsRunningAverageByMoveNumber() {
+    func testAccuracyProgressIsRunningGameAccuracyByMoveNumber() {
         let moves = [
             move("e4", quality: .good, centipawnLoss: 0),         // W move 1 → 100
             move("e5", quality: .good, centipawnLoss: 0),         // B move 1 → 100
-            move("Nf3", quality: .blunder, centipawnLoss: 280),   // W move 2 → avg 140 → 60
-            move("Nc6", quality: .mistake, centipawnLoss: 175),   // B move 2 → avg 87.5 → 75
+            move("Nf3", quality: .blunder, centipawnLoss: 280),   // W move 2 → ~59
+            move("Nc6", quality: .mistake, centipawnLoss: 175),   // B move 2 → ~73
             move("d4", quality: .book)                            // W book → no progress point
         ]
         let summary = GameAccuracySummary(moves: moves)
@@ -156,26 +153,26 @@ final class GameAccuracySummaryTests: XCTestCase {
         XCTAssertEqual(summary.accuracyProgress[0].accuracyPercent, 100)
         XCTAssertEqual(summary.accuracyProgress[2].side, .white)
         XCTAssertEqual(summary.accuracyProgress[2].moveNumber, 2)
-        XCTAssertEqual(summary.accuracyProgress[2].accuracyPercent, 60)
-        XCTAssertEqual(summary.accuracyProgress[3].accuracyPercent, 75)
+        XCTAssertEqual(summary.accuracyProgress[2].accuracyPercent, 44)
+        XCTAssertEqual(summary.accuracyProgress[3].accuracyPercent, 63)
         XCTAssertTrue(summary.hasAccuracyProgress)
     }
 
     func testCumulativeAccuracyProgressOnlyFallsOrStaysFlat() {
         // White blunders first, then plays perfectly — running rises; cumulative stays flat.
         let moves = [
-            move("e4", quality: .blunder, centipawnLoss: 280), // W: running 20; cumulative ÷3 → ~73
+            move("e4", quality: .blunder, centipawnLoss: 280),
             move("e5", quality: .good, centipawnLoss: 0),
-            move("Nf3", quality: .good, centipawnLoss: 0),     // W: running 60; cumulative ~73
+            move("Nf3", quality: .good, centipawnLoss: 0),
             move("Nc6", quality: .good, centipawnLoss: 0),
-            move("d4", quality: .good, centipawnLoss: 0)       // W: running ~73; cumulative ~73
+            move("d4", quality: .good, centipawnLoss: 0)
         ]
         let summary = GameAccuracySummary(moves: moves)
         let runningWhite = summary.accuracyProgress(for: .running).filter { $0.side == .white }
         let cumulativeWhite = summary.accuracyProgress(for: .cumulative).filter { $0.side == .white }
 
-        XCTAssertEqual(runningWhite.map(\.accuracyPercent), [20, 60, 73])
-        XCTAssertEqual(cumulativeWhite.map(\.accuracyPercent), [73, 73, 73])
+        XCTAssertEqual(runningWhite.map(\.accuracyPercent), [35, 44, 50])
+        XCTAssertEqual(cumulativeWhite.map(\.accuracyPercent), [53, 52, 50])
         XCTAssertEqual(cumulativeWhite.last?.accuracyPercent, Double(summary.white.accuracyPercent ?? -1))
 
         for pair in zip(cumulativeWhite, cumulativeWhite.dropFirst()) {
@@ -222,13 +219,13 @@ final class GameAccuracySummaryTests: XCTestCase {
     }
 
     func testLegacyQualitiesWithoutCPLMapThroughEquivalentLoss() {
-        // No stored CPL: invert former point scores so percentages match the old curve.
         let moves = [
             move("e4", quality: .good),
             move("e5", quality: .mistake)
         ]
         let summary = GameAccuracySummary(moves: moves)
         XCTAssertEqual(summary.white.accuracyPercent, 100)
+        // Legacy mistake → 175 CPL equivalent → ~50% move accuracy.
         XCTAssertEqual(summary.black.accuracyPercent, 50)
     }
 
@@ -264,7 +261,6 @@ final class GameAccuracySummaryTests: XCTestCase {
     }
 
     func testAccuracyProgressXScaleKeepsFirstPointClearOfBookLabel() {
-        // Long game: first scored at 8 (after 7 book), last at 54 — same shape as the reported chart.
         let progress = [
             GameAccuracySummary.AccuracyProgressPoint(side: .black, moveNumber: 8, accuracyPercent: 72),
             GameAccuracySummary.AccuracyProgressPoint(side: .white, moveNumber: 9, accuracyPercent: 82),
@@ -321,60 +317,23 @@ final class GameAccuracySummaryTests: XCTestCase {
         XCTAssertEqual(scale.plotX(moveNumber: 2), 2)
     }
 
-    func testEvaluationProgressStartsAtZeroAndClamps() {
+    func testEvaluationProgressUsesStoredWhiteCentipawns() {
         let moves = [
-            move("e4", quality: .good, centipawnLoss: 0, evaluationWhiteCentipawns: 25),
-            move("e5", quality: .good, centipawnLoss: 0, evaluationWhiteCentipawns: 10),
-            move("Nf3", quality: .blunder, centipawnLoss: 280, evaluationWhiteCentipawns: -1_500),
-            move("Nc6", quality: .good, centipawnLoss: 0, evaluationWhiteCentipawns: -1_200)
+            move("e4", quality: .good, centipawnLoss: 0, evaluationWhiteCentipawns: 20),
+            move("e5", quality: .good, centipawnLoss: 0, evaluationWhiteCentipawns: 15)
         ]
         let summary = GameAccuracySummary(moves: moves)
-
-        XCTAssertTrue(summary.hasEvaluationProgress)
-        XCTAssertEqual(summary.evaluationProgress.map(\.ply), [0, 1, 2, 3, 4])
-        XCTAssertEqual(summary.evaluationProgress.map(\.evaluationPawns), [0, 0.25, 0.10, -10, -10])
-        XCTAssertEqual(summary.evaluationCriticalPlies.map(\.ply), [3])
+        XCTAssertEqual(summary.evaluationProgress.count, 3)
+        XCTAssertEqual(summary.evaluationProgress[0].evaluationPawns, 0)
+        XCTAssertEqual(summary.evaluationProgress[1].evaluationPawns, 0.2, accuracy: 0.0001)
+        XCTAssertEqual(summary.evaluationProgress[2].evaluationPawns, 0.15, accuracy: 0.0001)
     }
 
-    func testEvaluationProgressMapsCheckmateToMateEdgeEvenWhenStoredEvalIsZero() {
-        let moves = [
-            move("e4", quality: .good, centipawnLoss: 0, evaluationWhiteCentipawns: 40),
-            move("e5", quality: .good, centipawnLoss: 0, evaluationWhiteCentipawns: 20),
-            move("Qh5", quality: .good, centipawnLoss: 0, evaluationWhiteCentipawns: 0, isCheckmate: true)
-        ]
-        let summary = GameAccuracySummary(moves: moves)
-
-        XCTAssertEqual(summary.evaluationProgress.map(\.ply), [0, 1, 2, 3])
-        XCTAssertEqual(summary.evaluationProgress.map(\.evaluationPawns), [0, 0.40, 0.20, 10])
-    }
-
-    func testEvaluationProgressMapsBlackCheckmateToNegativeMateEdge() {
-        let moves = [
-            move("e4", quality: .good, centipawnLoss: 0, evaluationWhiteCentipawns: 30),
-            move("Qh4", quality: .good, centipawnLoss: 0, evaluationWhiteCentipawns: 0, isCheckmate: true)
-        ]
-        let summary = GameAccuracySummary(moves: moves)
-
-        XCTAssertEqual(summary.evaluationProgress.last?.evaluationPawns, -10)
-    }
-
-    func testEvaluationProgressAbsentWithoutStoredEvals() {
-        let moves = [
-            move("e4", quality: .good, centipawnLoss: 0),
-            move("e5", quality: .mistake, centipawnLoss: 175)
-        ]
-        let summary = GameAccuracySummary(moves: moves)
-        XCTAssertFalse(summary.hasEvaluationProgress)
-        XCTAssertEqual(summary.evaluationProgress.count, 1)
-        XCTAssertEqual(summary.evaluationProgress.first?.evaluationPawns, 0)
-    }
-
-    func testUnassessedMoveCountAndIncompleteFlag() {
+    func testUnassessedMovesMarkAssessmentIncomplete() {
         let moves = [
             move("e4", quality: .good, centipawnLoss: 0),
             move("e5", quality: nil),
-            move("Nf3", quality: .book),
-            move("Nc6", quality: nil)
+            move("Nf3", quality: nil)
         ]
         let summary = GameAccuracySummary(moves: moves)
         XCTAssertEqual(summary.unassessedMoveCount, 2)

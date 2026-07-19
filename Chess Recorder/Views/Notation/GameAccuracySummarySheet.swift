@@ -371,7 +371,7 @@ struct GameAccuracySummarySheet: View {
     }
 
     private var overviewFooter: String {
-        "Accuracy uses average centipawn loss (book excluded). Best-move % is the share of scored moves with 0 CPL. Blunder rate is among all assessed moves."
+        "Accuracy uses winning-chance drop per move (book excluded). Best-move % is the share of scored moves with 0 CPL. Blunder rate is among all assessed moves."
     }
 
     private var incompleteAssessmentMessage: String {

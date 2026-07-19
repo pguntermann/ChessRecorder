@@ -8,8 +8,9 @@ import LucidEngine
 
 /// Aggregated move-quality stats for a recorded game.
 ///
-/// Accuracy uses average centipawn loss: `clamp(100 - avgCPL / 3.5, 5, 100)`.
-/// Book moves are excluded from the average and reported separately.
+/// Accuracy uses winning-chance (Win%) drop per move, then aggregates with a
+/// volatility-weighted mean and harmonic mean. Book moves are excluded from
+/// accuracy and reported separately. Average CPL remains an overview metric.
 struct GameAccuracySummary: Equatable, Sendable {
     enum Side: String, Equatable, Hashable, Sendable, CaseIterable {
         case white
@@ -351,7 +352,7 @@ struct GameAccuracySummary: Equatable, Sendable {
     var black: SideStats
     /// Chronological running accuracy for White and Black (scored moves only).
     var accuracyProgress: [AccuracyProgressPoint]
-    /// Same move numbers as `accuracyProgress`, with CPL scaled by each side's final scored count.
+    /// Path toward the final accuracy: prefix moves plus remaining moves treated as perfect.
     var cumulativeAccuracyProgress: [AccuracyProgressPoint]
     /// White-POV evaluation story: ply 0 at 0.0, then each move that stored an eval.
     var evaluationProgress: [EvaluationPoint]
@@ -455,11 +456,15 @@ struct GameAccuracySummary: Equatable, Sendable {
         var black = SideStats()
         var whiteCPL = 0.0
         var blackCPL = 0.0
-        var prefixes: [(side: Side, moveNumber: Int, totalCPL: Double, scoredMoves: Int)] = []
         var evaluationProgress: [EvaluationPoint] = [
             EvaluationPoint(ply: 0, evaluationPawns: 0)
         ]
         var criticalCandidates: [(ply: Int, quality: MoveQuality, cpl: Int)] = []
+
+        // White-POV win% after each position: start + one entry per ply.
+        var allWinPercents: [Double?] = [WinChanceAccuracy.winPercent(centipawns: 0)]
+        var previousWhiteCP: Int? = 0
+        var scoredSamples: [AccuracySample] = []
 
         for (index, move) in moves.enumerated() {
             if move.isCheckmate {
@@ -479,9 +484,33 @@ struct GameAccuracySummary: Equatable, Sendable {
                 )
             }
 
-            guard let quality = move.quality else { continue }
+            guard let quality = move.quality else {
+                allWinPercents.append(nil)
+                previousWhiteCP = nil
+                continue
+            }
+
             let side: Side = index % 2 == 0 ? .white : .black
             let moveNumber = index / 2 + 1
+            let beforeWhiteCP = previousWhiteCP
+            let afterWhiteCP = Self.whitePOVCentipawnsAfter(
+                move: move,
+                moveIndex: index,
+                side: side,
+                beforeWhiteCP: beforeWhiteCP,
+                quality: quality
+            )
+
+            if quality == .book {
+                Self.whiteOrBlack(side, white: &white, black: &black) { $0.bookCount += 1 }
+                // Keep the eval chain continuous through book; book is not scored.
+                if let cp = beforeWhiteCP {
+                    allWinPercents.append(WinChanceAccuracy.winPercent(centipawns: cp))
+                } else {
+                    allWinPercents.append(nil)
+                }
+                continue
+            }
 
             if quality == .mistake || quality == .blunder || quality == .miss,
                let cpl = move.centipawnLoss, cpl > 0 {
@@ -490,44 +519,126 @@ struct GameAccuracySummary: Equatable, Sendable {
 
             if side == .white {
                 Self.apply(move, quality: quality, to: &white, cplSum: &whiteCPL)
-                if quality != .book, white.scoredMoveCount > 0 {
-                    prefixes.append((.white, moveNumber, whiteCPL, white.scoredMoveCount))
-                }
             } else {
                 Self.apply(move, quality: quality, to: &black, cplSum: &blackCPL)
-                if quality != .book, black.scoredMoveCount > 0 {
-                    prefixes.append((.black, moveNumber, blackCPL, black.scoredMoveCount))
+            }
+
+            if let moveAccuracy = Self.moveAccuracy(
+                for: move,
+                quality: quality,
+                side: side,
+                beforeWhiteCP: beforeWhiteCP,
+                afterWhiteCP: afterWhiteCP
+            ) {
+                scoredSamples.append(
+                    AccuracySample(
+                        side: side,
+                        moveNumber: moveNumber,
+                        plyIndex: index,
+                        moveAccuracy: moveAccuracy
+                    )
+                )
+            }
+
+            if let afterWhiteCP {
+                allWinPercents.append(WinChanceAccuracy.winPercent(centipawns: afterWhiteCP))
+                previousWhiteCP = afterWhiteCP
+            } else {
+                allWinPercents.append(nil)
+                previousWhiteCP = nil
+            }
+        }
+
+        let volatilityWeights = WinChanceAccuracy.volatilityWeights(allWinPercents: allWinPercents)
+        let weightedSamples = scoredSamples.map { sample in
+            let weight = sample.plyIndex < volatilityWeights.count
+                ? (volatilityWeights[sample.plyIndex] ?? 1)
+                : 1
+            return WeightedAccuracySample(
+                side: sample.side,
+                moveNumber: sample.moveNumber,
+                moveAccuracy: sample.moveAccuracy,
+                weight: weight
+            )
+        }
+
+        white.accuracyPercent = Self.roundedAccuracy(
+            WinChanceAccuracy.gameAccuracy(
+                moveAccuracies: weightedSamples.filter { $0.side == .white }.map(\.moveAccuracy),
+                weights: weightedSamples.filter { $0.side == .white }.map(\.weight)
+            )
+        )
+        black.accuracyPercent = Self.roundedAccuracy(
+            WinChanceAccuracy.gameAccuracy(
+                moveAccuracies: weightedSamples.filter { $0.side == .black }.map(\.moveAccuracy),
+                weights: weightedSamples.filter { $0.side == .black }.map(\.weight)
+            )
+        )
+        white.finalizeOverviewStats(totalCPL: whiteCPL)
+        black.finalizeOverviewStats(totalCPL: blackCPL)
+
+        let whiteFinalCount = weightedSamples.filter { $0.side == .white }.count
+        let blackFinalCount = weightedSamples.filter { $0.side == .black }.count
+
+        var runningProgress: [AccuracyProgressPoint] = []
+        var cumulativeProgress: [AccuracyProgressPoint] = []
+        var whitePrefix: [WeightedAccuracySample] = []
+        var blackPrefix: [WeightedAccuracySample] = []
+
+        for sample in weightedSamples {
+            if sample.side == .white {
+                whitePrefix.append(sample)
+                if let running = Self.progressAccuracy(samples: whitePrefix) {
+                    runningProgress.append(
+                        AccuracyProgressPoint(
+                            side: .white,
+                            moveNumber: sample.moveNumber,
+                            accuracyPercent: running
+                        )
+                    )
+                }
+                if let cumulative = Self.cumulativeProgressAccuracy(
+                    prefix: whitePrefix,
+                    finalCount: whiteFinalCount
+                ) {
+                    cumulativeProgress.append(
+                        AccuracyProgressPoint(
+                            side: .white,
+                            moveNumber: sample.moveNumber,
+                            accuracyPercent: cumulative
+                        )
+                    )
+                }
+            } else {
+                blackPrefix.append(sample)
+                if let running = Self.progressAccuracy(samples: blackPrefix) {
+                    runningProgress.append(
+                        AccuracyProgressPoint(
+                            side: .black,
+                            moveNumber: sample.moveNumber,
+                            accuracyPercent: running
+                        )
+                    )
+                }
+                if let cumulative = Self.cumulativeProgressAccuracy(
+                    prefix: blackPrefix,
+                    finalCount: blackFinalCount
+                ) {
+                    cumulativeProgress.append(
+                        AccuracyProgressPoint(
+                            side: .black,
+                            moveNumber: sample.moveNumber,
+                            accuracyPercent: cumulative
+                        )
+                    )
                 }
             }
         }
 
-        white.accuracyPercent = Self.percent(totalCPL: whiteCPL, scoredMoves: white.scoredMoveCount)
-        black.accuracyPercent = Self.percent(totalCPL: blackCPL, scoredMoves: black.scoredMoveCount)
-        white.finalizeOverviewStats(totalCPL: whiteCPL)
-        black.finalizeOverviewStats(totalCPL: blackCPL)
-
-        let whiteFinalCount = white.scoredMoveCount
-        let blackFinalCount = black.scoredMoveCount
-
         self.white = white
         self.black = black
-        self.accuracyProgress = prefixes.compactMap { prefix in
-            Self.progressPoint(
-                side: prefix.side,
-                moveNumber: prefix.moveNumber,
-                totalCPL: prefix.totalCPL,
-                scoredMoves: prefix.scoredMoves
-            )
-        }
-        self.cumulativeAccuracyProgress = prefixes.compactMap { prefix in
-            let finalCount = prefix.side == .white ? whiteFinalCount : blackFinalCount
-            return Self.progressPoint(
-                side: prefix.side,
-                moveNumber: prefix.moveNumber,
-                totalCPL: prefix.totalCPL,
-                scoredMoves: finalCount
-            )
-        }
+        self.accuracyProgress = runningProgress
+        self.cumulativeAccuracyProgress = cumulativeProgress
         self.evaluationProgress = evaluationProgress
         self.evaluationPhaseTransitions = Self.phaseTransitions(
             fenSequence: fenSequence ?? ChessGame.prepared(from: moves).fenSequenceFromStart()
@@ -542,15 +653,26 @@ struct GameAccuracySummary: Equatable, Sendable {
         }
     }
 
-    /// Divisor used by `100 - averageCPL / divisor`, matching common CPL accuracy curves.
-    static let averageCPLDivisor: Double = 3.5
-    /// Per-move CPL cap before averaging (same as CARA) so mate-scale losses don't floor accuracy at 5%.
+    /// Per-move CPL cap for overview average CPL (mate-scale losses).
     static let averageCPLCap: Double = 500
-    static let minimumAccuracyPercent: Double = 5
     static let maximumAccuracyPercent: Double = 100
     /// Eval chart Y cap in pawns (±10), matching common desktop eval graphs.
     static let evaluationScaleCapPawns: Double = 10
     static let evaluationCriticalMarkerLimit = 3
+
+    private struct AccuracySample {
+        let side: Side
+        let moveNumber: Int
+        let plyIndex: Int
+        let moveAccuracy: Double
+    }
+
+    private struct WeightedAccuracySample {
+        let side: Side
+        let moveNumber: Int
+        let moveAccuracy: Double
+        let weight: Double
+    }
 
     static func clampedEvaluationPawns(centipawns: Int) -> Double {
         let pawns = Double(centipawns) / 100.0
@@ -574,22 +696,22 @@ struct GameAccuracySummary: Equatable, Sendable {
         return transitions
     }
 
-    /// Effective CPL for accuracy. Book is excluded. Values are capped at `averageCPLCap`.
-    /// Legacy qualities without stored CPL map from the previous point scores via `(100 - points) * 3.5`.
+    /// Effective CPL for overview Avg CPL. Book excluded. Capped at `averageCPLCap`.
+    /// Legacy qualities without stored CPL map from former point scores via `(100 - points) * 3.5`.
     static func effectiveCentipawnLoss(for move: ChessMove, quality: MoveQuality) -> Double? {
         guard quality != .book else { return nil }
         let uncapped: Double
         if let cpl = move.centipawnLoss {
             uncapped = Double(max(0, cpl))
         } else if let points = legacyPointScore(for: quality) {
-            uncapped = (maximumAccuracyPercent - points) * averageCPLDivisor
+            uncapped = (maximumAccuracyPercent - points) * 3.5
         } else {
             return nil
         }
         return min(uncapped, averageCPLCap)
     }
 
-    /// Former discrete point scores, kept only for legacy moves that lack stored CPL.
+    /// Former discrete point scores, used as move accuracy when CPL/eval are missing.
     static func legacyPointScore(for quality: MoveQuality) -> Double? {
         switch quality {
         case .book: return nil
@@ -601,20 +723,104 @@ struct GameAccuracySummary: Equatable, Sendable {
         }
     }
 
-    private static func progressPoint(
+    private static func whiteOrBlack(
+        _ side: Side,
+        white: inout SideStats,
+        black: inout SideStats,
+        _ body: (inout SideStats) -> Void
+    ) {
+        switch side {
+        case .white: body(&white)
+        case .black: body(&black)
+        }
+    }
+
+    private static func whitePOVCentipawnsAfter(
+        move: ChessMove,
+        moveIndex: Int,
         side: Side,
-        moveNumber: Int,
-        totalCPL: Double,
-        scoredMoves: Int
-    ) -> AccuracyProgressPoint? {
-        guard let accuracy = percent(totalCPL: totalCPL, scoredMoves: scoredMoves) else {
+        beforeWhiteCP: Int?,
+        quality: MoveQuality
+    ) -> Int? {
+        if move.isCheckmate {
+            return WinChanceAccuracy.clampedCentipawns(
+                MoveAssessmentClassifier.mateDisplayCentipawns(forDeliveredMateAtMoveIndex: moveIndex)
+            )
+        }
+        if let eval = move.evaluationWhiteCentipawns {
+            return WinChanceAccuracy.clampedCentipawns(eval)
+        }
+        guard quality != .book,
+              let before = beforeWhiteCP,
+              let cpl = effectiveCentipawnLoss(for: move, quality: quality) else {
             return nil
         }
-        return AccuracyProgressPoint(
-            side: side,
-            moveNumber: moveNumber,
-            accuracyPercent: Double(accuracy)
+        let delta = Int(cpl.rounded())
+        return WinChanceAccuracy.clampedCentipawns(
+            side == .white ? before - delta : before + delta
         )
+    }
+
+    private static func moveAccuracy(
+        for move: ChessMove,
+        quality: MoveQuality,
+        side: Side,
+        beforeWhiteCP: Int?,
+        afterWhiteCP: Int?
+    ) -> Double? {
+        if let before = beforeWhiteCP, let after = afterWhiteCP {
+            let beforeWin = WinChanceAccuracy.winPercent(centipawns: before)
+            let afterWin = WinChanceAccuracy.winPercent(centipawns: after)
+            // White-POV pair; black uses the swapped endpoints (same ΔWin%).
+            if side == .white {
+                return WinChanceAccuracy.moveAccuracy(
+                    beforeWinPercent: beforeWin,
+                    afterWinPercent: afterWin
+                )
+            }
+            return WinChanceAccuracy.moveAccuracy(
+                beforeWinPercent: afterWin,
+                afterWinPercent: beforeWin
+            )
+        }
+        if let cpl = move.centipawnLoss {
+            return WinChanceAccuracy.moveAccuracy(centipawnLoss: max(0, cpl))
+        }
+        if let cpl = effectiveCentipawnLoss(for: move, quality: quality) {
+            return WinChanceAccuracy.moveAccuracy(centipawnLoss: Int(cpl.rounded()))
+        }
+        return legacyPointScore(for: quality)
+    }
+
+    private static func progressAccuracy(samples: [WeightedAccuracySample]) -> Double? {
+        guard let value = WinChanceAccuracy.gameAccuracy(
+            moveAccuracies: samples.map(\.moveAccuracy),
+            weights: samples.map(\.weight)
+        ) else { return nil }
+        return Double(Int(value.rounded()))
+    }
+
+    private static func cumulativeProgressAccuracy(
+        prefix: [WeightedAccuracySample],
+        finalCount: Int
+    ) -> Double? {
+        guard finalCount > 0 else { return nil }
+        var accuracies = prefix.map(\.moveAccuracy)
+        var weights = prefix.map(\.weight)
+        let remaining = finalCount - prefix.count
+        if remaining > 0 {
+            accuracies.append(contentsOf: Array(repeating: 100, count: remaining))
+            weights.append(contentsOf: Array(repeating: 1, count: remaining))
+        }
+        guard let value = WinChanceAccuracy.gameAccuracy(
+            moveAccuracies: accuracies,
+            weights: weights
+        ) else { return nil }
+        return Double(Int(value.rounded()))
+    }
+
+    private static func roundedAccuracy(_ value: Double?) -> Int? {
+        value.map { Int($0.rounded()) }
     }
 
     private static func apply(
@@ -644,13 +850,5 @@ struct GameAccuracySummary: Equatable, Sendable {
         if cpl == 0 {
             side.bestMoveCount += 1
         }
-    }
-
-    /// `clamp(100 - averageCPL / 3.5, 5, 100)`, rounded to nearest int.
-    static func percent(totalCPL: Double, scoredMoves: Int) -> Int? {
-        guard scoredMoves > 0 else { return nil }
-        let averageCPL = totalCPL / Double(scoredMoves)
-        let raw = maximumAccuracyPercent - (averageCPL / averageCPLDivisor)
-        return Int(max(minimumAccuracyPercent, min(maximumAccuracyPercent, raw)).rounded())
     }
 }

@@ -431,6 +431,19 @@ class ChessGame {
         return replayMainLine(recordedMoves)
     }
 
+    /// Clears quality / CPL / eval on every ply (e.g. after a developer purge).
+    func clearMoveAssessments() {
+        guard moves.contains(where: {
+            $0.quality != nil
+                || $0.centipawnLoss != nil
+                || $0.evaluationWhiteCentipawns != nil
+                || $0.bestMoveSAN != nil
+        }) else { return }
+        moves = moves.map {
+            $0.withQuality(nil, centipawnLoss: nil, evaluationWhiteCentipawns: nil, bestMoveSAN: nil)
+        }
+    }
+
     /// Builds a fully replayed game for staged archive activation (MainActor convenience).
     static func prepared(from moves: [ChessMove], result: PGNResult = .ongoing) -> ChessGame {
         let prepared = ChessGame()

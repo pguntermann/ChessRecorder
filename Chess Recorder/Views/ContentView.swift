@@ -657,8 +657,12 @@ struct ContentView: View {
     private func purgeMoveAssessmentsAndReanalyze() {
         moveAssessment.cancelAll()
         _ = pgnArchive.clearAllMoveAssessments()
-        scheduleSessionPersist()
+        // Live board / switch cache keep assessments from the last load; clear them or the next
+        // persist sync would write the active game's qualities back into the archive.
+        game.clearMoveAssessments()
+        preparedGameCache.removeAll()
         moveAssessment.enqueueUnassessedMoves(in: pgnArchive)
+        scheduleSessionPersist()
     }
 
     @discardableResult

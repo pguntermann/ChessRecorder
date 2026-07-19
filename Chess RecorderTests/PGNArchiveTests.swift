@@ -328,6 +328,34 @@ final class PGNArchiveTests: XCTestCase {
         XCTAssertNil(archive.games.first { $0.id == gameID }?.moves[1].quality)
     }
 
+    func testSyncAfterClearDoesNotRestoreQualitiesFromLiveBoard() {
+        let archive = PGNArchive()
+        let game = ChessGame()
+
+        archive.ensureActiveGameExists(metadata: testMetadata)
+        playE4E5(on: game)
+        archive.syncActiveGame(from: game, metadata: testMetadata)
+        let gameID = archive.activeGameID!
+
+        XCTAssertTrue(
+            archive.applyMoveAssessment(
+                gameID: gameID,
+                moveIndex: 0,
+                quality: .mistake,
+                expectedSAN: "e4"
+            )
+        )
+        // Simulate activate/load: live board carries the archived assessments.
+        XCTAssertTrue(game.loadMainLine(moves: archive.games.first { $0.id == gameID }!.moves))
+        XCTAssertEqual(game.moves[0].quality, .mistake)
+
+        XCTAssertEqual(archive.clearAllMoveAssessments(), 1)
+        // Persist path syncs the live board — must not resurrect purged assessments.
+        archive.syncActiveGame(from: game, metadata: testMetadata)
+
+        XCTAssertNil(archive.games.first { $0.id == gameID }?.moves[0].quality)
+    }
+
     func testExportedMovetextIncludesAssessmentSymbolsWhenEnabled() {
         let move = ChessMove(
             san: "Nf3",

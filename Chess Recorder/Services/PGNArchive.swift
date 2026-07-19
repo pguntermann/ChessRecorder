@@ -333,13 +333,14 @@ final class PGNArchive {
                   oldMoves[index].matchesPositionally(newMoves[index]) else {
                 break
             }
-            // Skip gaps (nil quality) instead of stopping — later assessed plies must be kept.
-            guard let quality = oldMoves[index].quality else { continue }
+            // Archive is authoritative for assessment fields — including nil after a purge.
+            // Still walk past nil gaps so later assessed plies are preserved.
+            let archived = oldMoves[index]
             merged[index] = merged[index].withQuality(
-                quality,
-                centipawnLoss: oldMoves[index].centipawnLoss,
-                evaluationWhiteCentipawns: oldMoves[index].evaluationWhiteCentipawns,
-                bestMoveSAN: oldMoves[index].bestMoveSAN
+                archived.quality,
+                centipawnLoss: archived.centipawnLoss,
+                evaluationWhiteCentipawns: archived.evaluationWhiteCentipawns,
+                bestMoveSAN: archived.bestMoveSAN
             )
         }
         return merged

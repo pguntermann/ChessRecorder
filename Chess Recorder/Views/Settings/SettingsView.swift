@@ -125,7 +125,8 @@ struct SettingsView: View {
                 } header: {
                     Text("Speech")
                 } footer: {
-                    Text("How long to wait after you stop speaking before a move is interpreted. A countdown appears in the live transcript while recording.")
+                    Text("Dictation pause").bold()
+                        + Text(" determines how long to wait after you stop speaking before a move is interpreted. A countdown appears in the live transcript while recording.")
                 }
                 
                 Section {
@@ -240,7 +241,12 @@ struct SettingsView: View {
                 } header: {
                     Text("Engine")
                 } footer: {
-                    Text("Move quality underlines appear in the move history and PGN notation after each move is analyzed. Miss marks a slower forced mate (no ?? symbol). Inaccuracy, mistake, and blunder use ?!, ?, and ??.")
+                    Text("It’s recommended to leave the default engine depth settings. Higher depths can be slow, and analysis quality does not improve linearly with depth.\n\n")
+                        + Text("When ")
+                        + Text("Assess move quality").bold()
+                        + Text(" is on, moves are classified by their quality, and underlines and move symbols appear in the move history and PGN. This also unlocks the game overview and PDF game report: enable ")
+                        + Text("Show accuracy summary").bold()
+                        + Text(" under PGN, then open a game’s accuracy summary from the notation panel with the chevron symbol.")
                 }
                 
                 Section {
@@ -349,7 +355,9 @@ struct SettingsView: View {
                 } header: {
                     Text("Openings")
                 } footer: {
-                    Text("When the opening name is shown above the board, tap it to open the opening explorer and browse book lines from the current position.")
+                    Text("When ")
+                        + Text("Show opening name").bold()
+                        + Text(" is enabled, the opening appears above the board. Tap it to open the opening explorer, where you can review the path to the current opening and explore book lines from that position.")
                 }
 
                 Section {
@@ -471,7 +479,19 @@ struct SettingsView: View {
                 } header: {
                     Text("PGN")
                 } footer: {
-                    Text("Event, Site, and player names are used in exported PGN headers. [ECO] is added automatically when an opening is recognized. Use Switch to swap sides between games. Hiding header tags affects the notation panel only; Copy and Share still include full PGN headers. Move assessment symbols (?!, ?, ??) are added to exported movetext when enabled; misses have no symbol. The accuracy summary appears in the notation panel when move assessment is enabled.")
+                    Text("Event, Site, and player names are used as defaults in exported PGN headers. [ECO] is added automatically when an opening is recognized. Use ")
+                        + Text("Switch White & Black").bold()
+                        + Text(" to swap sides between games. To change tags for a single game, long-press it in the notation panel and choose ")
+                        + Text("Edit PGN Tags").bold()
+                        + Text(".\n\n")
+                        + Text("Hide PGN header tags").bold()
+                        + Text(" affects the notation panel only; Copy and Share still include full headers. ")
+                        + Text("Include move assessment symbols").bold()
+                        + Text(" adds quality marks to exported movetext. ")
+                        + Text("Show accuracy summary").bold()
+                        + Text(" adds the game overview in the notation panel (requires ")
+                        + Text("Assess move quality").bold()
+                        + Text(").")
                 }
                 
                 Section {

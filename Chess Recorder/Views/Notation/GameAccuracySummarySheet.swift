@@ -38,35 +38,17 @@ struct GameAccuracySummarySheet: View {
     @State private var exportErrorMessage: String?
     @State private var pdfExportItem: ShareablePDFExport?
     @State private var chessComLink: ChessComAnalysisLink?
+    /// Built off-main after appear — sync ChessKit SAN replay was blocking sheet open.
+    @State private var lichessAnalysisURL: URL?
+    @State private var chessComAnalysisURL: URL?
+    @State private var chessComPGN: String?
+    @State private var analysisLinksLoadFailed = false
 
     /// Uses the PGN tag when it has a real value; otherwise `White` / `Black`.
     static func playerDisplayName(from tag: String, fallback: String) -> String {
         let trimmed = tag.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, trimmed != "?" else { return fallback }
         return trimmed
-    }
-
-    private var lichessAnalysisURL: URL? {
-        LichessAnalysisURL.make(
-            fromMoves: recordedGame.moves,
-            result: recordedGame.result,
-            maxCharacterCount: LichessAnalysisURL.maxBrowserURLCharacterCount
-        )
-    }
-
-    private var chessComAnalysisURL: URL? {
-        ChessComAnalysisURL.make(
-            fromMoves: recordedGame.moves,
-            result: recordedGame.result,
-            maxCharacterCount: ChessComAnalysisURL.maxBrowserURLCharacterCount
-        )
-    }
-
-    private var chessComPGN: String? {
-        ChessComAnalysisURL.pgnMovetext(
-            from: recordedGame.moves,
-            result: recordedGame.result
-        )
     }
 
     var body: some View {
@@ -141,7 +123,7 @@ struct GameAccuracySummarySheet: View {
                                 Label("Analyze on Lichess", systemImage: "arrow.up.right.square")
                             }
                             .accessibilityHint("Opens this game on the Lichess analysis board")
-                        } else {
+                        } else if analysisLinksLoadFailed {
                             Label {
                                 Text("This game is too long to open as a Lichess analysis link. Share the PGN instead.")
                                     .font(.footnote)
@@ -151,6 +133,16 @@ struct GameAccuracySummarySheet: View {
                                     .foregroundStyle(.secondary)
                             }
                             .accessibilityElement(children: .combine)
+                        } else {
+                            HStack(spacing: 10) {
+                                ProgressView()
+                                    .controlSize(.small)
+                                Text("Preparing Lichess link…")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .accessibilityElement(children: .combine)
+                            .accessibilityLabel("Preparing Lichess link")
                         }
 
                         if let url = chessComAnalysisURL, let pgn = chessComPGN {
@@ -160,7 +152,7 @@ struct GameAccuracySummarySheet: View {
                                 Label("Analyze on Chess.com", systemImage: "arrow.up.right.square")
                             }
                             .accessibilityHint("Opens Chess.com analysis and copies the PGN")
-                        } else {
+                        } else if analysisLinksLoadFailed {
                             Label {
                                 Text("This game is too long to open as a Chess.com analysis link. Share the PGN instead.")
                                     .font(.footnote)
@@ -170,6 +162,16 @@ struct GameAccuracySummarySheet: View {
                                     .foregroundStyle(.secondary)
                             }
                             .accessibilityElement(children: .combine)
+                        } else {
+                            HStack(spacing: 10) {
+                                ProgressView()
+                                    .controlSize(.small)
+                                Text("Preparing Chess.com link…")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            }
+                            .accessibilityElement(children: .combine)
+                            .accessibilityLabel("Preparing Chess.com link")
                         }
 
                         VStack(alignment: .leading, spacing: 6) {
@@ -193,6 +195,9 @@ struct GameAccuracySummarySheet: View {
             }
             .navigationTitle(roundTitle)
             .navigationBarTitleDisplayMode(.inline)
+            .task(id: recordedGame.id) {
+                await prepareAnalysisLinks()
+            }
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button {
@@ -255,6 +260,44 @@ struct GameAccuracySummarySheet: View {
             try? FileManager.default.removeItem(at: pdfExportItem.url)
         }
         pdfExportItem = nil
+    }
+
+    @MainActor
+    private func prepareAnalysisLinks() async {
+        analysisLinksLoadFailed = false
+        struct LinkInput: @unchecked Sendable {
+            let moves: [ChessMove]
+            let result: PGNResult
+        }
+        let input = LinkInput(moves: recordedGame.moves, result: recordedGame.result)
+        let prepared = await Task.detached(priority: .userInitiated) {
+            // One SAN repair shared by both analysis destinations.
+            let rebuilt = ChessKitMapping.movesWithCanonicalSAN(input.moves)
+            let source = rebuilt.count == input.moves.count ? rebuilt : input.moves
+            let lichess = LichessAnalysisURL.make(
+                fromMoves: source,
+                result: input.result,
+                maxCharacterCount: LichessAnalysisURL.maxBrowserURLCharacterCount,
+                repairCaptureDisambiguation: false
+            )
+            let pgn = ChessComAnalysisURL.pgnMovetext(
+                from: source,
+                result: input.result,
+                repairCaptureDisambiguation: false
+            )
+            let chessCom = ChessComAnalysisURL.make(
+                fromMoves: source,
+                result: input.result,
+                maxCharacterCount: ChessComAnalysisURL.maxBrowserURLCharacterCount,
+                repairCaptureDisambiguation: false
+            )
+            return (lichess, chessCom, pgn)
+        }.value
+
+        lichessAnalysisURL = prepared.0
+        chessComAnalysisURL = prepared.1
+        chessComPGN = prepared.2
+        analysisLinksLoadFailed = prepared.0 == nil && prepared.1 == nil
     }
 
     @MainActor

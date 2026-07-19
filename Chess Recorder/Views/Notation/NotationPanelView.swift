@@ -393,6 +393,8 @@ private struct GamePGNRowView: View, Equatable {
     var onActivate: (() -> Void)? = nil
 
     @State private var showingAccuracySummary = false
+    @State private var cachedAccuracySummary: GameAccuracySummary?
+    @State private var cachedAccuracySummaryRevision: UInt64?
 
     static func == (lhs: GamePGNRowView, rhs: GamePGNRowView) -> Bool {
         // Intentionally omit `presentation` — AttributedString equality is O(moves).
@@ -432,8 +434,21 @@ private struct GamePGNRowView: View, Equatable {
 
     private var accuracySummary: GameAccuracySummary? {
         guard showMoveAssessments, showAccuracySummary else { return nil }
+        return cachedAccuracySummary
+    }
+
+    private func refreshAccuracySummaryCacheIfNeeded() {
+        guard showMoveAssessments, showAccuracySummary else {
+            if cachedAccuracySummary != nil || cachedAccuracySummaryRevision != nil {
+                cachedAccuracySummary = nil
+                cachedAccuracySummaryRevision = nil
+            }
+            return
+        }
+        guard cachedAccuracySummaryRevision != contentRevision else { return }
         let summary = GameAccuracySummary(moves: recordedGame.moves)
-        return summary.hasContent ? summary : nil
+        cachedAccuracySummary = summary.hasContent ? summary : nil
+        cachedAccuracySummaryRevision = contentRevision
     }
 
     var body: some View {
@@ -485,6 +500,7 @@ private struct GamePGNRowView: View, Equatable {
                         .onTapGesture { onActivate?() }
 
                     Button {
+                        refreshAccuracySummaryCacheIfNeeded()
                         showingAccuracySummary = true
                     } label: {
                         Image(systemName: "chevron.right")
@@ -562,7 +578,7 @@ private struct GamePGNRowView: View, Equatable {
         }
         .sheet(isPresented: $showingAccuracySummary) {
             GameAccuracySummarySheet(
-                summary: accuracySummary ?? GameAccuracySummary(moves: recordedGame.moves),
+                summary: cachedAccuracySummary ?? GameAccuracySummary(moves: recordedGame.moves),
                 recordedGame: recordedGame,
                 roundTitle: "Round \(recordedGame.round)",
                 result: recordedGame.result,
@@ -581,6 +597,10 @@ private struct GamePGNRowView: View, Equatable {
             // so `showingAccuracySummary` is not reset (which would dismiss the sheet).
             .id(contentRevision)
         }
+        .onAppear { refreshAccuracySummaryCacheIfNeeded() }
+        .onChange(of: contentRevision) { _, _ in refreshAccuracySummaryCacheIfNeeded() }
+        .onChange(of: showMoveAssessments) { _, _ in refreshAccuracySummaryCacheIfNeeded() }
+        .onChange(of: showAccuracySummary) { _, _ in refreshAccuracySummaryCacheIfNeeded() }
     }
 
     private func accuracyAccessibilityLabel(_ summary: GameAccuracySummary) -> String {

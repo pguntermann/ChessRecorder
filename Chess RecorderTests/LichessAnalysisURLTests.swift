@@ -18,13 +18,22 @@ final class LichessAnalysisURLTests: XCTestCase {
     }
 
     func testCheckSymbolIsPercentEncoded() {
+        // Fool's mate — Qh4# so the rebuild keeps a check/mate suffix to encode.
         let moves = [
-            makeMove(san: "e4", from: "e2", to: "e4"),
+            makeMove(san: "f3", from: "f2", to: "f3"),
             makeMove(san: "e5", from: "e7", to: "e5"),
-            makeMove(san: "Qh5+", piece: .queen, from: "d1", to: "h5", isCheck: true)
+            makeMove(san: "g4", from: "g2", to: "g4"),
+            makeMove(
+                san: "Qh4#",
+                piece: .queen,
+                from: "d8",
+                to: "h4",
+                isCheck: true,
+                isCheckmate: true
+            )
         ]
         let url = LichessAnalysisURL.make(fromMoves: moves)
-        XCTAssertEqual(url?.absoluteString, "https://lichess.org/analysis/pgn/e4_e5_Qh5%2B")
+        XCTAssertEqual(url?.absoluteString, "https://lichess.org/analysis/pgn/f3_e5_g4_Qh4%23")
     }
 
     func testEmptyMovesReturnsNil() {
@@ -56,7 +65,8 @@ final class LichessAnalysisURLTests: XCTestCase {
         piece: PieceType = .pawn,
         from: String,
         to: String,
-        isCheck: Bool = false
+        isCheck: Bool = false,
+        isCheckmate: Bool = false
     ) -> ChessMove {
         ChessMove(
             san: san,
@@ -65,7 +75,7 @@ final class LichessAnalysisURLTests: XCTestCase {
             to: ChessPosition(notation: to)!,
             captures: false,
             isCheck: isCheck,
-            isCheckmate: false,
+            isCheckmate: isCheckmate,
             promotion: nil,
             castling: nil
         )

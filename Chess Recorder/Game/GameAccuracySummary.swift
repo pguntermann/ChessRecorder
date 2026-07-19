@@ -641,7 +641,7 @@ struct GameAccuracySummary: Equatable, Sendable {
         self.cumulativeAccuracyProgress = cumulativeProgress
         self.evaluationProgress = evaluationProgress
         self.evaluationPhaseTransitions = Self.phaseTransitions(
-            fenSequence: fenSequence ?? ChessGame.prepared(from: moves).fenSequenceFromStart()
+            fenSequence: fenSequence ?? ChessGameBackgroundPreparation.fenSequence(from: moves)
         )
         self.evaluationCriticalPlies = criticalCandidates
             .sorted { $0.cpl > $1.cpl }

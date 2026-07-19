@@ -17,14 +17,17 @@ enum LichessAnalysisURL {
     ///
     /// SAN tokens are taken from a ChessKit replay of `from`/`to` (not the stored speech
     /// string), so misheard piece letters like `Rxf8` vs `Nxf8` do not break Lichess.
+    /// Call off the main actor when `repairCaptureDisambiguation` is true — replay is expensive.
+    /// Pass `false` when `moves` were already run through `ChessKitMapping.movesWithCanonicalSAN`.
     static func make(
         fromMoves moves: [ChessMove],
         result: PGNResult = .ongoing,
-        maxCharacterCount: Int = maxURLCharacterCount
+        maxCharacterCount: Int = maxURLCharacterCount,
+        repairCaptureDisambiguation: Bool = true
     ) -> URL? {
         guard !moves.isEmpty else { return nil }
 
-        var tokens = canonicalSANTokens(from: moves)
+        var tokens = sanTokens(from: moves, repair: repairCaptureDisambiguation)
         guard !tokens.isEmpty else { return nil }
         if result.isFinal {
             tokens.append(result.rawValue)
@@ -60,9 +63,14 @@ enum LichessAnalysisURL {
     }
 
     /// Canonical SAN for each ply; falls back to stored SAN if repair fails.
-    private static func canonicalSANTokens(from moves: [ChessMove]) -> [String] {
-        let rebuilt = ChessKitMapping.movesWithCanonicalSAN(moves)
-        let source = rebuilt.count == moves.count ? rebuilt : moves
+    private static func sanTokens(from moves: [ChessMove], repair: Bool) -> [String] {
+        let source: [ChessMove]
+        if repair {
+            let rebuilt = ChessKitMapping.movesWithCanonicalSAN(moves)
+            source = rebuilt.count == moves.count ? rebuilt : moves
+        } else {
+            source = moves
+        }
         return source.map(sanForLichess)
     }
 

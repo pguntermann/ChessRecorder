@@ -15,12 +15,18 @@ enum ChessComAnalysisURL {
     ///
     /// SAN tokens are taken from a ChessKit replay of `from`/`to` (not the stored speech
     /// string), so misheard piece letters do not break the import.
+    /// Call off the main actor when repairing SAN — replay is expensive.
     static func make(
         fromMoves moves: [ChessMove],
         result: PGNResult = .ongoing,
-        maxCharacterCount: Int = maxBrowserURLCharacterCount
+        maxCharacterCount: Int = maxBrowserURLCharacterCount,
+        repairCaptureDisambiguation: Bool = true
     ) -> URL? {
-        guard let body = pgnMovetext(from: moves, result: result), !body.isEmpty else {
+        guard let body = pgnMovetext(
+            from: moves,
+            result: result,
+            repairCaptureDisambiguation: repairCaptureDisambiguation
+        ), !body.isEmpty else {
             return nil
         }
 
@@ -39,12 +45,18 @@ enum ChessComAnalysisURL {
     /// Compact numbered movetext for the Chess.com `pgn` query / pasteboard.
     static func pgnMovetext(
         from moves: [ChessMove],
-        result: PGNResult = .ongoing
+        result: PGNResult = .ongoing,
+        repairCaptureDisambiguation: Bool = true
     ) -> String? {
         guard !moves.isEmpty else { return nil }
 
-        let rebuilt = ChessKitMapping.movesWithCanonicalSAN(moves)
-        let source = rebuilt.count == moves.count ? rebuilt : moves
+        let source: [ChessMove]
+        if repairCaptureDisambiguation {
+            let rebuilt = ChessKitMapping.movesWithCanonicalSAN(moves)
+            source = rebuilt.count == moves.count ? rebuilt : moves
+        } else {
+            source = moves
+        }
 
         var parts: [String] = []
         for (index, move) in source.enumerated() {

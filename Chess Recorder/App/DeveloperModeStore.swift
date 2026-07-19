@@ -12,6 +12,7 @@ final class DeveloperModeStore {
         static let speechPipelineTracingEnabled = "speechPipelineTracingEnabled"
         static let speechRecognitionFailureDiagnosticsEnabled = "speechRecognitionFailureDiagnosticsEnabled"
         static let moveAssessmentTracingEnabled = "moveAssessmentTracingEnabled"
+        static let overridesPGNImportLimits = "overridesPGNImportLimits"
     }
 
     static var isAvailable: Bool {
@@ -55,12 +56,24 @@ final class DeveloperModeStore {
         }
     }
 
+    /// When on, PGN import skips the usual 20-game cap (byte-size limit still applies).
+    var overridesPGNImportLimits: Bool {
+        didSet {
+            UserDefaults.standard.set(overridesPGNImportLimits, forKey: Keys.overridesPGNImportLimits)
+        }
+    }
+
     var showsDeveloperSettings: Bool {
         Self.isAvailable
     }
 
     var hidesStatusBar: Bool {
         Self.isAvailable && isScreenshotModeEnabled
+    }
+
+    /// Effective for import only when developer mode is compiled in and the toggle is on.
+    var shouldOverridePGNImportLimits: Bool {
+        Self.isAvailable && overridesPGNImportLimits
     }
 
     init() {
@@ -76,5 +89,6 @@ final class DeveloperModeStore {
         isMoveAssessmentTracingEnabled = UserDefaults.standard.bool(
             forKey: Keys.moveAssessmentTracingEnabled
         )
+        overridesPGNImportLimits = UserDefaults.standard.bool(forKey: Keys.overridesPGNImportLimits)
     }
 }

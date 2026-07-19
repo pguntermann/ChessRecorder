@@ -14,10 +14,8 @@ struct SettingsView: View {
     @Binding var pendingSpeechModelWork: PendingSpeechModelWork
     let onStopRecording: () -> Void
     var onPurgeMoveAssessments: (() -> Void)? = nil
-    var onImportPGN: ((String) throws -> Int)? = nil
 
     @State private var showingPurgeAssessmentsConfirm = false
-    @State private var showingPGNImport = false
     @State private var lightColor: Color
     @State private var darkColor: Color
     @State private var coordinateColor: Color
@@ -40,8 +38,7 @@ struct SettingsView: View {
         speechRecognizer: SpeechRecognizer,
         pendingSpeechModelWork: Binding<PendingSpeechModelWork>,
         onStopRecording: @escaping () -> Void = {},
-        onPurgeMoveAssessments: (() -> Void)? = nil,
-        onImportPGN: ((String) throws -> Int)? = nil
+        onPurgeMoveAssessments: (() -> Void)? = nil
     ) {
         self.settingsStore = settingsStore
         self.vocabularyStore = vocabularyStore
@@ -49,7 +46,6 @@ struct SettingsView: View {
         self.speechRecognizer = speechRecognizer
         self.onStopRecording = onStopRecording
         self.onPurgeMoveAssessments = onPurgeMoveAssessments
-        self.onImportPGN = onImportPGN
         _pendingSpeechModelWork = pendingSpeechModelWork
         let settings = settingsStore.settings
         _lightColor = State(initialValue: settings.lightSquareColor.color)
@@ -618,16 +614,17 @@ struct SettingsView: View {
                             "Move assessment trace",
                             isOn: $developerModeStore.isMoveAssessmentTracingEnabled
                         )
-                        if onImportPGN != nil {
-                            Button("Import PGN…") {
-                                showingPGNImport = true
-                            }
-                        }
+                        Toggle(
+                            "Override PGN import limits",
+                            isOn: $developerModeStore.overridesPGNImportLimits
+                        )
                         if onPurgeMoveAssessments != nil {
                             Button("Purge Move Assessments", role: .destructive) {
                                 showingPurgeAssessmentsConfirm = true
                             }
                         }
+                    } footer: {
+                        Text("Override PGN import limits removes the \(PGNImportService.maxGamesPerImport)-game cap when importing from the notation panel. The file size limit still applies.")
                     }
                 }
             }
@@ -649,12 +646,6 @@ struct SettingsView: View {
                 Button("Cancel", role: .cancel) {}
             } message: {
                 Text("Clears all move quality marks and centipawn loss values, then queues a fresh assessment of every game.")
-            }
-            .sheet(isPresented: $showingPGNImport) {
-                PGNImportSheet { pgn in
-                    guard let onImportPGN else { return 0 }
-                    return try onImportPGN(pgn)
-                }
             }
         }
     }

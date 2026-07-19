@@ -285,9 +285,6 @@ struct ContentView: View {
                 },
                 onPurgeMoveAssessments: {
                     purgeMoveAssessmentsAndReanalyze()
-                },
-                onImportPGN: { pgn in
-                    try importPGNGames(from: pgn)
                 }
             )
         }
@@ -575,6 +572,7 @@ struct ContentView: View {
                 onImportPGN: { pgn in
                     try importPGNGames(from: pgn)
                 },
+                overridePGNImportGameLimit: developerModeStore.shouldOverridePGNImportLimits,
                 onActivateGame: activateGame,
                 onDeleteGame: deleteGame,
                 onGameTagsEdited: scheduleSessionPersist
@@ -665,7 +663,10 @@ struct ContentView: View {
 
     @discardableResult
     private func importPGNGames(from pgn: String) throws -> Int {
-        let imported = try PGNImportService.importGames(from: pgn).map { game in
+        let imported = try PGNImportService.importGames(
+            from: pgn,
+            overrideGameLimit: developerModeStore.shouldOverridePGNImportLimits
+        ).map { game in
             // PGN without [ECO] still gets a code from the opening book when possible.
             game.fillingMissingOpening(from: openingService.opening(for: game.moves))
         }

@@ -82,6 +82,11 @@ enum PGNImportService {
         importedCount > largeImportNoticeThreshold
     }
 
+    /// Effective game-count cap, or `nil` when the developer override removes it.
+    static func gameCountLimit(overrideLimit: Bool) -> Int? {
+        overrideLimit ? nil : maxGamesPerImport
+    }
+
     /// Splits a multi-game PGN (as produced by Chess Recorder export) into single-game strings.
     static func splitGames(in pgn: String) -> [String] {
         let normalized = pgn
@@ -125,7 +130,7 @@ enum PGNImportService {
         estimateGameCount(in: text) > 0
     }
 
-    static func importGames(from pgn: String) throws -> [ImportedGame] {
+    static func importGames(from pgn: String, overrideGameLimit: Bool = false) throws -> [ImportedGame] {
         let trimmed = pgn.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw ImportError.emptyInput }
 
@@ -138,8 +143,9 @@ enum PGNImportService {
         guard !gameTexts.isEmpty else {
             throw splitGames(in: trimmed).isEmpty ? ImportError.noGamesParsed : ImportError.notPGN
         }
-        guard gameTexts.count <= maxGamesPerImport else {
-            throw ImportError.tooManyGames(found: gameTexts.count, limit: maxGamesPerImport)
+        if let limit = gameCountLimit(overrideLimit: overrideGameLimit),
+           gameTexts.count > limit {
+            throw ImportError.tooManyGames(found: gameTexts.count, limit: limit)
         }
 
         var imported: [ImportedGame] = []

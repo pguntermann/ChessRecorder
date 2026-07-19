@@ -188,6 +188,10 @@ final class PGNImportServiceTests: XCTestCase {
             XCTAssertEqual(found, limit + 1)
             XCTAssertEqual(reportedLimit, limit)
         }
+
+        XCTAssertNoThrow(
+            try PGNImportService.importGames(from: pgn, overrideGameLimit: true)
+        )
     }
 
     func testLargeImportNoticeThreshold() {

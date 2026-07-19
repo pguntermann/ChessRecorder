@@ -19,6 +19,8 @@ struct PGNImportSheet: View {
 
     @Environment(\.dismiss) private var dismiss
 
+    /// When true (developer override), the usual 20-game cap is not enforced.
+    var overrideGameLimit: Bool = false
     let onImport: (String) throws -> Int
 
     @State private var pgnText = ""
@@ -40,10 +42,23 @@ struct PGNImportSheet: View {
         loadedByteCount > 0 && loadedByteCount <= Self.maxEditableUTF8ByteCount
     }
 
+    private var gameCountLimit: Int? {
+        PGNImportService.gameCountLimit(overrideLimit: overrideGameLimit)
+    }
+
     private var canImport: Bool {
-        hasPGNText
-            && estimatedGameCount > 0
-            && estimatedGameCount <= PGNImportService.maxGamesPerImport
+        guard hasPGNText, estimatedGameCount > 0 else { return false }
+        if let gameCountLimit, estimatedGameCount > gameCountLimit {
+            return false
+        }
+        return true
+    }
+
+    private var importFooterText: String {
+        if let gameCountLimit {
+            return "Imports up to \(gameCountLimit) games from a standard PGN (mainline only, standard starting position). Games are added to your current session."
+        }
+        return "Imports games from a standard PGN (mainline only, standard starting position). The usual game-count limit is overridden. Games are added to your current session."
     }
 
     var body: some View {
@@ -62,7 +77,7 @@ struct PGNImportSheet: View {
                         Label("Paste from Clipboard", systemImage: "doc.on.clipboard")
                     }
                 } footer: {
-                    Text("Imports up to \(PGNImportService.maxGamesPerImport) games from a standard PGN (mainline only, standard starting position). Games are added to your current session.")
+                    Text(importFooterText)
                 }
 
                 Section {
@@ -103,8 +118,10 @@ struct PGNImportSheet: View {
                     } footer: {
                         if canEditInSheet {
                             Text("Optional — open only if you want to inspect or tweak the text before importing.")
+                        } else if let gameCountLimit {
+                            Text("This PGN is too large to edit here. You can preview the start of the file, then import as-is (still limited to \(gameCountLimit) games).")
                         } else {
-                            Text("This PGN is too large to edit here. You can preview the start of the file, then import as-is (still limited to \(PGNImportService.maxGamesPerImport) games).")
+                            Text("This PGN is too large to edit here. You can preview the start of the file, then import as-is.")
                         }
                     }
                 }
@@ -266,11 +283,11 @@ struct PGNImportSheet: View {
         if !PGNImportService.looksLikePGN(string) {
             statusMessage = nil
             errorMessage = PGNImportService.ImportError.notPGN.localizedDescription
-        } else if estimatedGameCount > PGNImportService.maxGamesPerImport {
+        } else if let gameCountLimit, estimatedGameCount > gameCountLimit {
             statusMessage = status
             errorMessage = PGNImportService.ImportError.tooManyGames(
                 found: estimatedGameCount,
-                limit: PGNImportService.maxGamesPerImport
+                limit: gameCountLimit
             ).localizedDescription
         } else {
             statusMessage = status

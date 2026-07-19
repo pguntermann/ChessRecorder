@@ -31,6 +31,8 @@ struct NotationPanelView: View {
     @Bindable var engineAnalysis: EngineAnalysisService
     var onClearPGN: (() -> Void)?
     var onImportPGN: ((String) throws -> Int)?
+    /// When true, the PGN import sheet skips the usual 20-game cap.
+    var overridePGNImportGameLimit: Bool = false
     var onActivateGame: ((UUID) -> Void)?
     var onDeleteGame: ((UUID) -> Void)?
     var onGameTagsEdited: (() -> Void)?
@@ -218,7 +220,7 @@ struct NotationPanelView: View {
             }
         }
         .sheet(isPresented: $showingPGNImport) {
-            PGNImportSheet { pgn in
+            PGNImportSheet(overrideGameLimit: overridePGNImportGameLimit) { pgn in
                 guard let onImportPGN else { return 0 }
                 return try onImportPGN(pgn)
             }
@@ -426,10 +428,17 @@ private struct GamePGNRowView: View, Equatable {
         assessingMoveIndex != nil
     }
 
-    /// Token layout is expensive (one view per ply). Only the live/assessing game needs it;
-    /// archived games render a single cached Text.
+    /// Token layout is expensive (one view per ply). Only the active game uses it so
+    /// background assessment never flickers inactive rows between token and plain text.
     private var usesAssessedTokenLayout: Bool {
-        (showMoveAssessments || isAssessingMoves) && (isActive || isAssessingMoves)
+        showMoveAssessments && isActive
+    }
+
+    private var assessmentProgressLabel: String {
+        let assessed = recordedGame.moves.reduce(0) { count, move in
+            count + (move.quality == nil ? 0 : 1)
+        }
+        return "\(assessed) of \(recordedGame.moves.count)"
     }
 
     private var accuracySummary: GameAccuracySummary? {
@@ -480,6 +489,10 @@ private struct GamePGNRowView: View, Equatable {
                     ProgressView()
                         .controlSize(.mini)
                         .accessibilityLabel("Assessing move quality")
+                    Text(assessmentProgressLabel)
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .accessibilityLabel("\(assessmentProgressLabel) moves assessed")
                 } else if hasIncompleteAssessment {
                     Image(systemName: "hourglass")
                         .font(.caption2)

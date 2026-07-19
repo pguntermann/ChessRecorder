@@ -5,6 +5,7 @@
 
 import CoreImage
 import CoreText
+import PDFKit
 import SwiftUI
 import UIKit
 
@@ -172,10 +173,8 @@ enum GameReportPDFComposer {
                 y = drawCharts(input: input, in: pageRect, at: y + 16, beginNewPage: beginPage)
             }
 
-            if y > pageRect.height - Theme.bottomContentInset - 180 {
-                beginPage()
-                y = Theme.margin
-            }
+            // Keep notation + inline boards together: always start Annotated game on a fresh page.
+            beginPage()
             _ = drawAnnotatedGame(
                 pgn: pgnWithSymbols,
                 moves: input.recordedGame.moves,
@@ -183,13 +182,13 @@ enum GameReportPDFComposer {
                 diagrams: diagrams,
                 appearance: boardAppearance,
                 in: pageRect,
-                at: y + 18,
+                at: Theme.margin,
                 beginNewPage: beginPage
             )
         }
 
         guard !data.isEmpty else { throw ComposeError.failedToCreatePDF }
-        return data
+        return try addingPageNumbers(to: data, pageRect: pageRect)
     }
 
     // MARK: - Diagrams
@@ -321,6 +320,44 @@ enum GameReportPDFComposer {
             at: CGPoint(x: Theme.margin, y: top + line1Size.height + 2),
             withAttributes: attrs
         )
+    }
+
+    /// Redraws each page and stamps `n of total` in the footer (right-aligned).
+    private static func addingPageNumbers(to data: Data, pageRect: CGRect) throws -> Data {
+        guard let document = PDFDocument(data: data), document.pageCount > 0 else {
+            return data
+        }
+        let total = document.pageCount
+        let stamped = UIGraphicsPDFRenderer(bounds: pageRect).pdfData { context in
+            for index in 0..<total {
+                guard let page = document.page(at: index) else { continue }
+                context.beginPage()
+                let cg = context.cgContext
+                cg.saveGState()
+                // PDFKit uses a bottom-left origin; flip to match UIKit top-left drawing.
+                cg.translateBy(x: 0, y: pageRect.height)
+                cg.scaleBy(x: 1, y: -1)
+                page.draw(with: .mediaBox, to: cg)
+                cg.restoreGState()
+                drawPageNumber(current: index + 1, total: total, in: pageRect)
+            }
+        }
+        guard !stamped.isEmpty else { throw ComposeError.failedToCreatePDF }
+        return stamped
+    }
+
+    private static func drawPageNumber(current: Int, total: Int, in page: CGRect) {
+        let text = "\(current) of \(total)"
+        let font = UIFont.systemFont(ofSize: 8, weight: .medium)
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: Theme.muted
+        ]
+        let size = (text as NSString).size(withAttributes: attrs)
+        let x = page.width - Theme.margin - size.width
+        let line1Height = UIFont.systemFont(ofSize: 7.5).lineHeight
+        let y = page.height - Theme.footerHeight + (Theme.footerHeight - line1Height) / 2 - 2
+        (text as NSString).draw(at: CGPoint(x: x, y: y), withAttributes: attrs)
     }
 
     @discardableResult

@@ -264,8 +264,15 @@ struct GameAccuracySummarySheet: View {
         exportErrorMessage = nil
 
         Task { @MainActor in
-            // Let the overlay/spinner paint before the heavy render work.
+            // Let the overlay/spinner paint before chart capture / PDF work.
             await Task.yield()
+
+            let started = Date()
+            let moveCount = recordedGame.moves.count
+            let timeout = GameReportPDFComposer.exportTimeoutSeconds
+            pdfLog(
+                "start round=\(recordedGame.round) moves=\(moveCount) timeout=\(Int(timeout))s"
+            )
 
             let evaluationChartImage = summary.hasEvaluationProgress
                 ? renderChartImage(evaluationChart)
@@ -277,26 +284,64 @@ struct GameAccuracySummarySheet: View {
                 ? renderChartImage(chartMarks(for: .cumulative, printFriendly: true).frame(height: 200))
                 : nil
 
+            let input = GameReportPDFComposer.Input(
+                recordedGame: recordedGame,
+                summary: summary,
+                whiteName: whiteName,
+                blackName: blackName,
+                boardAppearance: .from(miniBoard: boardAppearance),
+                assessmentColors: .resolve(assessmentColors),
+                evaluationChartImage: evaluationChartImage,
+                accuracyChartImage: accuracyChartImage,
+                cumulativeAccuracyChartImage: cumulativeAccuracyChartImage
+            )
+
             do {
-                let url = try GameReportPDFComposer.writeTemporaryPDF(
-                    input: GameReportPDFComposer.Input(
-                        recordedGame: recordedGame,
-                        summary: summary,
-                        whiteName: whiteName,
-                        blackName: blackName,
-                        boardAppearance: boardAppearance,
-                        assessmentColors: assessmentColors,
-                        evaluationChartImage: evaluationChartImage,
-                        accuracyChartImage: accuracyChartImage,
-                        cumulativeAccuracyChartImage: cumulativeAccuracyChartImage
-                    )
+                let url = try await Self.composePDFOffMainActor(input: input, timeout: timeout)
+                let elapsed = Date().timeIntervalSince(started)
+                pdfLog(
+                    "ok round=\(recordedGame.round) elapsed=\(String(format: "%.2f", elapsed))s path=\(url.lastPathComponent)"
                 )
                 pdfExportItem = ShareablePDFExport(url: url)
+            } catch let error as GameReportPDFComposer.ComposeError {
+                let elapsed = Date().timeIntervalSince(started)
+                pdfLog("fail round=\(recordedGame.round) elapsed=\(String(format: "%.2f", elapsed))s error=\(error)")
+                exportErrorMessage = error.localizedDescription
+            } catch is CancellationError {
+                let elapsed = Date().timeIntervalSince(started)
+                pdfLog("cancelled round=\(recordedGame.round) elapsed=\(String(format: "%.2f", elapsed))s")
             } catch {
+                let elapsed = Date().timeIntervalSince(started)
+                pdfLog(
+                    "fail round=\(recordedGame.round) elapsed=\(String(format: "%.2f", elapsed))s error=\(error.localizedDescription)"
+                )
                 exportErrorMessage = error.localizedDescription
             }
             isExportingPDF = false
         }
+    }
+
+    private static func composePDFOffMainActor(
+        input: GameReportPDFComposer.Input,
+        timeout: TimeInterval
+    ) async throws -> URL {
+        try await withThrowingTaskGroup(of: URL.self) { group in
+            group.addTask(priority: .userInitiated) {
+                try GameReportPDFComposer.writeTemporaryPDF(input: input)
+            }
+            group.addTask {
+                try await Task.sleep(for: .seconds(timeout))
+                throw GameReportPDFComposer.ComposeError.timedOut(seconds: timeout)
+            }
+            let result = try await group.next()!
+            group.cancelAll()
+            return result
+        }
+    }
+
+    private func pdfLog(_ message: String) {
+        guard DeveloperModeStore.isAvailable else { return }
+        print("PDFExport: \(message)")
     }
 
     @MainActor

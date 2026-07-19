@@ -9,13 +9,50 @@ import SwiftUI
 import UIKit
 
 enum GameReportPDFComposer {
-    struct Input {
+    /// Resolved once on the main actor so PDF drawing can run off-main.
+    struct AssessmentColorPalette: Sendable {
+        let inaccuracy: RGBA
+        let mistake: RGBA
+        let blunder: RGBA
+        let miss: RGBA
+
+        struct RGBA: Sendable {
+            let r: CGFloat
+            let g: CGFloat
+            let b: CGFloat
+            let a: CGFloat
+
+            var uiColor: UIColor { UIColor(red: r, green: g, blue: b, alpha: a) }
+        }
+
+        @MainActor
+        static func resolve(_ colors: MoveAssessmentColors) -> AssessmentColorPalette {
+            AssessmentColorPalette(
+                inaccuracy: rgba(UIColor(colors.inaccuracy)),
+                mistake: rgba(UIColor(colors.mistake)),
+                blunder: rgba(UIColor(colors.blunder)),
+                miss: rgba(UIColor(colors.miss))
+            )
+        }
+
+        private static func rgba(_ color: UIColor) -> RGBA {
+            var r: CGFloat = 0
+            var g: CGFloat = 0
+            var b: CGFloat = 0
+            var a: CGFloat = 0
+            color.getRed(&r, green: &g, blue: &b, alpha: &a)
+            return RGBA(r: r, g: g, b: b, a: a)
+        }
+    }
+
+    /// Snapshot for background PDF work. Charts/`UIImage` are captured on the main actor first.
+    struct Input: @unchecked Sendable {
         let recordedGame: RecordedGame
         let summary: GameAccuracySummary
         let whiteName: String
         let blackName: String
-        let boardAppearance: MiniChessBoardAppearance
-        let assessmentColors: MoveAssessmentColors
+        let boardAppearance: GameReportPDFBoardRenderer.Appearance
+        let assessmentColors: AssessmentColorPalette
         var evaluationChartImage: UIImage? = nil
         var accuracyChartImage: UIImage? = nil
         var cumulativeAccuracyChartImage: UIImage? = nil
@@ -37,11 +74,20 @@ enum GameReportPDFComposer {
 
     enum ComposeError: LocalizedError {
         case failedToCreatePDF
+        case timedOut(seconds: TimeInterval)
 
         var errorDescription: String? {
-            "Could not create the PDF report."
+            switch self {
+            case .failedToCreatePDF:
+                return "Could not create the PDF report."
+            case .timedOut(let seconds):
+                return "PDF export timed out after \(Int(seconds)) seconds."
+            }
         }
     }
+
+    /// Soft deadline for background PDF composition (charts are rendered before this starts).
+    static let exportTimeoutSeconds: TimeInterval = 90
 
     private enum Theme {
         static let accent = UIColor(red: 0.14, green: 0.32, blue: 0.48, alpha: 1)
@@ -57,8 +103,7 @@ enum GameReportPDFComposer {
         static let footerHeight: CGFloat = 36
     }
 
-    @MainActor
-    static func writeTemporaryPDF(input: Input) throws -> URL {
+    nonisolated static func writeTemporaryPDF(input: Input) throws -> URL {
         let data = try renderPDF(input: input)
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
@@ -69,11 +114,10 @@ enum GameReportPDFComposer {
         return url
     }
 
-    @MainActor
-    static func renderPDF(input: Input) throws -> Data {
+    nonisolated static func renderPDF(input: Input) throws -> Data {
         let pageRect = CGRect(x: 0, y: 0, width: 612, height: 792) // US Letter
         let renderer = UIGraphicsPDFRenderer(bounds: pageRect)
-        let boardAppearance = GameReportPDFBoardRenderer.Appearance.from(miniBoard: input.boardAppearance)
+        let boardAppearance = input.boardAppearance
         let fens = ChessGame.prepared(from: input.recordedGame.moves, result: input.recordedGame.result)
             .fenSequenceFromStart()
         let diagrams = makeKeyPositions(
@@ -787,23 +831,23 @@ enum GameReportPDFComposer {
         }
     }
 
-    private static func qualityColor(_ quality: MoveQuality, colors: MoveAssessmentColors) -> UIColor {
+    private static func qualityColor(_ quality: MoveQuality, colors: AssessmentColorPalette) -> UIColor {
         switch quality {
         case .good: return UIColor.systemGreen.withAlphaComponent(0.85)
         case .book:
             // Distinct slate so book slices read on the light card fill.
             return UIColor(red: 0.45, green: 0.52, blue: 0.60, alpha: 1)
-        case .inaccuracy: return UIColor(colors.underlineColor(for: .inaccuracy))
-        case .mistake: return UIColor(colors.underlineColor(for: .mistake))
-        case .blunder: return UIColor(colors.underlineColor(for: .blunder))
-        case .miss: return UIColor(colors.underlineColor(for: .miss))
+        case .inaccuracy: return colors.inaccuracy.uiColor
+        case .mistake: return colors.mistake.uiColor
+        case .blunder: return colors.blunder.uiColor
+        case .miss: return colors.miss.uiColor
         }
     }
 
     private static func drawQualityPieColumn(
         name: String,
         stats: GameAccuracySummary.SideStats,
-        colors: MoveAssessmentColors,
+        colors: AssessmentColorPalette,
         in rect: CGRect
     ) {
         drawCenteredText(
@@ -870,7 +914,7 @@ enum GameReportPDFComposer {
 
     private static func drawDonut(
         slices: [(MoveQuality, CGFloat)],
-        colors: MoveAssessmentColors,
+        colors: AssessmentColorPalette,
         in rect: CGRect
     ) {
         let total = slices.reduce(CGFloat(0)) { $0 + $1.1 }
@@ -1059,7 +1103,7 @@ enum GameReportPDFComposer {
     private static func drawAnnotatedGame(
         pgn: String,
         moves: [ChessMove],
-        colors: MoveAssessmentColors,
+        colors: AssessmentColorPalette,
         diagrams: [KeyPosition],
         appearance: GameReportPDFBoardRenderer.Appearance,
         in page: CGRect,
@@ -1334,7 +1378,7 @@ enum GameReportPDFComposer {
     private static func attributedMovetext(
         _ movetext: String,
         moves: [ChessMove],
-        colors: MoveAssessmentColors
+        colors: AssessmentColorPalette
     ) -> NSMutableAttributedString {
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineSpacing = 3
@@ -1370,7 +1414,7 @@ enum GameReportPDFComposer {
                 continue
             }
             let nsRange = NSRange(range, in: movetext)
-            let uiColor = UIColor(colors.underlineColor(for: quality))
+            let uiColor = qualityColor(quality, colors: colors)
             base.addAttributes(
                 [
                     .underlineStyle: NSUnderlineStyle.single.rawValue,

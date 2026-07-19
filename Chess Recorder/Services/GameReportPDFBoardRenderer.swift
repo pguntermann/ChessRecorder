@@ -15,6 +15,7 @@ enum GameReportPDFBoardRenderer {
         var pieceSizePercent: Double
         var highlight: (r: CGFloat, g: CGFloat, b: CGFloat, a: CGFloat)
 
+        @MainActor
         static func from(miniBoard: MiniChessBoardAppearance, highlight: UIColor = UIColor(red: 0.85, green: 0.65, blue: 0.1, alpha: 1)) -> Appearance {
             Appearance(
                 lightSquare: rgb(UIColor(miniBoard.lightSquareColor)),

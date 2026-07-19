@@ -131,22 +131,34 @@ final class SessionStore {
     }
 
     private func restoreSessionOnIOQueue() -> SessionSnapshot? {
-        guard fileManager.fileExists(atPath: indexURL.path) else { return nil }
+        guard fileManager.fileExists(atPath: indexURL.path) else {
+            restoreDetailLog("no session index at \(indexURL.path)")
+            return nil
+        }
 
         guard let index = readIndex() else {
             print("SessionStore: unreadable session index; starting clean")
+            restoreDetailLog(
+                "index present but decode failed path=\(indexURL.path) bytes=\(fileByteCount(indexURL))"
+            )
             removePersistedSessionFiles()
             return nil
         }
 
         guard index.version == SessionIndexFile.currentVersion else {
             print("SessionStore: unsupported session version \(index.version); starting clean")
+            restoreDetailLog(
+                "version mismatch stored=\(index.version) expected=\(SessionIndexFile.currentVersion) games=\(index.gameIDs.count)"
+            )
             removePersistedSessionFiles()
             return nil
         }
 
         if index.restoreInProgress {
             print("SessionStore: previous restore did not finish; discarding stored session")
+            restoreDetailLog(
+                "restoreInProgress=true — discarding session active=\(index.activeGameID?.uuidString ?? "nil") gameIDs=\(index.gameIDs.map(\.uuidString))"
+            )
             removePersistedSessionFiles()
             return nil
         }
@@ -157,24 +169,36 @@ final class SessionStore {
             try writeIndex(inProgressIndex)
         } catch {
             print("SessionStore: failed to mark restore in progress — \(error.localizedDescription)")
+            restoreDetailLog("mark restoreInProgress failed error=\(error)")
             removePersistedSessionFiles()
             return nil
         }
 
         var restoredGames: [RecordedGame] = []
         restoredGames.reserveCapacity(index.gameIDs.count)
+        var skippedIDs: [String] = []
 
         for gameID in index.gameIDs {
-            guard let stored = readGame(id: gameID),
-                  let game = SessionSnapshotCoding.decodeGame(stored) else {
+            switch loadRestorableGame(id: gameID) {
+            case .success(let game):
+                restoredGames.append(game)
+            case .failure(let reason):
+                skippedIDs.append("\(gameID.uuidString.prefix(8)): \(reason)")
                 print("SessionStore: skipping unreadable game \(gameID.uuidString)")
-                continue
             }
-            restoredGames.append(game)
+        }
+
+        if !skippedIDs.isEmpty {
+            restoreDetailLog(
+                "skipped \(skippedIDs.count)/\(index.gameIDs.count) games — \(skippedIDs.joined(separator: "; "))"
+            )
         }
 
         guard !restoredGames.isEmpty else {
             print("SessionStore: no readable games in stored session; starting clean")
+            restoreDetailLog(
+                "zero readable games after load indexCount=\(index.gameIDs.count) skipped=\(skippedIDs)"
+            )
             removePersistedSessionFiles()
             return nil
         }
@@ -189,11 +213,59 @@ final class SessionStore {
             try writeSession(snapshot: snapshot, restoreInProgress: false)
         } catch {
             print("SessionStore: failed to finalize restored session — \(error.localizedDescription)")
+            restoreDetailLog(
+                "finalize failed restored=\(restoredGames.count) active=\(activeGameID?.uuidString ?? "nil") error=\(error)"
+            )
             removePersistedSessionFiles()
             return nil
         }
 
+        restoreDetailLog(
+            "ok games=\(restoredGames.count) skipped=\(skippedIDs.count) active=\(activeGameID?.uuidString ?? "nil")"
+        )
         return snapshot
+    }
+
+    private enum GameRestoreFailure: Error, CustomStringConvertible {
+        case missingFile(path: String)
+        case emptyFile(path: String)
+        case decodeError(Error)
+        case invalidMoves(storedCount: Int, decodedCount: Int)
+
+        var description: String {
+            switch self {
+            case .missingFile(let path):
+                return "missing file \(path)"
+            case .emptyFile(let path):
+                return "empty file \(path)"
+            case .decodeError(let error):
+                return "JSON decode \(error)"
+            case .invalidMoves(let storedCount, let decodedCount):
+                return "move decode mismatch stored=\(storedCount) decoded=\(decodedCount)"
+            }
+        }
+    }
+
+    private func loadRestorableGame(id: UUID) -> Result<RecordedGame, GameRestoreFailure> {
+        let url = gameURL(for: id)
+        guard fileManager.fileExists(atPath: url.path) else {
+            return .failure(.missingFile(path: url.lastPathComponent))
+        }
+        guard let data = try? Data(contentsOf: url), !data.isEmpty else {
+            return .failure(.emptyFile(path: url.lastPathComponent))
+        }
+        let stored: StoredRecordedGame
+        do {
+            stored = try decoder.decode(StoredRecordedGame.self, from: data)
+        } catch {
+            return .failure(.decodeError(error))
+        }
+        guard let game = SessionSnapshotCoding.decodeGame(stored) else {
+            return .failure(
+                .invalidMoves(storedCount: stored.moves.count, decodedCount: 0)
+            )
+        }
+        return .success(game)
     }
 
     private func readIndex() -> SessionIndexFile? {
@@ -201,7 +273,12 @@ final class SessionStore {
               let data = try? Data(contentsOf: indexURL) else {
             return nil
         }
-        return try? decoder.decode(SessionIndexFile.self, from: data)
+        do {
+            return try decoder.decode(SessionIndexFile.self, from: data)
+        } catch {
+            restoreDetailLog("index JSON decode failed error=\(error)")
+            return nil
+        }
     }
 
     private func writeIndex(_ index: SessionIndexFile) throws {
@@ -253,6 +330,15 @@ final class SessionStore {
     private func writeData(_ data: Data, to url: URL) throws {
         try data.write(to: url, options: [.atomic, .completeFileProtectionUnlessOpen])
         Self.excludeFromBackup(url: url)
+    }
+
+    private func fileByteCount(_ url: URL) -> Int {
+        (try? fileManager.attributesOfItem(atPath: url.path)[.size] as? NSNumber)?.intValue ?? -1
+    }
+
+    private func restoreDetailLog(_ message: String) {
+        guard DeveloperModeStore.isAvailable else { return }
+        print("SessionStore[restore]: \(message)")
     }
 
     private static func excludeFromBackup(url: URL) {

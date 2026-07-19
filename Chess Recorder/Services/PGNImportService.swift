@@ -13,7 +13,29 @@ enum PGNImportService {
         let date: Date
         let roundHint: Int?
         let eco: String?
+        let openingName: String?
         let metadata: PGNMetadata
+
+        /// Fills missing ECO / opening name from the live opening book (tagged values win).
+        func fillingMissingOpening(from display: OpeningDisplay?) -> ImportedGame {
+            guard let display,
+                  display != .unknown,
+                  display != .starting else {
+                return self
+            }
+            let resolvedECO = eco ?? display.eco
+            let resolvedName = openingName ?? display.name
+            guard resolvedECO != eco || resolvedName != openingName else { return self }
+            return ImportedGame(
+                moves: moves,
+                result: result,
+                date: date,
+                roundHint: roundHint,
+                eco: resolvedECO,
+                openingName: resolvedName,
+                metadata: metadata
+            )
+        }
     }
 
     enum ImportError: LocalizedError, Equatable {
@@ -188,11 +210,12 @@ enum PGNImportService {
         let result = tagResult != .ongoing ? tagResult : (movetextResult ?? .ongoing)
 
         return ImportedGame(
-            moves: moves,
+            moves: ChessKitMapping.movesWithCanonicalSAN(moves),
             result: result,
             date: parseDate(kitGame.tags.date) ?? parseDate(tags["Date"] ?? "") ?? Date(),
             roundHint: Int(kitGame.tags.round) ?? Int(tags["Round"] ?? ""),
             eco: eco(from: kitGame.tags) ?? eco(from: tags),
+            openingName: openingName(from: kitGame.tags) ?? openingName(from: tags),
             metadata: metadata(from: tags, kitTags: kitGame.tags)
         )
     }
@@ -226,11 +249,12 @@ enum PGNImportService {
         let result = tagResult != .ongoing ? tagResult : trailResult
 
         return ImportedGame(
-            moves: game.moves,
+            moves: ChessKitMapping.movesWithCanonicalSAN(game.moves),
             result: result,
             date: parseDate(tags["Date"] ?? "") ?? Date(),
             roundHint: Int(tags["Round"] ?? ""),
             eco: eco(from: tags),
+            openingName: openingName(from: tags),
             metadata: metadata(from: tags, kitTags: nil)
         )
     }
@@ -353,8 +377,20 @@ enum PGNImportService {
     }
 
     private static func eco(from tags: [String: String]) -> String? {
-        let value = tags["ECO"] ?? tags["Eco"]
-        let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        tagValue(named: "ECO", in: tags)
+    }
+
+    private static func openingName(from tags: Game.Tags) -> String? {
+        openingName(from: tags.other)
+    }
+
+    private static func openingName(from tags: [String: String]) -> String? {
+        tagValue(named: "Opening", in: tags)
+    }
+
+    private static func tagValue(named name: String, in tags: [String: String]) -> String? {
+        let match = tags.first { $0.key.compare(name, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame }
+        let trimmed = match?.value.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return trimmed.isEmpty ? nil : trimmed
     }
 

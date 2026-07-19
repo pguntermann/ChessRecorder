@@ -141,8 +141,17 @@ final class MoveAssessmentService {
         var queued = 0
         var fenMismatchGames = 0
         var alreadyAssessed = 0
+        var fullyAssessedGames = 0
 
         for game in archive.games where !game.moves.isEmpty {
+            // Persisted qualities are authoritative — don't rebuild FENs just to re-skip them.
+            let unassessedIndices = game.moves.indices.filter { game.moves[$0].quality == nil }
+            if unassessedIndices.isEmpty {
+                fullyAssessedGames += 1
+                alreadyAssessed += game.moves.count
+                continue
+            }
+
             let fens = fensForMoves(game.moves)
             guard fens.count == game.moves.count + 1 else {
                 fenMismatchGames += 1
@@ -152,12 +161,9 @@ final class MoveAssessmentService {
                 continue
             }
 
-            for moveIndex in game.moves.indices {
-                guard game.moves[moveIndex].quality == nil else {
-                    alreadyAssessed += 1
-                    continue
-                }
+            alreadyAssessed += game.moves.count - unassessedIndices.count
 
+            for moveIndex in unassessedIndices {
                 let fenAfter = fens[moveIndex + 1]
                 let recordedMove = game.moves[moveIndex]
                 let playedSAN = recordedMove.san
@@ -202,7 +208,7 @@ final class MoveAssessmentService {
         }
 
         log(
-            "bulk enqueue done booked=\(booked) queued=\(queued) already=\(alreadyAssessed) fenSkip=\(fenMismatchGames) queue=\(pendingJobCount)"
+            "bulk enqueue done booked=\(booked) queued=\(queued) already=\(alreadyAssessed) fullGames=\(fullyAssessedGames) fenSkip=\(fenMismatchGames) queue=\(pendingJobCount)"
         )
     }
 
@@ -479,7 +485,7 @@ final class MoveAssessmentService {
     }
 
     private func fensForMoves(_ moves: [ChessMove]) -> [String] {
-        ChessGame.prepared(from: moves).fenSequenceFromStart()
+        ChessGameBackgroundPreparation.fenSequence(from: moves)
     }
 
     private func log(_ message: String) {

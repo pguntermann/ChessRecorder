@@ -153,6 +153,9 @@ struct ContentView: View {
             openingService.refresh(game: game)
             moveAssessment.enqueueUnassessedMoves(in: pgnArchive)
             isAppReady = true
+            if startupIncludesSessionRestore {
+                repairArchivedCaptureDisambiguationInBackground()
+            }
             prefetchPreparedGamesInBackground()
         }
         .onDisappear {
@@ -662,7 +665,10 @@ struct ContentView: View {
 
     @discardableResult
     private func importPGNGames(from pgn: String) throws -> Int {
-        let imported = try PGNImportService.importGames(from: pgn)
+        let imported = try PGNImportService.importGames(from: pgn).map { game in
+            // PGN without [ECO] still gets a code from the opening book when possible.
+            game.fillingMissingOpening(from: openingService.opening(for: game.moves))
+        }
         let ids = pgnArchive.appendImportedGames(imported)
         scheduleSessionPersist()
         moveAssessment.enqueueUnassessedMoves(in: pgnArchive)
@@ -1012,12 +1018,16 @@ struct ContentView: View {
         guard !items.isEmpty else { return }
 
         Task.detached(priority: .utility) {
-            let prepared: [(UUID, Int, PGNResult, ChessGameBackgroundPreparation.Transfer)] = items.map { item in
+            var prepared: [(UUID, Int, PGNResult, ChessGameBackgroundPreparation.Transfer)] = []
+            prepared.reserveCapacity(items.count)
+            for item in items {
+                // Yield between games so a user-initiated switch replay stays responsive.
+                await Task.yield()
                 let transfer = ChessGameBackgroundPreparation.prepareTransfer(
                     from: item.moves,
                     result: item.result
                 )
-                return (item.id, item.moves.count, item.result, transfer)
+                prepared.append((item.id, item.moves.count, item.result, transfer))
             }
             await MainActor.run {
                 for (id, moveCount, result, transfer) in prepared {
@@ -1269,6 +1279,62 @@ struct ContentView: View {
 
         if recordedGame.result != .ongoing {
             game.declareResult(recordedGame.result)
+        }
+    }
+
+    /// One-shot SAN repair for games imported before capture disambiguation was preserved.
+    /// Runs after the UI is interactive so cold start is not blocked on full archive replay.
+    private func repairArchivedCaptureDisambiguationInBackground() {
+        struct GameMoves: @unchecked Sendable {
+            let id: UUID
+            let moves: [ChessMove]
+            let result: PGNResult
+        }
+
+        let items = pgnArchive.games.map {
+            GameMoves(id: $0.id, moves: $0.moves, result: $0.result)
+        }
+        guard !items.isEmpty else { return }
+
+        Task(priority: .utility) {
+            let repaired: [(UUID, [ChessMove], PGNResult)] = await Task.detached(priority: .utility) {
+                items.map { item in
+                    (item.id, ChessKitMapping.movesWithCanonicalSAN(item.moves), item.result)
+                }
+            }.value
+
+            let changed = pgnArchive.replaceMovesPreservingIdentity(
+                repaired.map { (id: $0.0, moves: $0.1) }
+            )
+            guard !changed.isEmpty else { return }
+
+            for id in changed {
+                preparedGameCache.removeValue(forKey: id)
+            }
+
+            // Refresh the live board off the animation path; light replay keeps assessments.
+            if !isGameSwitchAnimating,
+               let activeID = pgnArchive.activeGameID,
+               changed.contains(activeID),
+               let recorded = pgnArchive.games.first(where: { $0.id == activeID }),
+               recorded.moves.count == game.moves.count {
+                let input = GameReplayInput(moves: recorded.moves, result: recorded.result)
+                let transfer = await Task.detached(priority: .utility) {
+                    ChessGameBackgroundPreparation.prepareTransfer(
+                        from: input.moves,
+                        result: input.result
+                    )
+                }.value
+                guard !isGameSwitchAnimating else { return }
+                game.applyPreparedTransfer(transfer)
+                preparedGameCache[activeID] = PreparedGameCacheEntry(
+                    moveCount: recorded.moves.count,
+                    result: recorded.result,
+                    transfer: transfer
+                )
+            }
+
+            scheduleSessionPersist()
         }
     }
 

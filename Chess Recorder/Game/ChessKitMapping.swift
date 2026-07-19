@@ -45,7 +45,7 @@ nonisolated enum ChessKitMapping {
         Square(position.notation)
     }
 
-    static func appMove(from move: Move) -> ChessMove {
+    static func appMove(from move: Move, legalMovesForDisambiguation: [Move] = []) -> ChessMove {
         let captures: Bool
         if case .capture = move.result {
             captures = true
@@ -61,7 +61,7 @@ nonisolated enum ChessKitMapping {
         }
 
         return ChessMove(
-            san: move.san,
+            san: san(for: move, legalMoves: legalMovesForDisambiguation),
             piece: appPieceType(move.piece.kind),
             from: appPosition(from: move.start),
             to: appPosition(from: move.end),
@@ -71,6 +71,99 @@ nonisolated enum ChessKitMapping {
             promotion: move.promotedPiece.map { appPieceType($0.kind) },
             castling: castling
         )
+    }
+
+    /// Replays `from`/`to` through ChessKit so SAN includes capture/file/rank disambiguation.
+    ///
+    /// ChessKit's PGN/SAN *parser* drops disambiguation letters before `x` (e.g. `Rdxd6` → `Rxd6`).
+    /// Call this once on import / session restore — not on every PGN row render.
+    /// Replaying squares regenerates moves; we then apply our own disambiguation (ChessKit's
+    /// `Board.disambiguate` can also miss siblings for some captures).
+    static func movesWithCanonicalSAN(_ moves: [ChessMove]) -> [ChessMove] {
+        guard !moves.isEmpty else { return moves }
+        let rebuilt = ChessGameBackgroundPreparation.prepareTransfer(
+            from: moves,
+            rebuildCanonicalSAN: true
+        ).moves
+        guard rebuilt.count == moves.count else { return moves }
+        return rebuilt
+    }
+
+    /// Builds SAN with disambiguation derived from other legal moves to the same square.
+    static func san(for move: Move, legalMoves: [Move]) -> String {
+        if case .castle = move.result {
+            return move.san
+        }
+        if move.piece.kind == .pawn || move.piece.kind == .king {
+            return move.san
+        }
+
+        // Prefer squares alone — ChessKit Move.piece can reflect post-move square/state.
+        let sameTargetSiblings = legalMoves.filter {
+            $0.start != move.start
+                && $0.end == move.end
+                && $0.piece.kind == move.piece.kind
+        }
+
+        var disambiguation = ""
+        if let existing = move.disambiguation, sameTargetSiblings.isEmpty {
+            // ChessKit already computed disambiguation; keep it when our sibling scan misses.
+            switch existing {
+            case .byFile(let file): disambiguation = file.rawValue
+            case .byRank(let rank): disambiguation = "\(rank.value)"
+            case .bySquare(let square): disambiguation = square.notation
+            }
+        } else if !sameTargetSiblings.isEmpty {
+            let fileConflict = sameTargetSiblings.contains { $0.start.file == move.start.file }
+            let rankConflict = sameTargetSiblings.contains { $0.start.rank == move.start.rank }
+            switch (fileConflict, rankConflict) {
+            case (false, _):
+                disambiguation = move.start.file.rawValue
+            case (true, false):
+                disambiguation = "\(move.start.rank.value)"
+            case (true, true):
+                disambiguation = move.start.notation
+            }
+        }
+
+        let pieceLetter: String
+        switch move.piece.kind {
+        case .knight: pieceLetter = "N"
+        case .bishop: pieceLetter = "B"
+        case .rook: pieceLetter = "R"
+        case .queen: pieceLetter = "Q"
+        case .king: pieceLetter = "K"
+        case .pawn: pieceLetter = ""
+        }
+
+        let capture: String
+        if case .capture = move.result {
+            capture = "x"
+        } else {
+            capture = ""
+        }
+
+        let promotion: String
+        if let promoted = move.promotedPiece {
+            switch promoted.kind {
+            case .queen: promotion = "=Q"
+            case .rook: promotion = "=R"
+            case .bishop: promotion = "=B"
+            case .knight: promotion = "=N"
+            default: promotion = ""
+            }
+        } else {
+            promotion = ""
+        }
+
+        let checkSuffix: String
+        switch move.checkState {
+        case .check: checkSuffix = "+"
+        case .checkmate: checkSuffix = "#"
+        case .none, .stalemate: checkSuffix = ""
+        }
+
+        return "\(pieceLetter)\(disambiguation)\(capture)\(move.end.notation)\(promotion)\(checkSuffix)"
     }
 
     static func pgnResult(from state: Board.State) -> PGNResult? {

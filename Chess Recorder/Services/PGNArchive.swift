@@ -76,8 +76,9 @@ enum PGNFormatter {
         result: PGNResult = .ongoing,
         includeAssessmentSymbols: Bool = false
     ) -> String {
+        let source = moves
         var pgn = ""
-        for (index, move) in moves.enumerated() {
+        for (index, move) in source.enumerated() {
             if index % 2 == 0 {
                 pgn += "\(index / 2 + 1). "
             }
@@ -228,10 +229,7 @@ final class PGNArchive {
 
         if chessGame.moves.isEmpty {
             games[index].moves = []
-            if let opening {
-                games[index].eco = opening.eco
-                games[index].openingName = opening.name
-            }
+            applyOpeningIfAppropriate(opening, toGameAt: index)
             if chessGame.isGameOver {
                 games[index].result = chessGame.gameResult
             }
@@ -243,12 +241,20 @@ final class PGNArchive {
             preservingQualitiesFrom: games[index].moves,
             newMoves: chessGame.moves
         )
-        if let opening {
-            games[index].eco = opening.eco
-            games[index].openingName = opening.name
-        }
+        applyOpeningIfAppropriate(opening, toGameAt: index)
         games[index].result = chessGame.gameResult
         bumpContentRevision(affecting: activeGameID)
+    }
+
+    /// Prefer a real opening-book match; don't replace a tagged/imported ECO with A00 fallbacks.
+    private func applyOpeningIfAppropriate(_ opening: OpeningDisplay?, toGameAt index: Int) {
+        guard let opening else { return }
+        let shouldApply =
+            games[index].eco == nil
+            || (opening != .unknown && opening != .starting)
+        guard shouldApply else { return }
+        games[index].eco = opening.eco
+        games[index].openingName = opening.name
     }
 
     @discardableResult
@@ -359,10 +365,7 @@ final class PGNArchive {
                     newMoves: chessGame.moves
                 )
                 games[index].result = result
-                if let opening {
-                    games[index].eco = opening.eco
-                    games[index].openingName = opening.name
-                }
+                applyOpeningIfAppropriate(opening, toGameAt: index)
                 mutated.insert(activeGameID)
             }
         } else if let activeGameID,
@@ -370,10 +373,7 @@ final class PGNArchive {
             if !games[index].moves.isEmpty {
                 // Keep moves already synced to the archive (e.g. after declaring 1-0).
                 games[index].result = result
-                if let opening {
-                    games[index].eco = opening.eco
-                    games[index].openingName = opening.name
-                }
+                applyOpeningIfAppropriate(opening, toGameAt: index)
                 mutated.insert(activeGameID)
             } else if games[index].result == .ongoing {
                 games.remove(at: index)
@@ -471,7 +471,7 @@ final class PGNArchive {
                     result: game.result,
                     date: game.date,
                     eco: game.eco,
-                    openingName: nil,
+                    openingName: game.openingName,
                     metadata: game.metadata
                 ),
                 at: 0
@@ -495,6 +495,25 @@ final class PGNArchive {
             uniqueKeysWithValues: games.map { ($0.id, gameContentRevisions[$0.id] ?? 0) }
         )
         bumpContentRevisionFully()
+    }
+
+    /// Replaces move lists for existing games when SANs were repaired off the hot path.
+    /// Returns game IDs whose stored SAN text actually changed.
+    @discardableResult
+    func replaceMovesPreservingIdentity(_ updates: [(id: UUID, moves: [ChessMove])]) -> Set<UUID> {
+        var changedIDs = Set<UUID>()
+        for update in updates {
+            guard let index = games.firstIndex(where: { $0.id == update.id }) else { continue }
+            let before = games[index].moves.map(\.san)
+            let after = update.moves.map(\.san)
+            guard before != after else { continue }
+            games[index].moves = update.moves
+            changedIDs.insert(update.id)
+        }
+        if !changedIDs.isEmpty {
+            bumpContentRevision(affecting: changedIDs)
+        }
+        return changedIDs
     }
 
     private func appendNewOngoingGame(metadata: PGNMetadata) {

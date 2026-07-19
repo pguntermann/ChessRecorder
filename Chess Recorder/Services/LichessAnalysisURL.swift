@@ -59,9 +59,9 @@ enum LichessAnalysisURL {
         return URL(string: urlString)
     }
 
-    /// ChessKit SAN for each ply via from/to replay; falls back to stored SAN if replay fails.
+    /// Canonical SAN for each ply; falls back to stored SAN if repair fails.
     private static func canonicalSANTokens(from moves: [ChessMove]) -> [String] {
-        let rebuilt = ChessGameBackgroundPreparation.prepareTransfer(from: moves).moves
+        let rebuilt = ChessKitMapping.movesWithCanonicalSAN(moves)
         let source = rebuilt.count == moves.count ? rebuilt : moves
         return source.map(sanForLichess)
     }

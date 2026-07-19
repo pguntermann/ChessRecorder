@@ -508,7 +508,7 @@ private struct GamePGNRowView: View, Equatable {
                         result: recordedGame.result,
                         metadata: recordedGame.metadata,
                         date: recordedGame.date,
-                        eco: presentation?.eco
+                        eco: recordedGame.eco ?? presentation?.eco
                     ))
                     .font(.system(.caption, design: .monospaced))
                     .foregroundStyle(.secondary)

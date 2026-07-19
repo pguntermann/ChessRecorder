@@ -115,4 +115,35 @@ final class OpeningServiceTests: XCTestCase {
         XCTAssertEqual(range.startMoveLabel, "9.")
         XCTAssertEqual(OpeningBookOutOfBookGap.moveLabel(fullMove: 8, isWhite: false), "8...")
     }
+
+    func testImportWithoutECOTagFillsFromOpeningBook() async throws {
+        let service = OpeningService()
+        await service.prepare()
+
+        // Same Taimanov/Four Knights Sicilian start as the user's long game (no [ECO] tag).
+        let pgn = """
+        [Event "Chess Recorder"]
+        [Site "?"]
+        [Date "2026.07.19"]
+        [Round "12"]
+        [White "?"]
+        [Black "?"]
+        [Result "0-1"]
+
+        1. e4 c5 2. Nc3 e6 3. Nf3 Nc6 4. d4 cxd4 5. Nxd4 Nf6 6. Ndb5 Bb4 0-1
+        """
+        let imported = try PGNImportService.importGames(from: pgn)
+        XCTAssertEqual(imported.count, 1)
+        XCTAssertNil(imported[0].eco, "Source PGN has no ECO tag")
+
+        let enriched = imported[0].fillingMissingOpening(from: service.opening(for: imported[0].moves))
+        XCTAssertNotNil(enriched.eco)
+        XCTAssertNotEqual(enriched.eco, "A00")
+        XCTAssertTrue(
+            enriched.eco?.hasPrefix("B") == true,
+            "Sicilian lines should resolve to a B-group ECO, got \(enriched.eco ?? "nil")"
+        )
+        XCTAssertNotNil(enriched.openingName)
+        XCTAssertNotEqual(enriched.openingName, "Unknown Opening")
+    }
 }

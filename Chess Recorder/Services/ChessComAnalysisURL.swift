@@ -43,7 +43,7 @@ enum ChessComAnalysisURL {
     ) -> String? {
         guard !moves.isEmpty else { return nil }
 
-        let rebuilt = ChessGameBackgroundPreparation.prepareTransfer(from: moves).moves
+        let rebuilt = ChessKitMapping.movesWithCanonicalSAN(moves)
         let source = rebuilt.count == moves.count ? rebuilt : moves
 
         var parts: [String] = []

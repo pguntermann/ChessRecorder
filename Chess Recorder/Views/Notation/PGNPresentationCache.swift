@@ -110,15 +110,18 @@ enum PGNPresentationBuilder {
         buildHighlightedMovetext: Bool = true,
         includeAssessmentSymbols: Bool = false
     ) -> GameRowPresentation {
+        // Prefer stored SAN. Capture disambiguation is repaired once on import / session restore,
+        // not on every archive row rebuild (full replay is too expensive at cold start).
+        let moves = game.moves
         let plain = PGNFormatter.movetext(
-            from: game.moves,
+            from: moves,
             result: game.result,
             includeAssessmentSymbols: includeAssessmentSymbols
         )
         let highlighted: AttributedString
         if buildHighlightedMovetext {
             highlighted = Self.highlightedMovetext(
-                moves: game.moves,
+                moves: moves,
                 result: game.result,
                 activePlyIndex: activePlyIndex,
                 isAtLatestMove: isAtLatestMove,

@@ -130,8 +130,8 @@ nonisolated struct ChessMove: Sendable {
     }
 
     func matchesPositionally(_ other: ChessMove) -> Bool {
-        san == other.san
-            && from == other.from
+        // Compare squares/piece only — SAN may be rewritten when disambiguation is repaired.
+        from == other.from
             && to == other.to
             && piece == other.piece
             && promotion == other.promotion
@@ -268,7 +268,7 @@ class ChessGame {
         }
 
         guard applyLegalMove(matched) else { return nil }
-        return matched.san
+        return moves.last?.san
     }
 
     @discardableResult
@@ -283,6 +283,7 @@ class ChessGame {
         let end = ChessKitMapping.kitSquare(from: to)
         guard let piece = pieceAt(from) else { return false }
 
+        let legalMoves = enumerateLegalKitMoves()
         guard var kitMove = kitBoard.move(pieceAt: start, to: end) else {
             return false
         }
@@ -292,7 +293,7 @@ class ChessGame {
             kitMove = kitBoard.completePromotion(of: promoMove, to: kind)
         }
 
-        return finalizeMove(kitMove, animatedPiece: piece)
+        return finalizeMove(kitMove, animatedPiece: piece, legalMovesForDisambiguation: legalMoves)
     }
 
     func legalDestinations(from: ChessPosition) -> [ChessPosition] {
@@ -520,7 +521,8 @@ class ChessGame {
                 return false
             }
             currentIndex = kitGame.make(move: kitMove, from: currentIndex)
-            rebuiltMoves.append(ChessKitMapping.appMove(from: kitMove))
+            // Keep archived SAN + assessments; don't rebuild notation on every load/switch.
+            rebuiltMoves.append(recordedMove)
         }
 
         moves = rebuiltMoves
@@ -851,6 +853,7 @@ class ChessGame {
         let from = ChessKitMapping.appPosition(from: parsed.start)
         guard pieceAt(from) != nil else { return false }
 
+        let legalMoves = enumerateLegalKitMoves()
         guard var kitMove = kitBoard.move(pieceAt: parsed.start, to: parsed.end) else {
             return false
         }
@@ -860,7 +863,7 @@ class ChessGame {
             kitMove = kitBoard.completePromotion(of: promoMove, to: kind)
         }
 
-        return commitReplayMove(kitMove)
+        return commitReplayMove(kitMove, legalMovesForDisambiguation: legalMoves)
     }
 
     @discardableResult
@@ -873,9 +876,17 @@ class ChessGame {
     }
 
     @discardableResult
-    private func commitReplayMove(_ kitMove: Move) -> Bool {
+    private func commitReplayMove(
+        _ kitMove: Move,
+        legalMovesForDisambiguation: [Move] = []
+    ) -> Bool {
         currentIndex = kitGame.make(move: kitMove, from: currentIndex)
-        moves.append(ChessKitMapping.appMove(from: kitMove))
+        moves.append(
+            ChessKitMapping.appMove(
+                from: kitMove,
+                legalMovesForDisambiguation: legalMovesForDisambiguation
+            )
+        )
         syncBoardFromKit()
         refreshActivePlyIndex()
         return true
@@ -974,6 +985,7 @@ class ChessGame {
         let from = ChessKitMapping.appPosition(from: parsed.start)
         guard let piece = pieceAt(from) else { return false }
 
+        let legalMoves = enumerateLegalKitMoves()
         guard var kitMove = kitBoard.move(pieceAt: parsed.start, to: parsed.end) else {
             return false
         }
@@ -983,14 +995,23 @@ class ChessGame {
             kitMove = kitBoard.completePromotion(of: promoMove, to: kind)
         }
 
-        return finalizeMove(kitMove, animatedPiece: piece)
+        return finalizeMove(kitMove, animatedPiece: piece, legalMovesForDisambiguation: legalMoves)
     }
 
-    private func finalizeMove(_ kitMove: Move, animatedPiece: ChessPiece) -> Bool {
+    private func finalizeMove(
+        _ kitMove: Move,
+        animatedPiece: ChessPiece,
+        legalMovesForDisambiguation: [Move] = []
+    ) -> Bool {
         guard isAtLatestMove else { return false }
 
         currentIndex = kitGame.make(move: kitMove, from: currentIndex)
-        moves.append(ChessKitMapping.appMove(from: kitMove))
+        moves.append(
+            ChessKitMapping.appMove(
+                from: kitMove,
+                legalMovesForDisambiguation: legalMovesForDisambiguation
+            )
+        )
         invalidateLegalMovesCache()
         syncBoardFromKit()
         refreshActivePlyIndex()

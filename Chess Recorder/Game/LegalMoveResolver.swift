@@ -102,7 +102,11 @@ nonisolated enum LegalMoveResolver {
         if isPieceCaptureSAN(notation), let kind = pieceKind(for: notation.first!) {
             let base = sanWithoutAnnotations(notation)
             return legalMoves.first { move in
-                move.piece.kind == kind && sanWithoutAnnotations(move.san) == base
+                guard move.piece.kind == kind else { return false }
+                let canonical = sanWithoutAnnotations(
+                    ChessKitMapping.san(for: move, legalMoves: legalMoves)
+                )
+                return canonical == base || sanWithoutAnnotations(move.san) == base
             }
         }
 

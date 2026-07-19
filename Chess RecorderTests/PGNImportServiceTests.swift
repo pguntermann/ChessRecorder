@@ -238,4 +238,63 @@ final class PGNImportServiceTests: XCTestCase {
         XCTAssertEqual(imported.count, 1)
         XCTAssertEqual(imported[0].moves.map(\.san), ["e4", "e5"])
     }
+
+    func testImportPreservesRookCaptureDisambiguation() throws {
+        // ChessKit's PGN parser drops the file letter in `Rdxd6` → `Rxd6`. Import must
+        // repair SAN via from/to replay so other software can read the archive/export.
+        let pgn = """
+        1. e4 c5 2. Nc3 e6 3. Nf3 Nc6 4. d4 cxd4 5. Nxd4 Nf6 6. Ndb5 Bb4 7. Bd2 Qa5 8. a3 Bxc3 9. Nd6+ Ke7 10. Bxc3 Qc7 11. e5 Nd5 12. Qf3 Nxc3 13. Qxf7+ Kd8 14. bxc3 Nxe5 15. Qxg7 Qxd6 16. Qxh8+ Kc7 17. Be2 b6 18. O-O a5 19. Rfd1 Qc5 20. Rd4 Bb7 21. Qxh7 Qxc3 22. Rad1 Bd5 23. Qg7 Nc6 24. Rg4 Qxc2 25. h3 Qxe2 26. Rc1 e5 27. Qh7 Rf8 28. Rg7 Qxf2+ 29. Kh2 Bf7 30. Rc2 Qf6 31. Rg3 e4 32. Qxe4 Rg8 33. Rf3 Bg6 34. Qd5 Qg7 35. Rd2 Qe5+ 36. Qxe5+ Nxe5 37. Rf6 b5 38. Rd5 d6 39. Rdxd6 Be4 40. g4 Nd7 41. Rh6 Rf8 42. Rde6 Rf4 43. Re7 b4 44. axb4 axb4 45. Rhe6 Bd5 46. Ra6 Bb7 47. Rh6 b3 48. Rhh7 Rf2+ 49. Kg3 Rg2+ 50. Kh4 Rd2 51. Re1 b2 52. Rh5 Bd5 53. g5 Ne5 54. g6 Nf3+ 55. Kg4 Nxe1 56. Rxd5 Rxd5 57. g7 b1=Q 58. g8=Q Qd1+ 59. Kh4 Rh5+ 60. Kg3 Qf3+ 61. Kh2 Qf2+ 62. Kh1 Rxh3# 0-1
+        """
+
+        let imported = try PGNImportService.importGames(from: pgn)
+        XCTAssertEqual(imported.count, 1)
+        let moves = imported[0].moves
+        XCTAssertGreaterThan(moves.count, 76)
+
+        let whiteMove39 = moves[76] // 0-based ply for 39. …
+        XCTAssertEqual(whiteMove39.to.notation, "d6")
+        XCTAssertEqual(whiteMove39.san, "Rdxd6")
+
+        let exported = PGNFormatter.movetext(from: moves, result: .blackWins)
+        XCTAssertTrue(exported.contains("Rdxd6"), "Export must keep disambiguation: \(exported)")
+        XCTAssertFalse(
+            exported.contains("39. Rxd6 "),
+            "Ambiguous Rxd6 must not appear in export: \(exported)"
+        )
+    }
+
+    func testImportPreservesECOAndOpeningTags() throws {
+        let pgn = """
+        [Event "Test"]
+        [Site "Internet"]
+        [Date "2024.06.01"]
+        [Round "3"]
+        [White "Alice"]
+        [Black "Bob"]
+        [Result "1-0"]
+        [ECO "B20"]
+        [Opening "Sicilian Defense"]
+
+        1. e4 c5 2. Nf3 1-0
+        """
+        let imported = try PGNImportService.importGames(from: pgn)
+        XCTAssertEqual(imported.count, 1)
+        XCTAssertEqual(imported[0].eco, "B20")
+        XCTAssertEqual(imported[0].openingName, "Sicilian Defense")
+        XCTAssertEqual(imported[0].result, .whiteWins)
+
+        let archive = PGNArchive()
+        _ = archive.appendImportedGames(imported)
+        XCTAssertEqual(archive.games.first?.eco, "B20")
+        XCTAssertEqual(archive.games.first?.openingName, "Sicilian Defense")
+
+        let headers = PGNFormatter.headers(
+            round: archive.games[0].round,
+            result: archive.games[0].result,
+            metadata: archive.games[0].metadata,
+            date: archive.games[0].date,
+            eco: archive.games[0].eco
+        )
+        XCTAssertTrue(headers.contains("[ECO \"B20\"]"), headers)
+    }
 }

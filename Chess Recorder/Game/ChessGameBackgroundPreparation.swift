@@ -24,7 +24,8 @@ nonisolated enum ChessGameBackgroundPreparation {
 
     static func prepareTransfer(
         from recordedMoves: [ChessMove],
-        result: PGNResult = .ongoing
+        result: PGNResult = .ongoing,
+        rebuildCanonicalSAN: Bool = false
     ) -> Transfer {
         var kitBoard = Board()
         var kitGame = ChessKit.Game()
@@ -33,6 +34,11 @@ nonisolated enum ChessGameBackgroundPreparation {
         rebuiltMoves.reserveCapacity(recordedMoves.count)
 
         for recordedMove in recordedMoves {
+            // Legal-move enumeration is only needed when repairing capture disambiguation SAN.
+            // Game switch / prefetch / board load keep archived moves (SAN + assessments) as-is.
+            let legalMoves = rebuildCanonicalSAN
+                ? enumerateLegalKitMoves(kitBoard: kitBoard)
+                : []
             guard let kitMove = makeReplayKitMove(
                 for: recordedMove,
                 kitBoard: &kitBoard
@@ -41,7 +47,23 @@ nonisolated enum ChessGameBackgroundPreparation {
                 return emptyTransfer()
             }
             currentIndex = kitGame.make(move: kitMove, from: currentIndex)
-            rebuiltMoves.append(ChessKitMapping.appMove(from: kitMove))
+            if rebuildCanonicalSAN {
+                var canonical = ChessKitMapping.appMove(
+                    from: kitMove,
+                    legalMovesForDisambiguation: legalMoves
+                )
+                if let quality = recordedMove.quality {
+                    canonical = canonical.withQuality(
+                        quality,
+                        centipawnLoss: recordedMove.centipawnLoss,
+                        evaluationWhiteCentipawns: recordedMove.evaluationWhiteCentipawns,
+                        bestMoveSAN: recordedMove.bestMoveSAN
+                    )
+                }
+                rebuiltMoves.append(canonical)
+            } else {
+                rebuiltMoves.append(recordedMove)
+            }
         }
 
         var declaredResult: PGNResult?
@@ -63,6 +85,22 @@ nonisolated enum ChessGameBackgroundPreparation {
             gameResult: gameResult,
             activePlyIndex: rebuiltMoves.count
         )
+    }
+
+    /// FEN after each ply (including the starting position). Skips legal-move enumeration
+    /// and MoveTree updates — use for assessment queueing, not for SAN repair.
+    static func fenSequence(from recordedMoves: [ChessMove]) -> [String] {
+        var kitBoard = Board()
+        var fens: [String] = [kitBoard.position.fen]
+        fens.reserveCapacity(recordedMoves.count + 1)
+
+        for recordedMove in recordedMoves {
+            guard makeReplayKitMove(for: recordedMove, kitBoard: &kitBoard) != nil else {
+                return []
+            }
+            fens.append(kitBoard.position.fen)
+        }
+        return fens
     }
 
     private static func emptyTransfer() -> Transfer {
@@ -193,10 +231,11 @@ nonisolated enum ChessGameBackgroundPreparation {
     private static func enumerateLegalKitMoves(kitBoard: Board) -> [Move] {
         var moves: [Move] = []
         let position = kitBoard.position
+        let side = position.sideToMove
 
-        for piece in position.pieces {
+        for piece in position.pieces where piece.color == side {
             let start = piece.square
-            for end in kitBoard.legalMoves(forPieceAt: start) ?? [] {
+            for end in kitBoard.legalMoves(forPieceAt: start) {
                 var probe = kitBoard
                 guard let move = probe.move(pieceAt: start, to: end) else { continue }
 

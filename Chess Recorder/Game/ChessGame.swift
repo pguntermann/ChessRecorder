@@ -935,12 +935,30 @@ class ChessGame {
         return fens
     }
 
-    /// Starting position followed by each position after a move — used for phase detection.
+    /// Starting position followed by each position up to the viewed ply (for opening path).
     func fenSequenceFromStart() -> [String] {
         guard let startFEN = kitGame.positions[kitGame.startingIndex]?.fen else {
             return [fen()]
         }
         return [startFEN] + fensAfterMoves()
+    }
+
+    /// Full main-line FENs (start + every ply), even when the viewer is on an earlier move.
+    /// Prefer this over replaying moves when the live `ChessGame` tree is already available.
+    func mainLineFenSequence() -> [String] {
+        guard let startFEN = kitGame.positions[kitGame.startingIndex]?.fen else {
+            return [fen()]
+        }
+        var fens: [String] = [startFEN]
+        fens.reserveCapacity(moves.count + 1)
+        var index = kitGame.startingIndex
+        while kitGame.moves.hasIndex(after: index) {
+            let next = kitGame.moves.index(after: index)
+            guard let position = kitGame.positions[next] else { break }
+            fens.append(position.fen)
+            index = next
+        }
+        return fens
     }
 
     // MARK: - ChessKit integration

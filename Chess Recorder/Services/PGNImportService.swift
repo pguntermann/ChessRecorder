@@ -7,7 +7,7 @@ import ChessKit
 import Foundation
 
 enum PGNImportService {
-    struct ImportedGame {
+    struct ImportedGame: Sendable {
         let moves: [ChessMove]
         let result: PGNResult
         let date: Date

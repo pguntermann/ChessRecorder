@@ -21,7 +21,7 @@ struct PGNImportSheet: View {
 
     /// When true (developer override), the usual 20-game cap is not enforced.
     var overrideGameLimit: Bool = false
-    let onImport: (String) throws -> Int
+    let onImport: (String) async throws -> Int
 
     @State private var pgnText = ""
     @State private var errorMessage: String?
@@ -33,6 +33,7 @@ struct PGNImportSheet: View {
     @State private var loadedByteCount = 0
     @State private var estimatedGameCount = 0
     @State private var previewText = ""
+    @State private var isImporting = false
 
     private var hasPGNText: Bool {
         !pgnText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
@@ -46,12 +47,16 @@ struct PGNImportSheet: View {
         PGNImportService.gameCountLimit(overrideLimit: overrideGameLimit)
     }
 
-    private var canImport: Bool {
+    private var hasImportablePGN: Bool {
         guard hasPGNText, estimatedGameCount > 0 else { return false }
         if let gameCountLimit, estimatedGameCount > gameCountLimit {
             return false
         }
         return true
+    }
+
+    private var canImport: Bool {
+        hasImportablePGN && !isImporting
     }
 
     private var importFooterText: String {
@@ -70,21 +75,33 @@ struct PGNImportSheet: View {
                     } label: {
                         Label("Choose PGN File…", systemImage: "doc.badge.plus")
                     }
+                    .disabled(isImporting)
 
                     Button {
                         pasteFromClipboard()
                     } label: {
                         Label("Paste from Clipboard", systemImage: "doc.on.clipboard")
                     }
+                    .disabled(isImporting)
                 } footer: {
                     Text(importFooterText)
                 }
 
                 Section {
-                    Button("Import Games") {
+                    Button {
                         importPGN()
+                    } label: {
+                        if isImporting {
+                            HStack(spacing: 10) {
+                                ProgressView()
+                                    .controlSize(.small)
+                                Text(importProgressLabel)
+                            }
+                        } else {
+                            Text("Import Games")
+                        }
                     }
-                    .disabled(!canImport)
+                    .disabled(!hasImportablePGN || isImporting)
 
                     if let statusMessage {
                         Text(statusMessage)
@@ -111,10 +128,12 @@ struct PGNImportSheet: View {
                                     .frame(minHeight: 160)
                                     .autocorrectionDisabled()
                                     .textInputAutocapitalization(.never)
+                                    .disabled(isImporting)
                             } else {
                                 largePGNPreview
                             }
                         }
+                        .disabled(isImporting)
                     } footer: {
                         if canEditInSheet {
                             Text("Optional — open only if you want to inspect or tweak the text before importing.")
@@ -128,15 +147,23 @@ struct PGNImportSheet: View {
             }
             .navigationTitle("Import PGN")
             .navigationBarTitleDisplayMode(.inline)
+            .interactiveDismissDisabled(isImporting)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Close") { dismiss() }
+                        .disabled(isImporting)
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Import") {
-                        importPGN()
+                    if isImporting {
+                        ProgressView()
+                            .controlSize(.small)
+                            .accessibilityLabel(importProgressLabel)
+                    } else {
+                        Button("Import") {
+                            importPGN()
+                        }
+                        .disabled(!canImport)
                     }
-                    .disabled(!canImport)
                 }
             }
             .fileImporter(
@@ -162,6 +189,13 @@ struct PGNImportSheet: View {
                 Text(largeImportNoticeMessage(for: importedCountForNotice))
             }
         }
+    }
+
+    private var importProgressLabel: String {
+        if estimatedGameCount > 1 {
+            return "Importing \(estimatedGameCount) games…"
+        }
+        return "Importing…"
     }
 
     private var largePGNPreview: some View {
@@ -295,20 +329,31 @@ struct PGNImportSheet: View {
     }
 
     private func importPGN() {
-        do {
-            let count = try onImport(pgnText)
-            errorMessage = nil
-            if PGNImportService.shouldShowLargeImportNotice(importedCount: count) {
-                importedCountForNotice = count
-                statusMessage = count == 1 ? "Imported 1 game." : "Imported \(count) games."
-                showingLargeImportNotice = true
-            } else {
-                statusMessage = count == 1 ? "Imported 1 game." : "Imported \(count) games."
-                dismiss()
+        guard canImport else { return }
+        isImporting = true
+        errorMessage = nil
+        statusMessage = importProgressLabel
+
+        Task { @MainActor in
+            // Let the ProgressView paint before the import starts.
+            await Task.yield()
+            defer { isImporting = false }
+
+            do {
+                let count = try await onImport(pgnText)
+                errorMessage = nil
+                if PGNImportService.shouldShowLargeImportNotice(importedCount: count) {
+                    importedCountForNotice = count
+                    statusMessage = count == 1 ? "Imported 1 game." : "Imported \(count) games."
+                    showingLargeImportNotice = true
+                } else {
+                    statusMessage = count == 1 ? "Imported 1 game." : "Imported \(count) games."
+                    dismiss()
+                }
+            } catch {
+                errorMessage = error.localizedDescription
+                statusMessage = nil
             }
-        } catch {
-            errorMessage = error.localizedDescription
-            statusMessage = nil
         }
     }
 }

@@ -40,16 +40,7 @@ struct EngineAnalysisSectionView: View {
                 Text(analysisService.display.evaluationText)
                     .font(.system(.title3, design: .monospaced))
                     .fontWeight(.semibold)
-                
-                if let phase = analysisService.display.gamePhase, analysisService.isActive {
-                    Text(phase.rawValue)
-                        .font(.caption2.weight(.medium))
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(Capsule().fill(Color.secondary.opacity(0.15)))
-                }
-                
+
                 if analysisService.isAnalyzing {
                     ProgressView()
                         .controlSize(.small)

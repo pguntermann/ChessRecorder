@@ -26,11 +26,12 @@ struct NotationPanelView: View {
     var assessmentColors: MoveAssessmentColors = .defaults
     var assessmentColorsCacheKey: String = ""
     var boardAppearance: MiniChessBoardAppearance = .default
+    var openingService: OpeningService? = nil
     let engineAnalysisVisible: Bool
     let engineAnalysisUseAlgebraicNotation: Bool
     @Bindable var engineAnalysis: EngineAnalysisService
     var onClearPGN: (() -> Void)?
-    var onImportPGN: ((String) throws -> Int)?
+    var onImportPGN: ((String) async throws -> Int)?
     /// When true, the PGN import sheet skips the usual 20-game cap.
     var overridePGNImportGameLimit: Bool = false
     var onActivateGame: ((UUID) -> Void)?
@@ -134,6 +135,7 @@ struct NotationPanelView: View {
                                     showAccuracySummary: showAccuracySummary,
                                     assessmentColors: assessmentColors,
                                     boardAppearance: boardAppearance,
+                                    openingService: openingService,
                                     // Freeze ply props on inactive rows so they don't redraw on navigation.
                                     activePlyIndex: isActiveGame ? game.activePlyIndex : recordedGame.moves.count,
                                     isAtLatestMove: isActiveGame ? game.isAtLatestMove : true,
@@ -184,6 +186,7 @@ struct NotationPanelView: View {
                                 showAccuracySummary: showAccuracySummary,
                                 assessmentColors: assessmentColors,
                                 boardAppearance: boardAppearance,
+                                openingService: openingService,
                                 activePlyIndex: game.activePlyIndex,
                                 isAtLatestMove: game.isAtLatestMove
                             )
@@ -222,7 +225,7 @@ struct NotationPanelView: View {
         .sheet(isPresented: $showingPGNImport) {
             PGNImportSheet(overrideGameLimit: overridePGNImportGameLimit) { pgn in
                 guard let onImportPGN else { return 0 }
-                return try onImportPGN(pgn)
+                return try await onImportPGN(pgn)
             }
         }
         #endif
@@ -389,6 +392,7 @@ private struct GamePGNRowView: View, Equatable {
     var showAccuracySummary: Bool = true
     var assessmentColors: MoveAssessmentColors = .defaults
     var boardAppearance: MiniChessBoardAppearance = .default
+    var openingService: OpeningService? = nil
     var activePlyIndex: Int = 0
     var isAtLatestMove: Bool = true
     var contentRevision: UInt64 = 0
@@ -401,6 +405,7 @@ private struct GamePGNRowView: View, Equatable {
     static func == (lhs: GamePGNRowView, rhs: GamePGNRowView) -> Bool {
         // Intentionally omit `presentation` — AttributedString equality is O(moves).
         // `contentRevision` covers movetext/quality invalidation.
+        // `openingService` is identity-stable for the session; omit from equality.
         lhs.recordedGame.id == rhs.recordedGame.id
             && lhs.recordedGame.moves.count == rhs.recordedGame.moves.count
             && lhs.recordedGame.result == rhs.recordedGame.result
@@ -455,7 +460,22 @@ private struct GamePGNRowView: View, Equatable {
             return
         }
         guard cachedAccuracySummaryRevision != contentRevision else { return }
-        let summary = GameAccuracySummary(moves: recordedGame.moves)
+        let fens = ChessGameBackgroundPreparation.fenSequence(from: recordedGame.moves)
+        let lastInBook: (ply: Int, display: OpeningDisplay)
+        if let openingService, openingService.isLoaded {
+            lastInBook = openingService.lastInBookOpening(fenSequence: fens)
+        } else {
+            lastInBook = (
+                GameAccuracySummary.lastBookQualityPly(in: recordedGame.moves),
+                GameReportPDFComposer.openingDiagramDisplay(for: recordedGame)
+            )
+        }
+        let summary = GameAccuracySummary(
+            moves: recordedGame.moves,
+            fenSequence: fens,
+            lastInBookPly: lastInBook.ply,
+            opening: lastInBook.display
+        )
         cachedAccuracySummary = summary.hasContent ? summary : nil
         cachedAccuracySummaryRevision = contentRevision
     }
@@ -604,7 +624,8 @@ private struct GamePGNRowView: View, Equatable {
                     fallback: GameAccuracySummary.Side.black.label
                 ),
                 assessmentColors: assessmentColors,
-                boardAppearance: boardAppearance
+                boardAppearance: boardAppearance,
+                openingService: openingService
             )
             // Refresh sheet contents when assessments arrive; keep row identity stable
             // so `showingAccuracySummary` is not reset (which would dismiss the sheet).

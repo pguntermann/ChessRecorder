@@ -29,6 +29,7 @@
   "engineAnalysisUseAlgebraicNotation" : true,
   "engineAnalysisVisible" : true,
   "openingNameVisible" : true,
+  "gamePhaseVisible" : true,
   "openingBookMiniBoardSide" : 120,
   "openingBookMiniBoardFollowsOrientation" : true,
   "lightSquareColor" : {

@@ -32,6 +32,8 @@ struct GameAccuracySummarySheet: View {
     var blackName: String = GameAccuracySummary.Side.black.label
     var assessmentColors: MoveAssessmentColors = .defaults
     var boardAppearance: MiniChessBoardAppearance = .default
+    /// Used when exporting the PDF opening miniature (last in-book ply).
+    var openingService: OpeningService? = nil
 
     @State private var progressMode: GameAccuracySummary.AccuracyProgressMode = .running
     @State private var isExportingPDF = false
@@ -327,6 +329,20 @@ struct GameAccuracySummarySheet: View {
                 ? renderChartImage(chartMarks(for: .cumulative, printFriendly: true).frame(height: 200))
                 : nil
 
+            // ChessKit FEN replay is the expensive part — keep it off the main actor.
+            let movesForFEN = recordedGame.moves
+            let fenSequence = await Task.detached(priority: .userInitiated) {
+                ChessGameBackgroundPreparation.fenSequence(from: movesForFEN)
+            }.value
+
+            // Book dictionaries live on OpeningService (MainActor); one cheap pass over FENs.
+            let lastInBook: (ply: Int, display: OpeningDisplay)
+            if let openingService, openingService.isLoaded {
+                lastInBook = openingService.lastInBookOpening(fenSequence: fenSequence)
+            } else {
+                lastInBook = (0, GameReportPDFComposer.openingDiagramDisplay(for: recordedGame))
+            }
+
             let input = GameReportPDFComposer.Input(
                 recordedGame: recordedGame,
                 summary: summary,
@@ -336,7 +352,10 @@ struct GameAccuracySummarySheet: View {
                 assessmentColors: .resolve(assessmentColors),
                 evaluationChartImage: evaluationChartImage,
                 accuracyChartImage: accuracyChartImage,
-                cumulativeAccuracyChartImage: cumulativeAccuracyChartImage
+                cumulativeAccuracyChartImage: cumulativeAccuracyChartImage,
+                fenSequence: fenSequence,
+                lastInBookPly: lastInBook.ply,
+                openingDiagram: lastInBook.display
             )
 
             do {
@@ -406,11 +425,70 @@ struct GameAccuracySummarySheet: View {
     private var overviewSection: some View {
         VStack(spacing: 14) {
             accuracyComparison
+            if showsOpeningOrEndgame {
+                openingEndgameOverview
+            }
             if summary.scoredMoveCount > 0 || summary.blunderCount > 0 {
                 overviewMetricsTable
             }
         }
         .frame(maxWidth: .infinity)
+    }
+
+    private var overviewOpening: OpeningDisplay? {
+        if let opening = summary.opening {
+            return opening
+        }
+        let fallback = GameReportPDFComposer.openingDiagramDisplay(for: recordedGame)
+        // Avoid a useless "A00 · Starting Position" when tags/book have nothing better.
+        if fallback == .starting, recordedGame.moves.isEmpty { return fallback }
+        if fallback == .starting { return nil }
+        return fallback
+    }
+
+    private var showsOpeningOrEndgame: Bool {
+        overviewOpening != nil || summary.endgameType != nil
+    }
+
+    private var openingEndgameOverview: some View {
+        Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 6) {
+            if let opening = overviewOpening {
+                overviewInfoRow(label: "Opening", value: opening.label)
+            }
+            if let endgameType = summary.endgameType {
+                overviewInfoRow(label: "Endgame", value: endgameType.displayName)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(openingEndgameAccessibilityLabel)
+    }
+
+    private func overviewInfoRow(label: String, value: String) -> some View {
+        GridRow {
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .gridColumnAlignment(.leading)
+            Text(value)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.primary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .gridColumnAlignment(.leading)
+                .lineLimit(2)
+                .minimumScaleFactor(0.85)
+        }
+    }
+
+    private var openingEndgameAccessibilityLabel: String {
+        var parts: [String] = []
+        if let opening = overviewOpening {
+            parts.append("Opening \(opening.name), ECO \(opening.eco)")
+        }
+        if let endgameType = summary.endgameType {
+            parts.append("Endgame \(endgameType.displayName)")
+        }
+        return parts.joined(separator: ". ")
     }
 
     private var overviewFooter: String {

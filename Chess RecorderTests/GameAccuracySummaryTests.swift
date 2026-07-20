@@ -340,6 +340,62 @@ final class GameAccuracySummaryTests: XCTestCase {
         XCTAssertTrue(summary.isAssessmentIncomplete)
     }
 
+    func testCriticalPliesIncludeFirstBlunderEvenWhenOutsideTopCPL() {
+        // Early mild blunder, then three larger mistakes that would otherwise fill the top-3 slot.
+        let moves = [
+            move("e4", quality: .blunder, centipawnLoss: 80),
+            move("e5", quality: .mistake, centipawnLoss: 200),
+            move("Nf3", quality: .mistake, centipawnLoss: 220),
+            move("Nc6", quality: .miss, centipawnLoss: 250),
+            move("Bb5", quality: .good, centipawnLoss: 0)
+        ]
+        let summary = GameAccuracySummary(moves: moves)
+        let plies = summary.evaluationCriticalPlies.map(\.ply)
+        XCTAssertTrue(plies.contains(1), "First blunder (ply 1) should be included")
+        XCTAssertEqual(Set(plies).count, 4)
+        XCTAssertEqual(plies, plies.sorted(), "Critical plies should be chronological")
+    }
+
+    func testCriticalPliesDoNotDuplicateFirstBlunderWhenAlreadyTopCPL() {
+        let moves = [
+            move("e4", quality: .blunder, centipawnLoss: 400),
+            move("e5", quality: .mistake, centipawnLoss: 100),
+            move("Nf3", quality: .good, centipawnLoss: 0)
+        ]
+        let summary = GameAccuracySummary(moves: moves)
+        let blunderMarkers = summary.evaluationCriticalPlies.filter { $0.quality == .blunder }
+        XCTAssertEqual(blunderMarkers.count, 1)
+        XCTAssertEqual(blunderMarkers.first?.ply, 1)
+    }
+
+    func testSelectCriticalPliesIsStableForEmptyInput() {
+        XCTAssertTrue(GameAccuracySummary.selectCriticalPlies(from: []).isEmpty)
+    }
+
+    func testOpeningAndEndgameTypeAreCapturedOnSummary() {
+        let start =
+            "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+        let endgame = "4r1k1/5ppp/8/8/8/8/5PPP/4R1K1 w - - 0 1"
+        var fens = Array(repeating: start, count: 8)
+        fens[5] = endgame
+        fens[7] = endgame
+
+        let opening = OpeningDisplay(eco: "C65", name: "Ruy Lopez")
+        let summary = GameAccuracySummary(
+            moves: [
+                move("e4", quality: .book),
+                move("e5", quality: .good, centipawnLoss: 0)
+            ],
+            fenSequence: fens,
+            lastInBookPly: 1,
+            opening: opening
+        )
+
+        XCTAssertEqual(summary.opening, opening)
+        XCTAssertEqual(summary.endgameType, .rook)
+        XCTAssertTrue(summary.evaluationPhaseTransitions.contains { $0.kind == .endgame })
+    }
+
     private func move(
         _ san: String,
         quality: MoveQuality?,

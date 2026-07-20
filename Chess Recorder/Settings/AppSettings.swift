@@ -67,6 +67,7 @@ struct AppSettings: Codable, Equatable {
     var moveAssessmentBlunderColor: CodableColor
     var moveAssessmentMissColor: CodableColor
     var openingNameVisible: Bool
+    var gamePhaseVisible: Bool
     var openingBookMiniBoardSide: Double
     var openingBookMiniBoardFollowsOrientation: Bool
     var pgnEvent: String
@@ -110,6 +111,7 @@ struct AppSettings: Codable, Equatable {
         case moveAssessmentBlunderColor
         case moveAssessmentMissColor
         case openingNameVisible
+        case gamePhaseVisible
         case openingBookMiniBoardSide
         case openingBookMiniBoardFollowsOrientation
         case pgnEvent
@@ -152,6 +154,7 @@ struct AppSettings: Codable, Equatable {
         moveAssessmentBlunderColor: CodableColor = AppSettings.defaultMoveAssessmentBlunderColor,
         moveAssessmentMissColor: CodableColor = AppSettings.defaultMoveAssessmentMissColor,
         openingNameVisible: Bool = true,
+        gamePhaseVisible: Bool = true,
         openingBookMiniBoardSide: Double = AppSettings.defaultOpeningBookMiniBoardSide,
         openingBookMiniBoardFollowsOrientation: Bool = true,
         pgnEvent: String = AppSettings.defaultPGNEvent,
@@ -192,6 +195,7 @@ struct AppSettings: Codable, Equatable {
         self.moveAssessmentBlunderColor = moveAssessmentBlunderColor
         self.moveAssessmentMissColor = moveAssessmentMissColor
         self.openingNameVisible = openingNameVisible
+        self.gamePhaseVisible = gamePhaseVisible
         self.openingBookMiniBoardSide = openingBookMiniBoardSide
         self.openingBookMiniBoardFollowsOrientation = openingBookMiniBoardFollowsOrientation
         self.pgnEvent = pgnEvent
@@ -249,6 +253,7 @@ struct AppSettings: Codable, Equatable {
         moveAssessmentMissColor = try container.decodeIfPresent(CodableColor.self, forKey: .moveAssessmentMissColor)
             ?? Self.defaultMoveAssessmentMissColor
         openingNameVisible = try container.decodeIfPresent(Bool.self, forKey: .openingNameVisible) ?? true
+        gamePhaseVisible = try container.decodeIfPresent(Bool.self, forKey: .gamePhaseVisible) ?? true
         openingBookMiniBoardSide = try container.decodeIfPresent(Double.self, forKey: .openingBookMiniBoardSide)
             ?? Self.defaultOpeningBookMiniBoardSide
         openingBookMiniBoardFollowsOrientation = try container.decodeIfPresent(
@@ -307,6 +312,7 @@ struct AppSettings: Codable, Equatable {
         moveAssessmentBlunderColor: defaultMoveAssessmentBlunderColor,
         moveAssessmentMissColor: defaultMoveAssessmentMissColor,
         openingNameVisible: true,
+        gamePhaseVisible: true,
         openingBookMiniBoardSide: defaultOpeningBookMiniBoardSide,
         openingBookMiniBoardFollowsOrientation: true,
         pgnEvent: defaultPGNEvent,

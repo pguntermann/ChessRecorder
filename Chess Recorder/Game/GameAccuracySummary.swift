@@ -4,7 +4,6 @@
 //
 
 import Foundation
-import LucidEngine
 
 /// Aggregated move-quality stats for a recorded game.
 ///
@@ -358,8 +357,13 @@ struct GameAccuracySummary: Equatable, Sendable {
     var evaluationProgress: [EvaluationPoint]
     /// Full-move numbers where middlegame / endgame begin (for vertical phase markers).
     var evaluationPhaseTransitions: [EvaluationPhaseTransition]
-    /// Worst CPL swings (mistakes/blunders/misses) for sparse critical markers.
+    /// Worst CPL swings (mistakes/blunders/misses) for sparse critical markers,
+    /// always including the first blunder when one exists.
     var evaluationCriticalPlies: [EvaluationCriticalPly]
+    /// Last in-book opening (ECO + name), when provided by the caller.
+    var opening: OpeningDisplay?
+    /// Endgame family at the final position when the game reached endgame; otherwise `nil`.
+    var endgameType: EndgameType?
 
     var assessedMoveCount: Int {
         white.assessedMoveCount + black.assessedMoveCount
@@ -451,7 +455,12 @@ struct GameAccuracySummary: Equatable, Sendable {
         }
     }
 
-    init(moves: [ChessMove], fenSequence: [String]? = nil) {
+    init(
+        moves: [ChessMove],
+        fenSequence: [String]? = nil,
+        lastInBookPly: Int? = nil,
+        opening: OpeningDisplay? = nil
+    ) {
         var white = SideStats()
         var black = SideStats()
         var whiteCPL = 0.0
@@ -640,14 +649,16 @@ struct GameAccuracySummary: Equatable, Sendable {
         self.accuracyProgress = runningProgress
         self.cumulativeAccuracyProgress = cumulativeProgress
         self.evaluationProgress = evaluationProgress
-        self.evaluationPhaseTransitions = Self.phaseTransitions(
-            fenSequence: fenSequence ?? ChessGameBackgroundPreparation.fenSequence(from: moves)
+        let resolvedFens = fenSequence ?? ChessGameBackgroundPreparation.fenSequence(from: moves)
+        let resolvedBookPly = lastInBookPly ?? Self.lastBookQualityPly(in: moves)
+        let phaseBounds = GamePhaseClassifier.boundaries(
+            fenSequence: resolvedFens,
+            lastInBookPly: resolvedBookPly
         )
-        self.evaluationCriticalPlies = criticalCandidates
-            .sorted { $0.cpl > $1.cpl }
-            .prefix(Self.evaluationCriticalMarkerLimit)
-            .map { EvaluationCriticalPly(ply: $0.ply, quality: $0.quality) }
-            .sorted { $0.ply < $1.ply }
+        self.evaluationPhaseTransitions = Self.phaseTransitions(from: phaseBounds)
+        self.evaluationCriticalPlies = Self.selectCriticalPlies(from: criticalCandidates)
+        self.opening = opening
+        self.endgameType = Self.endgameType(fenSequence: resolvedFens, boundaries: phaseBounds)
         self.unassessedMoveCount = moves.reduce(0) { count, move in
             count + (move.quality == nil ? 1 : 0)
         }
@@ -658,7 +669,29 @@ struct GameAccuracySummary: Equatable, Sendable {
     static let maximumAccuracyPercent: Double = 100
     /// Eval chart Y cap in pawns (±10), matching common desktop eval graphs.
     static let evaluationScaleCapPawns: Double = 10
+    /// Worst CPL swings kept as critical markers (plus the first blunder when not already included).
     static let evaluationCriticalMarkerLimit = 3
+
+    /// Top CPL mistakes/blunders/misses, always including the earliest blunder when one exists.
+    /// `candidates` must be in move order so the first `.blunder` is chronological.
+    static func selectCriticalPlies(
+        from candidates: [(ply: Int, quality: MoveQuality, cpl: Int)]
+    ) -> [EvaluationCriticalPly] {
+        guard !candidates.isEmpty else { return [] }
+
+        var selectedByPly: [Int: (ply: Int, quality: MoveQuality, cpl: Int)] = [:]
+        for candidate in candidates.sorted(by: { $0.cpl > $1.cpl }).prefix(evaluationCriticalMarkerLimit) {
+            selectedByPly[candidate.ply] = candidate
+        }
+        // First blunder is often the narrative turning point even if later swings cost more CPL.
+        if let firstBlunder = candidates.first(where: { $0.quality == .blunder }) {
+            selectedByPly[firstBlunder.ply] = firstBlunder
+        }
+
+        return selectedByPly.values
+            .map { EvaluationCriticalPly(ply: $0.ply, quality: $0.quality) }
+            .sorted { $0.ply < $1.ply }
+    }
 
     private struct AccuracySample {
         let side: Side
@@ -679,21 +712,49 @@ struct GameAccuracySummary: Equatable, Sendable {
         return min(max(pawns, -evaluationScaleCapPawns), evaluationScaleCapPawns)
     }
 
-    static func phaseTransitions(fenSequence: [String]) -> [EvaluationPhaseTransition] {
-        guard fenSequence.count >= 2 else { return [] }
-        let phases = GamePhaseDetector.detect(fens: fenSequence)
-        var transitions: [EvaluationPhaseTransition] = []
-        if let middlegame = phases.middlegame {
-            transitions.append(
-                EvaluationPhaseTransition(kind: .middlegame, ply: middlegame.lowerBound)
+    static func phaseTransitions(
+        fenSequence: [String],
+        lastInBookPly: Int
+    ) -> [EvaluationPhaseTransition] {
+        phaseTransitions(
+            from: GamePhaseClassifier.boundaries(
+                fenSequence: fenSequence,
+                lastInBookPly: lastInBookPly
             )
+        )
+    }
+
+    static func phaseTransitions(from boundaries: GamePhaseBoundaries) -> [EvaluationPhaseTransition] {
+        var result: [EvaluationPhaseTransition] = []
+        if let mid = boundaries.middlegameStartPly {
+            result.append(EvaluationPhaseTransition(kind: .middlegame, ply: mid))
         }
-        if let endgame = phases.endgame {
-            transitions.append(
-                EvaluationPhaseTransition(kind: .endgame, ply: endgame.lowerBound)
-            )
+        if let end = boundaries.endgameStartPly {
+            result.append(EvaluationPhaseTransition(kind: .endgame, ply: end))
         }
-        return transitions
+        return result
+    }
+
+    /// Prefer the final position’s family once endgame has begun; fall back to the cut ply.
+    static func endgameType(
+        fenSequence: [String],
+        boundaries: GamePhaseBoundaries
+    ) -> EndgameType? {
+        guard let endPly = boundaries.endgameStartPly, !fenSequence.isEmpty else { return nil }
+        if let final = GamePhaseClassifier.classifyEndgame(fen: fenSequence[fenSequence.count - 1]) {
+            return final
+        }
+        guard endPly < fenSequence.count else { return nil }
+        return GamePhaseClassifier.classifyEndgame(fen: fenSequence[endPly])
+    }
+
+    /// Fen index after the last move marked `.book` (0 if none).
+    static func lastBookQualityPly(in moves: [ChessMove]) -> Int {
+        var last = 0
+        for (index, move) in moves.enumerated() where move.quality == .book {
+            last = index + 1
+        }
+        return last
     }
 
     /// Effective CPL for overview Avg CPL. Book excluded. Capped at `averageCPLCap`.

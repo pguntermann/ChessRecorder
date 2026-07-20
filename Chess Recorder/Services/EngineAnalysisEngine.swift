@@ -43,35 +43,15 @@ actor EngineAnalysisEngine {
 struct AnalysisSnapshot: Sendable {
     let fen: String
     let sideToMove: PieceColor
-    let fenSequence: [String]
 }
 
 enum EngineAnalysisDisplayBuilder {
     static let maxDepth = 100
 
-    static func currentPhase(fens: [String]) -> EngineGamePhase {
-        guard fens.count >= 2 else { return .opening }
-
-        let phases = GamePhaseDetector.detect(fens: fens)
-        let moveNumber = fens.count - 1
-
-        if let endgame = phases.endgame, endgame.contains(moveNumber) {
-            return .endgame
-        }
-        if let middlegame = phases.middlegame, middlegame.contains(moveNumber) {
-            return .middlegame
-        }
-        if let opening = phases.opening, opening.contains(moveNumber) {
-            return .opening
-        }
-        return .opening
-    }
-
     static func makeDisplay(
         assessment: PositionAssessment,
         fen: String,
         sideToMove: PieceColor,
-        gamePhase: EngineGamePhase,
         statusMessage: String
     ) -> EngineAnalysisDisplay {
         let whiteScore = whitePerspectiveScore(assessment.score, sideToMove: sideToMove)
@@ -81,7 +61,6 @@ enum EngineAnalysisDisplayBuilder {
             evaluationText: formatEvaluation(assessment.score, sideToMove: sideToMove),
             evaluationBarWhiteFraction: evaluationBarWhiteFraction(assessment.score, sideToMove: sideToMove),
             winProbability: WinProbabilityDisplay(wdl: wdl),
-            gamePhase: gamePhase,
             principalLineUCI: formatPrincipalLineUCI(assessment.principalVariation.map(\.uci)),
             principalLineSAN: ChessKitMapping.formatEnginePrincipalLineSAN(
                 assessment.principalVariation.map(\.uci),

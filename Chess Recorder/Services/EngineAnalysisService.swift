@@ -11,12 +11,6 @@ struct AnalysisArrowMove: Equatable {
     let to: ChessPosition
 }
 
-enum EngineGamePhase: String, Equatable {
-    case opening = "Opening"
-    case middlegame = "Middlegame"
-    case endgame = "Endgame"
-}
-
 struct WinProbabilityDisplay: Equatable {
     let white: Double
     let draw: Double
@@ -37,7 +31,6 @@ struct EngineAnalysisDisplay: Equatable {
     var evaluationText: String = "—"
     var evaluationBarWhiteFraction: Double = 0.5
     var winProbability: WinProbabilityDisplay?
-    var gamePhase: EngineGamePhase?
     var principalLineUCI: String = ""
     var principalLineSAN: String = ""
     var nextMoveArrow: AnalysisArrowMove?
@@ -167,8 +160,7 @@ final class EngineAnalysisService {
 
         let snapshot = AnalysisSnapshot(
             fen: game.fen(),
-            sideToMove: game.currentTurn,
-            fenSequence: game.fenSequenceFromStart()
+            sideToMove: game.currentTurn
         )
         let targetDepth = configuredDepth
         let unlimited = isDepthUnlimited
@@ -193,7 +185,6 @@ final class EngineAnalysisService {
 
             await engineWorker.stopSearch()
 
-            let gamePhase = EngineAnalysisDisplayBuilder.currentPhase(fens: snapshot.fenSequence)
             var latestAssessment: PositionAssessment?
             var nextDepth: Int? = EngineAnalysisDisplayBuilder.initialDepth(
                 targetDepth: targetDepth,
@@ -227,7 +218,6 @@ final class EngineAnalysisService {
                         assessment: assessment,
                         fen: snapshot.fen,
                         sideToMove: snapshot.sideToMove,
-                        gamePhase: gamePhase,
                         statusMessage: EngineAnalysisDisplayBuilder.depthStatusMessage(
                             currentDepth: assessment.depth,
                             targetDepth: targetDepth,
@@ -255,7 +245,6 @@ final class EngineAnalysisService {
                             assessment: latestAssessment,
                             fen: snapshot.fen,
                             sideToMove: snapshot.sideToMove,
-                            gamePhase: gamePhase,
                             statusMessage: EngineAnalysisDisplayBuilder.statusMessage(
                                 for: error,
                                 fallbackDepth: latestAssessment.depth,
@@ -267,7 +256,6 @@ final class EngineAnalysisService {
                             evaluationText: "—",
                             evaluationBarWhiteFraction: 0.5,
                             winProbability: nil,
-                            gamePhase: gamePhase,
                             principalLineUCI: "",
                             principalLineSAN: "",
                             nextMoveArrow: nil,
@@ -283,10 +271,6 @@ final class EngineAnalysisService {
                 }
             }
         }
-    }
-
-    static func currentPhase(fens: [String]) -> EngineGamePhase {
-        EngineAnalysisDisplayBuilder.currentPhase(fens: fens)
     }
 
     static func evaluationBarWhiteFraction(forPawns pawns: Double) -> Double {

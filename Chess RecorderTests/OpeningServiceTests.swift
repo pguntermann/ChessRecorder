@@ -146,4 +146,48 @@ final class OpeningServiceTests: XCTestCase {
         XCTAssertNotNil(enriched.openingName)
         XCTAssertNotEqual(enriched.openingName, "Unknown Opening")
     }
+
+    func testLastInBookPlyTracksDeepestBookPosition() async {
+        let service = OpeningService()
+        await service.prepare()
+
+        let game = ChessGame()
+        XCTAssertTrue(game.executeSAN("e4"))
+        XCTAssertTrue(game.executeSAN("e5"))
+        XCTAssertTrue(game.executeSAN("Nf3"))
+        XCTAssertTrue(game.executeSAN("Nc6"))
+
+        let fens = game.fenSequenceFromStart()
+        let lastBook = service.lastInBookOpening(fenSequence: fens)
+        XCTAssertGreaterThan(lastBook.ply, 0)
+        XCTAssertLessThan(lastBook.ply, fens.count)
+        XCTAssertTrue(
+            service.isBookPosition(fen: fens[lastBook.ply]) || lastBook.ply == 0,
+            "Last in-book ply should still resolve in the opening book"
+        )
+        XCTAssertEqual(lastBook.display, service.openingAtLastInBook(fenSequence: fens))
+        XCTAssertEqual(lastBook.ply, service.lastInBookPly(fenSequence: fens))
+
+        // Empty / start-only sequences stay at ply 0.
+        XCTAssertEqual(service.lastInBookPly(fenSequence: [Self.startingFEN]), 0)
+    }
+
+    func testOpeningAtLastInBookIgnoresWrongStoredTags() async {
+        let service = OpeningService()
+        await service.prepare()
+
+        let game = ChessGame()
+        XCTAssertTrue(game.executeSAN("e4"))
+        XCTAssertTrue(game.executeSAN("c5"))
+        XCTAssertTrue(game.executeSAN("Nf3"))
+
+        let fens = game.fenSequenceFromStart()
+        let detected = service.lastInBookOpening(fenSequence: fens).display
+        XCTAssertNotEqual(detected, OpeningDisplay.starting)
+        // Sicilian lines are B-group; a forged A00 tag must not be what the book returns.
+        XCTAssertTrue(
+            detected.eco.hasPrefix("B"),
+            "Expected book Sicilian ECO, got \(detected.label)"
+        )
+    }
 }

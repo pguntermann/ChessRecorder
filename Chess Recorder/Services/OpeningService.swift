@@ -7,7 +7,7 @@ import ChessKit
 import Foundation
 import UIKit
 
-struct OpeningDisplay: Equatable, Hashable {
+struct OpeningDisplay: Equatable, Hashable, Sendable {
     var eco: String
     var name: String
 
@@ -362,6 +362,33 @@ final class OpeningService {
         return openingsByBookKey[Self.bookKey(for: fen)] != nil
             || ecoInterpolated[fen] != nil
             || ecoBase[fen] != nil
+    }
+
+    /// Highest index in `fenSequence` that is still in book, plus its opening label.
+    /// Index 0 always counts (A00 · Starting Position), matching the main-board path.
+    /// Single pass — prefer this over calling ply/display helpers separately.
+    func lastInBookOpening(fenSequence: [String]) -> (ply: Int, display: OpeningDisplay) {
+        guard !fenSequence.isEmpty else { return (0, .starting) }
+        guard isLoaded else { return (0, .starting) }
+
+        var lastPly = 0
+        var lastDisplay = lookupOpening(fen: fenSequence[0]) ?? .starting
+        for (index, fen) in fenSequence.enumerated() where index > 0 {
+            if let match = lookupOpening(fen: fen) {
+                lastPly = index
+                lastDisplay = match
+            }
+        }
+        return (lastPly, lastDisplay)
+    }
+
+    func lastInBookPly(fenSequence: [String]) -> Int {
+        lastInBookOpening(fenSequence: fenSequence).ply
+    }
+
+    /// Opening label at the last in-book FEN — same source as the main-board path, not PGN tags.
+    func openingAtLastInBook(fenSequence: [String]) -> OpeningDisplay {
+        lastInBookOpening(fenSequence: fenSequence).display
     }
 
     func opening(forFEN fen: String) -> OpeningDisplay? {

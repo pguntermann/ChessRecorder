@@ -57,10 +57,18 @@ enum GameReportPDFComposer {
         var evaluationChartImage: UIImage? = nil
         var accuracyChartImage: UIImage? = nil
         var cumulativeAccuracyChartImage: UIImage? = nil
+        /// Precomputed FEN sequence (start + after each ply). Avoids a second ChessKit replay in `renderPDF`.
+        var fenSequence: [String] = []
+        /// FEN-sequence index of the last in-book position (0 = start).
+        var lastInBookPly: Int = 0
+        /// ECO + name beside the opening miniature from book detection (not PGN tags).
+        var openingDiagram: OpeningDisplay = .starting
     }
 
     struct KeyPosition {
         let title: String
+        /// Optional second caption line (opening name under ECO).
+        var secondaryTitle: String? = nil
         let subtitle: String
         /// White-POV evaluation caption for the diagrammed position, e.g. `+0.42` or `+#5`.
         let evaluationText: String?
@@ -119,12 +127,15 @@ enum GameReportPDFComposer {
         let pageRect = CGRect(x: 0, y: 0, width: 612, height: 792) // US Letter
         let renderer = UIGraphicsPDFRenderer(bounds: pageRect)
         let boardAppearance = input.boardAppearance
-        let fens = ChessGame.prepared(from: input.recordedGame.moves, result: input.recordedGame.result)
-            .fenSequenceFromStart()
+        let fens = input.fenSequence.isEmpty
+            ? ChessGameBackgroundPreparation.fenSequence(from: input.recordedGame.moves)
+            : input.fenSequence
         let diagrams = makeKeyPositions(
             moves: input.recordedGame.moves,
             summary: input.summary,
-            fens: fens
+            fens: fens,
+            lastInBookPly: input.lastInBookPly,
+            opening: input.openingDiagram
         )
         let pgnWithSymbols = PGNExportService.pgn(
             for: input.recordedGame,
@@ -196,24 +207,52 @@ enum GameReportPDFComposer {
     static func makeKeyPositions(
         moves: [ChessMove],
         summary: GameAccuracySummary,
-        fens: [String]
+        fens: [String],
+        lastInBookPly: Int = 0,
+        opening: OpeningDisplay = .starting
     ) -> [KeyPosition] {
         var result: [KeyPosition] = []
         var usedPlies = Set<Int>()
 
-        for transition in summary.evaluationPhaseTransitions {
+        if let openingDiagram = openingKeyPosition(
+            moves: moves,
+            summary: summary,
+            fens: fens,
+            lastInBookPly: lastInBookPly,
+            opening: opening
+        ) {
+            usedPlies.insert(openingDiagram.afterMoveIndex + 1)
+            result.append(openingDiagram)
+        }
+
+        // Middlegame phase cuts are usually only 1–2 plies after leaving book — skip those
+        // diagrams in favor of the opening miniature above.
+        for transition in summary.evaluationPhaseTransitions where transition.kind == .endgame {
             guard transition.ply < fens.count, !usedPlies.contains(transition.ply) else { continue }
             usedPlies.insert(transition.ply)
+            let moveIndex = transition.ply - 1
+            let fromTo: (ChessPosition?, ChessPosition?) = {
+                guard moveIndex >= 0, moveIndex < moves.count else { return (nil, nil) }
+                let move = moves[moveIndex]
+                return (move.from, move.to)
+            }()
+            let endgameType = GamePhaseClassifier.classifyEndgame(fen: fens[transition.ply])
+                ?? summary.endgameType
+            let typeLine: String? = {
+                guard let endgameType, endgameType != .generic else { return nil }
+                return endgameType.displayName
+            }()
             result.append(
                 KeyPosition(
                     title: transition.label,
+                    secondaryTitle: typeLine,
                     subtitle: moveLabel(forPly: transition.ply),
                     evaluationText: evaluationText(atPly: transition.ply, moves: moves, summary: summary),
                     bestMoveSAN: nil,
-                    afterMoveIndex: transition.ply - 1,
+                    afterMoveIndex: moveIndex,
                     fen: fens[transition.ply],
-                    from: nil,
-                    to: nil
+                    from: fromTo.0,
+                    to: fromTo.1
                 )
             )
         }
@@ -241,12 +280,91 @@ enum GameReportPDFComposer {
             )
         }
 
+        if let finalDiagram = finalKeyPosition(
+            moves: moves,
+            summary: summary,
+            fens: fens,
+            usedPlies: usedPlies
+        ) {
+            result.append(finalDiagram)
+        }
+
         return result.sorted {
             if $0.afterMoveIndex != $1.afterMoveIndex {
                 return $0.afterMoveIndex < $1.afterMoveIndex
             }
             return $0.title < $1.title
         }
+    }
+
+    /// Fallback opening caption from stored PGN tags when the book is unavailable.
+    static func openingDiagramDisplay(for game: RecordedGame) -> OpeningDisplay {
+        let eco = game.eco?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = game.openingName?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let hasECO = eco.map { !$0.isEmpty } ?? false
+        let hasName = name.map { !$0.isEmpty } ?? false
+        switch (hasECO, hasName) {
+        case (true, true):
+            return OpeningDisplay(eco: eco!, name: name!)
+        case (true, false):
+            return OpeningDisplay(eco: eco!, name: OpeningDisplay.unknown.name)
+        case (false, true):
+            return OpeningDisplay(eco: OpeningDisplay.unknown.eco, name: name!)
+        case (false, false):
+            return .starting
+        }
+    }
+
+    private static func openingKeyPosition(
+        moves: [ChessMove],
+        summary: GameAccuracySummary,
+        fens: [String],
+        lastInBookPly: Int,
+        opening: OpeningDisplay
+    ) -> KeyPosition? {
+        guard !fens.isEmpty else { return nil }
+        let ply = min(max(0, lastInBookPly), fens.count - 1)
+        let moveIndex = ply - 1
+        let fromTo: (ChessPosition?, ChessPosition?) = {
+            guard moveIndex >= 0, moveIndex < moves.count else { return (nil, nil) }
+            let move = moves[moveIndex]
+            return (move.from, move.to)
+        }()
+        let nameLine = opening.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return KeyPosition(
+            title: opening.eco,
+            secondaryTitle: nameLine.isEmpty ? nil : nameLine,
+            subtitle: moveLabel(forPly: ply),
+            evaluationText: evaluationText(atPly: ply, moves: moves, summary: summary),
+            bestMoveSAN: nil,
+            afterMoveIndex: moveIndex,
+            fen: fens[ply],
+            from: fromTo.0,
+            to: fromTo.1
+        )
+    }
+
+    /// Position after the last move. Skipped when that ply already has a diagram.
+    private static func finalKeyPosition(
+        moves: [ChessMove],
+        summary: GameAccuracySummary,
+        fens: [String],
+        usedPlies: Set<Int>
+    ) -> KeyPosition? {
+        guard !moves.isEmpty, fens.count == moves.count + 1 else { return nil }
+        let ply = moves.count
+        guard !usedPlies.contains(ply) else { return nil }
+        let lastMove = moves[ply - 1]
+        return KeyPosition(
+            title: "Final position",
+            subtitle: moveLabel(forPly: ply),
+            evaluationText: evaluationText(atPly: ply, moves: moves, summary: summary),
+            bestMoveSAN: nil,
+            afterMoveIndex: ply - 1,
+            fen: fens[ply],
+            from: lastMove.from,
+            to: lastMove.to
+        )
     }
 
     private static func moveLabel(forPly ply: Int) -> String {
@@ -405,7 +523,8 @@ enum GameReportPDFComposer {
         drawCenteredText(result, font: resultFont, color: .white, in: badgeRect)
 
         var meta: [String] = []
-        if let eco = input.recordedGame.eco, !eco.isEmpty {
+        let eco = input.openingDiagram.eco.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !eco.isEmpty {
             meta.append("ECO \(eco)")
         }
         let date = DateFormatter.localizedString(from: input.recordedGame.date, dateStyle: .medium, timeStyle: .none)
@@ -1313,6 +1432,17 @@ enum GameReportPDFComposer {
             x: captionX,
             width: captionWidth
         ) + 3
+        if let secondaryTitle = position.secondaryTitle, !secondaryTitle.isEmpty {
+            textY = drawText(
+                secondaryTitle,
+                font: .systemFont(ofSize: 11, weight: .regular),
+                color: .black,
+                in: .zero,
+                at: textY,
+                x: captionX,
+                width: captionWidth
+            ) + 3
+        }
         textY = drawText(
             position.subtitle,
             font: .systemFont(ofSize: 9),

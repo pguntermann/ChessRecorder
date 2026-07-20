@@ -41,7 +41,10 @@ struct ContentView: View {
     @State private var preparedGameCache: [UUID: PreparedGameCacheEntry] = [:]
     /// Defers archive/PGN work until piece animation finishes so notation rebuilds don't stutter the tween.
     @State private var deferredArchiveWorkTask: Task<Void, Never>?
-    
+    /// Cached phase ranges for the active game (recomputed when the move list changes).
+    @State private var phaseBoundaries = GamePhaseBoundaries.empty
+    @State private var phaseBubbleText: String?
+
     init(
         settingsStore: SettingsStore,
         vocabularyStore: PersonalVocabularyStore,
@@ -151,6 +154,7 @@ struct ContentView: View {
             }
 
             openingService.refresh(game: game)
+            refreshPhaseClassification()
             moveAssessment.enqueueUnassessedMoves(in: pgnArchive)
             isAppReady = true
             if startupIncludesSessionRestore {
@@ -211,6 +215,7 @@ struct ContentView: View {
             guard !isApplyingArchiveSelection else { return }
 
             openingService.refresh(game: game)
+            refreshPhaseClassification()
 
             let isForwardMove = newCount > oldCount
             let isTakeback = newCount < oldCount
@@ -261,6 +266,7 @@ struct ContentView: View {
             guard !isApplyingArchiveSelection else { return }
             refreshEngineIfAppropriate()
             openingService.refresh(game: game)
+            refreshPhaseBubbleOnly()
         }
         .onChange(of: game.gameResult) { _, _ in
             guard !isApplyingArchiveSelection else { return }
@@ -400,7 +406,11 @@ struct ContentView: View {
     }
 
     private func landscapeBoardAreaHeight(in geometry: GeometryProxy) -> CGFloat {
-        let openingHeight: CGFloat = settingsStore.settings.openingNameVisible ? 28 : 0
+        let openingHeight: CGFloat = {
+            let showOpening = settingsStore.settings.openingNameVisible
+            let showPhase = settingsStore.settings.gamePhaseVisible && phaseBubbleText != nil
+            return (showOpening || showPhase) ? 28 : 0
+        }()
         let sectionSpacing: CGFloat = 6
         let statusHeight: CGFloat = 44
         let verticalPadding: CGFloat = 16
@@ -482,6 +492,7 @@ struct ContentView: View {
                     isVisible: settings.openingNameVisible,
                     isLoaded: openingService.isLoaded,
                     isInBook: openingService.isInBook,
+                    phaseBubbleText: settings.gamePhaseVisible ? phaseBubbleText : nil,
                     compact: compactOpening,
                     onTap: openingService.isLoaded ? { showingOpeningBook = true } : nil
                 )
@@ -565,12 +576,13 @@ struct ContentView: View {
                     darkSquareColor: settingsStore.settings.darkSquareColor.color,
                     pieceSizePercent: settingsStore.settings.pieceSizePercent
                 ),
+                openingService: openingService,
                 engineAnalysisVisible: settingsStore.settings.engineAnalysisVisible,
                 engineAnalysisUseAlgebraicNotation: settingsStore.settings.engineAnalysisUseAlgebraicNotation,
                 engineAnalysis: engineAnalysis,
                 onClearPGN: clearPGN,
                 onImportPGN: { pgn in
-                    try importPGNGames(from: pgn)
+                    try await importPGNGames(from: pgn)
                 },
                 overridePGNImportGameLimit: developerModeStore.shouldOverridePGNImportLimits,
                 onActivateGame: activateGame,
@@ -666,11 +678,14 @@ struct ContentView: View {
     }
 
     @discardableResult
-    private func importPGNGames(from pgn: String) throws -> Int {
-        let imported = try PGNImportService.importGames(
-            from: pgn,
-            overrideGameLimit: developerModeStore.shouldOverridePGNImportLimits
-        ).map { game in
+    private func importPGNGames(from pgn: String) async throws -> Int {
+        let overrideGameLimit = developerModeStore.shouldOverridePGNImportLimits
+        let imported = try await Task.detached(priority: .userInitiated) {
+            try PGNImportService.importGames(
+                from: pgn,
+                overrideGameLimit: overrideGameLimit
+            )
+        }.value.map { game in
             // PGN without [ECO] still gets a code from the opening book when possible.
             game.fillingMissingOpening(from: openingService.opening(for: game.moves))
         }
@@ -1069,6 +1084,7 @@ struct ContentView: View {
         }
 
         openingService.refresh(game: game)
+        refreshPhaseClassification()
         refreshEngineIfAppropriate()
         finishArchiveSelection()
 
@@ -1208,6 +1224,7 @@ struct ContentView: View {
             game.declareResult(recordedGame.result)
         }
         openingService.refresh(game: game)
+        refreshPhaseClassification()
         refreshEngineIfAppropriate()
         finishArchiveSelection()
 
@@ -1230,6 +1247,7 @@ struct ContentView: View {
             game.resetGame()
         }
         openingService.refresh(game: game)
+        refreshPhaseClassification()
         refreshEngineIfAppropriate()
         finishArchiveSelection()
 
@@ -1253,6 +1271,34 @@ struct ContentView: View {
     private func syncLiveBoardToArchiveIfRecording() {
         guard !isApplyingArchiveSelection, !pgnArchive.activeGameIsReviewOnly else { return }
         pgnArchive.syncActiveGame(from: game, opening: openingService.display, metadata: currentPGNMetadata)
+    }
+
+    /// Recompute phase boundaries for the full main line, then refresh the chrome capsule.
+    private func refreshPhaseClassification() {
+        // Read FENs from the live tree — no ChessKit replay on the hot move path.
+        let fens = game.mainLineFenSequence()
+        let lastBook: Int
+        if openingService.isLoaded {
+            lastBook = openingService.lastInBookPly(fenSequence: fens)
+        } else {
+            lastBook = GameAccuracySummary.lastBookQualityPly(in: game.moves)
+        }
+        phaseBoundaries = GamePhaseClassifier.boundaries(
+            fenSequence: fens,
+            lastInBookPly: lastBook
+        )
+        refreshPhaseBubbleOnly()
+    }
+
+    /// Cheap: classify the viewed ply from cached boundaries + current FEN.
+    private func refreshPhaseBubbleOnly() {
+        let ply = game.activePlyIndex
+        let info = GamePhaseClassifier.phase(
+            atPly: ply,
+            fen: game.fen(),
+            boundaries: phaseBoundaries
+        )
+        phaseBubbleText = info.bubbleText
     }
 
     private var currentPGNMetadata: PGNMetadata {

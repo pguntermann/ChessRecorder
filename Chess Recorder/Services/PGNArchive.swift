@@ -16,7 +16,7 @@ nonisolated enum PGNResult: String, Sendable {
     }
 }
 
-struct PGNMetadata: Equatable, Codable {
+struct PGNMetadata: Equatable, Codable, Sendable {
     let event: String
     let site: String
     let white: String

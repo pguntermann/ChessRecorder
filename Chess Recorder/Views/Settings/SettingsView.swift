@@ -330,6 +330,13 @@ struct SettingsView: View {
                         }
                     ))
 
+                    Toggle("Show game phase", isOn: Binding(
+                        get: { settingsStore.settings.gamePhaseVisible },
+                        set: { newValue in
+                            settingsStore.update { $0.gamePhaseVisible = newValue }
+                        }
+                    ))
+
                     Toggle("Miniature boards follow main board rotation", isOn: Binding(
                         get: { settingsStore.settings.openingBookMiniBoardFollowsOrientation },
                         set: { newValue in
@@ -349,11 +356,9 @@ struct SettingsView: View {
                     }
                     .disabled(!settingsStore.settings.openingNameVisible)
                 } header: {
-                    Text("Openings")
+                    Text("Openings & Game Phase")
                 } footer: {
-                    Text("When ")
-                        + Text("Show opening name").bold()
-                        + Text(" is enabled, the opening appears above the board. Tap it to open the opening explorer, where you can review the path to the current opening and explore book lines from that position.")
+                    Text("Opening name and game phase appear above the board and can be shown independently. When both are off, that space goes back to the board. Tap the opening name to open the opening explorer.")
                 }
 
                 Section {

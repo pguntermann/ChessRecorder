@@ -67,8 +67,10 @@ enum GameReportPDFComposer {
 
     struct KeyPosition {
         let title: String
-        /// Optional second caption line (opening name under ECO).
+        /// Optional second caption line (opening name under ECO, or endgame family).
         var secondaryTitle: String? = nil
+        /// Optional third caption line (e.g. `(becomes: Rook)` under an endgame family).
+        var tertiaryTitle: String? = nil
         let subtitle: String
         /// White-POV evaluation caption for the diagrammed position, e.g. `+0.42` or `+#5`.
         let evaluationText: String?
@@ -230,31 +232,55 @@ enum GameReportPDFComposer {
         for transition in summary.evaluationPhaseTransitions where transition.kind == .endgame {
             guard transition.ply < fens.count, !usedPlies.contains(transition.ply) else { continue }
             usedPlies.insert(transition.ply)
-            let moveIndex = transition.ply - 1
-            let fromTo: (ChessPosition?, ChessPosition?) = {
-                guard moveIndex >= 0, moveIndex < moves.count else { return (nil, nil) }
-                let move = moves[moveIndex]
-                return (move.from, move.to)
+
+            let cutPly = transition.ply
+            let cutType = GamePhaseClassifier.classifyEndgame(fen: fens[cutPly])
+            let finalType = summary.endgameType ?? cutType
+            let settledPly: Int? = {
+                guard let finalType,
+                      cutType != finalType,
+                      !Self.isUnresolvedEndgameCut(finalType)
+                else { return nil }
+                return firstPly(matching: finalType, in: fens, from: cutPly)
             }()
-            let endgameType = GamePhaseClassifier.classifyEndgame(fen: fens[transition.ply])
-                ?? summary.endgameType
-            let typeLine: String? = {
-                guard let endgameType, endgameType != .generic else { return nil }
-                return endgameType.displayName
-            }()
+
+            let cutCaption = endgameCutCaption(
+                cutType: cutType,
+                finalType: finalType,
+                becomesAfterPly: settledPly
+            )
             result.append(
-                KeyPosition(
+                endgameKeyPosition(
+                    ply: cutPly,
+                    moves: moves,
+                    summary: summary,
+                    fens: fens,
                     title: transition.label,
-                    secondaryTitle: typeLine,
-                    subtitle: moveLabel(forPly: transition.ply),
-                    evaluationText: evaluationText(atPly: transition.ply, moves: moves, summary: summary),
-                    bestMoveSAN: nil,
-                    afterMoveIndex: moveIndex,
-                    fen: fens[transition.ply],
-                    from: fromTo.0,
-                    to: fromTo.1
+                    secondaryTitle: cutCaption.primary,
+                    tertiaryTitle: cutCaption.becomesLine
                 )
             )
+
+            // When the cut family differs from the eventual ending and that ending arrives
+            // more than 3 full moves later, add a second miniature at the settled ply.
+            if let finalType,
+               let settledPly,
+               settledPly - cutPly > Self.endgameCharacteristicGapPlies,
+               settledPly < fens.count,
+               !usedPlies.contains(settledPly) {
+                usedPlies.insert(settledPly)
+                result.append(
+                    endgameKeyPosition(
+                        ply: settledPly,
+                        moves: moves,
+                        summary: summary,
+                        fens: fens,
+                        title: "Final Endgame",
+                        secondaryTitle: finalType.displayName,
+                        tertiaryTitle: nil
+                    )
+                )
+            }
         }
 
         for critical in summary.evaluationCriticalPlies {
@@ -295,6 +321,115 @@ enum GameReportPDFComposer {
             }
             return $0.title < $1.title
         }
+    }
+
+    /// More than this many plies (3 full moves) between the endgame cut and the
+    /// characteristic endgame warrants a second miniature.
+    static let endgameCharacteristicGapPlies = 6
+
+    /// Transitional / generic cuts are not yet a named endgame family.
+    static func isUnresolvedEndgameCut(_ type: EndgameType?) -> Bool {
+        type == .transitional || type == .generic
+    }
+
+    struct EndgameCutCaption: Equatable {
+        /// Cut-position family, e.g. `Strong Material Imbalance` or `Transitional`.
+        var primary: String?
+        /// Second line when the eventual family differs, e.g. `(becomes: Rook - after 40.)`.
+        var becomesLine: String?
+    }
+
+    /// Caption for the endgame-cut miniature. When the cut family differs from the game’s
+    /// eventual endgame type, the becomes-line notes the destination family and optionally
+    /// the move where that family first appears (`becomesAfterPly`).
+    static func endgameCutCaption(
+        cutType: EndgameType?,
+        finalType: EndgameType?,
+        becomesAfterPly: Int? = nil
+    ) -> EndgameCutCaption {
+        if let finalType,
+           !isUnresolvedEndgameCut(finalType),
+           let cutType,
+           cutType != finalType {
+            let primary: String = {
+                switch cutType {
+                case .generic: return "Generic"
+                case .transitional: return "Transitional"
+                default: return cutType.displayName
+                }
+            }()
+            return EndgameCutCaption(
+                primary: primary,
+                becomesLine: becomesLine(for: finalType, afterPly: becomesAfterPly)
+            )
+        }
+        if let cutType, !isUnresolvedEndgameCut(cutType) {
+            return EndgameCutCaption(primary: cutType.displayName, becomesLine: nil)
+        }
+        if let finalType, !isUnresolvedEndgameCut(finalType) {
+            return EndgameCutCaption(primary: finalType.displayName, becomesLine: nil)
+        }
+        if cutType == .transitional {
+            return EndgameCutCaption(primary: EndgameType.transitional.displayName, becomesLine: nil)
+        }
+        if cutType == .generic {
+            return EndgameCutCaption(primary: "Generic", becomesLine: nil)
+        }
+        return EndgameCutCaption(primary: nil, becomesLine: nil)
+    }
+
+    /// e.g. `(becomes: Rook - after 40.)` or `(becomes: Rook)` when ply is unknown.
+    private static func becomesLine(for finalType: EndgameType, afterPly: Int?) -> String {
+        guard let afterPly, afterPly > 0 else {
+            return "(becomes: \(finalType.displayName))"
+        }
+        let moveNumber = (afterPly + 1) / 2
+        let isWhite = afterPly % 2 == 1
+        let after = isWhite ? "after \(moveNumber)." : "after \(moveNumber)..."
+        return "(becomes: \(finalType.displayName) - \(after))"
+    }
+
+    static func firstPly(
+        matching type: EndgameType,
+        in fens: [String],
+        from startPly: Int
+    ) -> Int? {
+        guard startPly < fens.count else { return nil }
+        for ply in startPly..<fens.count {
+            if GamePhaseClassifier.classifyEndgame(fen: fens[ply]) == type {
+                return ply
+            }
+        }
+        return nil
+    }
+
+    private static func endgameKeyPosition(
+        ply: Int,
+        moves: [ChessMove],
+        summary: GameAccuracySummary,
+        fens: [String],
+        title: String,
+        secondaryTitle: String?,
+        tertiaryTitle: String? = nil
+    ) -> KeyPosition {
+        let moveIndex = ply - 1
+        let fromTo: (ChessPosition?, ChessPosition?) = {
+            guard moveIndex >= 0, moveIndex < moves.count else { return (nil, nil) }
+            let move = moves[moveIndex]
+            return (move.from, move.to)
+        }()
+        return KeyPosition(
+            title: title,
+            secondaryTitle: secondaryTitle,
+            tertiaryTitle: tertiaryTitle,
+            subtitle: moveLabel(forPly: ply),
+            evaluationText: evaluationText(atPly: ply, moves: moves, summary: summary),
+            bestMoveSAN: nil,
+            afterMoveIndex: moveIndex,
+            fen: fens[ply],
+            from: fromTo.0,
+            to: fromTo.1
+        )
     }
 
     /// Fallback opening caption from stored PGN tags when the book is unavailable.
@@ -1437,6 +1572,17 @@ enum GameReportPDFComposer {
                 secondaryTitle,
                 font: .systemFont(ofSize: 11, weight: .regular),
                 color: .black,
+                in: .zero,
+                at: textY,
+                x: captionX,
+                width: captionWidth
+            ) + 3
+        }
+        if let tertiaryTitle = position.tertiaryTitle, !tertiaryTitle.isEmpty {
+            textY = drawText(
+                tertiaryTitle,
+                font: .systemFont(ofSize: 10, weight: .regular),
+                color: Theme.muted,
                 in: .zero,
                 at: textY,
                 x: captionX,

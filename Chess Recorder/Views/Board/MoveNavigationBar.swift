@@ -137,12 +137,15 @@ struct MoveNavigationBar: View {
                 scrollToActiveMove(using: proxy, animated: true)
             }
             .onChange(of: game.moves.count) { _, _ in
-                if game.isAtLatestMove {
-                    scheduleTipPinIfNeeded(using: proxy)
-                } else {
-                    guard !isTipPinSuspended else { return }
-                    scrollToActiveMove(using: proxy, animated: true)
+                guard !isTipPinSuspended else {
+                    if game.isAtLatestMove {
+                        pendingTipPinAfterResume = true
+                    }
+                    return
                 }
+                // Live appends at the tip: scroll to the new last ID only.
+                // Full waypoint tip-pin is for cold start / chrome-ready / post-switch resume.
+                scrollToActiveMove(using: proxy, animated: true)
             }
             .onChange(of: moveStripLayoutKey) { _, _ in
                 guard !isTipPinSuspended, game.isAtLatestMove else { return }

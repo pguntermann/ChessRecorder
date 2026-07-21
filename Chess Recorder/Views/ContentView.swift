@@ -955,6 +955,9 @@ struct ContentView: View {
         )
         game.resetGame()
         speechRecognizer.resetTranscriptDisplay()
+        openingService.refresh(game: game)
+        refreshPhaseClassification()
+        refreshEngineIfAppropriate()
         finishArchiveSelection()
         scheduleSessionPersist()
     }
@@ -965,6 +968,9 @@ struct ContentView: View {
         pgnArchive.resetAll()
         game.resetGame()
         speechRecognizer.resetTranscriptDisplay()
+        openingService.refresh(game: game)
+        refreshPhaseClassification()
+        refreshEngineIfAppropriate()
         sessionStore.clearSession()
     }
 

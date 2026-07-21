@@ -104,12 +104,12 @@ final class GameReportPDFComposerTests: XCTestCase {
         let start =
             "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
         let rookEndgame = "4r1k1/5ppp/8/8/8/8/5PPP/4R1K1 w - - 0 1"
-        var fens = Array(repeating: start, count: 8)
-        fens[5] = rookEndgame
-        fens[6] = rookEndgame
-        fens[7] = rookEndgame
+        var fens = Array(repeating: start, count: 8 + GamePhaseClassifier.endgameStabilityPlies)
+        for ply in 5..<(5 + GamePhaseClassifier.endgameStabilityPlies) {
+            fens[ply] = rookEndgame
+        }
 
-        let moves = (0..<7).map { _ in Self.dummyMove() }
+        let moves = (0..<(fens.count - 1)).map { _ in Self.dummyMove() }
         let summary = GameAccuracySummary(
             moves: moves,
             fenSequence: fens,
@@ -210,9 +210,11 @@ final class GameReportPDFComposerTests: XCTestCase {
         let summary = GameAccuracySummary(moves: moves, fenSequence: fens, lastInBookPly: 0)
         XCTAssertEqual(summary.endgameType, .rookUnequalMinors)
 
-        let cut = summary.evaluationPhaseTransitions.first { $0.kind == .endgame }!.ply
+        guard let cut = summary.evaluationPhaseTransitions.first(where: { $0.kind == .endgame })?.ply else {
+            return XCTFail("Expected endgame transition")
+        }
         let cutType = GamePhaseClassifier.classifyEndgame(fen: fens[cut])
-        XCTAssertEqual(cutType, .generic)
+        XCTAssertEqual(cutType, .rookUnequalMinors)
 
         let diagrams = GameReportPDFComposer.makeKeyPositions(
             moves: moves,
@@ -223,16 +225,9 @@ final class GameReportPDFComposerTests: XCTestCase {
         )
         let endgames = diagrams.filter { $0.title == "Endgame" }
         XCTAssertFalse(endgames.isEmpty)
-        XCTAssertEqual(endgames[0].secondaryTitle, "Generic")
-        let settled = GameReportPDFComposer.firstPly(
-            matching: .rookUnequalMinors,
-            in: fens,
-            from: cut
-        )!
-        XCTAssertEqual(
-            endgames[0].tertiaryTitle,
-            Self.expectedBecomesLine(for: .rookUnequalMinors, afterPly: settled)
-        )
+        XCTAssertEqual(endgames[0].secondaryTitle, EndgameType.rookUnequalMinors.displayName)
+        XCTAssertNil(endgames[0].tertiaryTitle)
+        XCTAssertEqual(endgames[0].fen, fens[cut])
     }
 
     func testStrongImbalanceCutNotesBecomesRook() throws {
@@ -256,7 +251,7 @@ final class GameReportPDFComposerTests: XCTestCase {
 
         let cut = summary.evaluationPhaseTransitions.first { $0.kind == .endgame }!.ply
         let cutType = GamePhaseClassifier.classifyEndgame(fen: fens[cut])
-        XCTAssertEqual(cutType, .strongImbalance)
+        XCTAssertEqual(cutType, .rookPlusMinor)
 
         let diagrams = GameReportPDFComposer.makeKeyPositions(
             moves: moves,
@@ -266,7 +261,7 @@ final class GameReportPDFComposerTests: XCTestCase {
             opening: OpeningDisplay(eco: "D04", name: "Queen's Pawn")
         )
         let endgames = diagrams.filter { $0.title == "Endgame" }
-        XCTAssertEqual(endgames[0].secondaryTitle, "Strong Material Imbalance")
+        XCTAssertEqual(endgames[0].secondaryTitle, EndgameType.rookPlusMinor.displayName)
         let settled = GameReportPDFComposer.firstPly(matching: .rook, in: fens, from: cut)!
         XCTAssertEqual(
             endgames[0].tertiaryTitle,
@@ -331,15 +326,16 @@ final class GameReportPDFComposerTests: XCTestCase {
         let unequal =
             "4r1k1/1b3ppp/8/8/8/1N6/1B3PPP/4R1K1 w - - 0 1"
 
-        var fens = Array(repeating: start, count: 10)
-        fens[5] = transitional
-        fens[6] = transitional
-        fens[7] = transitional
-        // Gap from 5 to 8 is 3 plies — not more than 6.
-        fens[8] = unequal
+        var fens = Array(repeating: start, count: 12)
+        for ply in 5..<(5 + GamePhaseClassifier.endgameStabilityPlies) {
+            fens[ply] = transitional
+        }
+        // Gap from cut (ply 5) to unequal (ply 9) is 4 plies — not more than 6.
         fens[9] = unequal
+        fens[10] = unequal
+        fens[11] = unequal
 
-        let moves = (0..<9).map { _ in Self.dummyMove() }
+        let moves = (0..<(fens.count - 1)).map { _ in Self.dummyMove() }
         let summary = GameAccuracySummary(
             moves: moves,
             fenSequence: fens,
@@ -358,7 +354,7 @@ final class GameReportPDFComposerTests: XCTestCase {
         XCTAssertEqual(endgames[0].secondaryTitle, "Transitional")
         XCTAssertEqual(
             endgames[0].tertiaryTitle,
-            Self.expectedBecomesLine(for: .rookUnequalMinors, afterPly: 8)
+            Self.expectedBecomesLine(for: .rookUnequalMinors, afterPly: 9)
         )
     }
 

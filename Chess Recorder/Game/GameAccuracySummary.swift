@@ -740,11 +740,11 @@ struct GameAccuracySummary: Equatable, Sendable {
         fenSequence: [String],
         boundaries: GamePhaseBoundaries
     ) -> EndgameType? {
-        guard let endPly = boundaries.endgameStartPly, !fenSequence.isEmpty else { return nil }
+        guard !fenSequence.isEmpty else { return nil }
         if let final = GamePhaseClassifier.classifyEndgame(fen: fenSequence[fenSequence.count - 1]) {
             return final
         }
-        guard endPly < fenSequence.count else { return nil }
+        guard let endPly = boundaries.endgameStartPly, endPly < fenSequence.count else { return nil }
         return GamePhaseClassifier.classifyEndgame(fen: fenSequence[endPly])
     }
 

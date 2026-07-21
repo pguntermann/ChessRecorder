@@ -376,9 +376,10 @@ final class GameAccuracySummaryTests: XCTestCase {
         let start =
             "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
         let endgame = "4r1k1/5ppp/8/8/8/8/5PPP/4R1K1 w - - 0 1"
-        var fens = Array(repeating: start, count: 8)
-        fens[5] = endgame
-        fens[7] = endgame
+        var fens = Array(repeating: start, count: 8 + GamePhaseClassifier.endgameStabilityPlies)
+        for ply in 5..<(5 + GamePhaseClassifier.endgameStabilityPlies) {
+            fens[ply] = endgame
+        }
 
         let opening = OpeningDisplay(eco: "C65", name: "Ruy Lopez")
         let summary = GameAccuracySummary(

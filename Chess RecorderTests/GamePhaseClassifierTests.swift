@@ -42,11 +42,61 @@ final class GamePhaseClassifierTests: XCTestCase {
         let endgame = "4k3/8/8/8/8/8/4P3/4K3 w - - 0 1"
         // Long enough that the default opening cut (ply 30) would otherwise set middlegame.
         var fens = Array(repeating: start, count: 35)
-        fens[5] = endgame
+        for ply in 5..<(5 + GamePhaseClassifier.endgameStabilityPlies) {
+            fens[ply] = endgame
+        }
 
         let bounds = GamePhaseClassifier.boundaries(fenSequence: fens, lastInBookPly: 0)
         XCTAssertEqual(bounds.endgameStartPly, 5)
         XCTAssertNil(bounds.middlegameStartPly)
+    }
+
+    func testTransientEndgameDoesNotSetBoundary() {
+        let start =
+            "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+        let transientRook = "4r1k1/5ppp/8/8/8/8/5PPP/4R1K1 w - - 0 1"
+
+        var fens = Array(repeating: start, count: 8)
+        fens[3] = transientRook
+
+        XCTAssertEqual(GamePhaseClassifier.classifyEndgame(fen: transientRook), .rook)
+        XCTAssertNil(GamePhaseClassifier.classifyEndgame(fen: start))
+
+        let bounds = GamePhaseClassifier.boundaries(fenSequence: fens, lastInBookPly: 0)
+        XCTAssertNil(bounds.endgameStartPly)
+    }
+
+    func testStableEndgameRequiresConsecutivePliesOfSameFamily() {
+        let start =
+            "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+        let rook = "4r1k1/5ppp/8/8/8/8/5PPP/4R1K1 w - - 0 1"
+        let transitional =
+            "3q2k1/1b3ppp/8/8/8/1N6/1BQ2PPP/6K1 w - - 0 1"
+
+        var fens = Array(repeating: start, count: 12)
+        for ply in 3..<6 {
+            fens[ply] = transitional
+        }
+        for ply in 6..<(6 + GamePhaseClassifier.endgameStabilityPlies) {
+            fens[ply] = rook
+        }
+
+        let bounds = GamePhaseClassifier.boundaries(fenSequence: fens, lastInBookPly: 0)
+        XCTAssertEqual(bounds.endgameStartPly, 6)
+    }
+
+    func testTerminalEndgameRunQualifiesWithOneFewerPly() {
+        let start =
+            "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+        let rook = "4r1k1/5ppp/8/8/8/8/5PPP/4R1K1 w - - 0 1"
+
+        var fens = Array(repeating: start, count: 8)
+        for ply in 5..<8 {
+            fens[ply] = rook
+        }
+
+        let bounds = GamePhaseClassifier.boundaries(fenSequence: fens, lastInBookPly: 0)
+        XCTAssertEqual(bounds.endgameStartPly, 5)
     }
 
     func testDoubleRookEndgameNotAbsorbedByGeneralRookRule() {

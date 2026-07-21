@@ -106,6 +106,9 @@ enum GamePhaseClassifier {
     /// Default opening length in plies (~15 full moves) when no non-pawn capture occurs.
     static let defaultOpeningPlies = 30
 
+    /// Consecutive plies with the same endgame family before the phase cut (≈2 full moves).
+    static let endgameStabilityPlies = 4
+
     // MARK: - Public API
 
     static func pieceCounts(fen: String) -> (white: PhasePieceCounts, black: PhasePieceCounts) {
@@ -229,6 +232,41 @@ enum GamePhaseClassifier {
         return nil
     }
 
+    /// First ply where the same endgame family holds for `endgameStabilityPlies` in a row.
+    /// A run that reaches the final ply may qualify with one fewer ply (unfinished settling).
+    static func firstStableEndgameStartPly(in fenSequence: [String]) -> Int? {
+        guard fenSequence.count > 1 else { return nil }
+
+        let required = endgameStabilityPlies
+        let terminalRequired = max(2, required - 1)
+        let lastPly = fenSequence.count - 1
+        var runStart: Int?
+        var runType: EndgameType?
+        var runLength = 0
+
+        for ply in 1..<fenSequence.count {
+            if let type = classifyEndgame(fen: fenSequence[ply]) {
+                if type == runType {
+                    runLength += 1
+                } else {
+                    runStart = ply
+                    runType = type
+                    runLength = 1
+                }
+                let touchesEnd = ply == lastPly
+                let threshold = touchesEnd ? terminalRequired : required
+                if runLength >= threshold, let runStart {
+                    return runStart
+                }
+            } else {
+                runStart = nil
+                runType = nil
+                runLength = 0
+            }
+        }
+        return nil
+    }
+
     static func boundaries(
         fenSequence: [String],
         lastInBookPly: Int
@@ -245,13 +283,7 @@ enum GamePhaseClassifier {
             middlegameStart = max(cappedBook + 1, defaultOpeningPlies)
         }
 
-        var endgameStart: Int?
-        for ply in 1..<fenSequence.count {
-            if classifyEndgame(fen: fenSequence[ply]) != nil {
-                endgameStart = ply
-                break
-            }
-        }
+        var endgameStart: Int? = firstStableEndgameStartPly(in: fenSequence)
 
         let midPly = middlegameStart < fenSequence.count ? middlegameStart : nil
         // Opening can collapse straight into endgame (early mass trades) — omit a middlegame

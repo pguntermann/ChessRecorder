@@ -778,7 +778,7 @@ class SpeechRecognizer {
             )
             if selection.replacedDigitOnlyBest, self.isSpeechPipelineTracingEnabled {
                 self.logSpeechDiagnostic(
-                    "ASR digit-only best rejected: \"\(bestASR)\" → \"\(selection.text)\""
+                    "ASR weak best rejected: \"\(bestASR)\" → \"\(selection.text)\""
                 )
             }
             if ASRHypothesisSelector.containsLetter(selection.text) {

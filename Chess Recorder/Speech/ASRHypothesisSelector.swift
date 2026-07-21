@@ -5,7 +5,8 @@
 
 import Foundation
 
-/// Prefers chess-usable ASR text when Apple’s best hypothesis collapses to digit noise.
+/// Prefers chess-usable ASR text when Apple’s best hypothesis collapses to digit noise
+/// or a letter + three-digit blob (e.g. `C554` instead of `C5D4`).
 enum ASRHypothesisSelector {
     struct Selection: Equatable {
         let text: String
@@ -26,28 +27,81 @@ enum ASRHypothesisSelector {
         return withoutSpaces.count >= 2
     }
 
+    /// Letter followed by three digits, e.g. `C554` / `C 5 5 4` — often a revised `C5D4`.
+    static func isRejectableLetterTripleDigitHypothesis(_ text: String) -> Bool {
+        let compact = alphanumerics(in: text)
+        guard compact.count == 4 else { return false }
+        let chars = Array(compact)
+        return chars[0].isLetter
+            && chars[1].isNumber
+            && chars[2].isNumber
+            && chars[3].isNumber
+    }
+
+    /// Compact from–to coordinates: letter-digit-letter-digit (`C5D4`, `c 5 d 4`).
+    static func looksLikeCoordinatePair(_ text: String) -> Bool {
+        let compact = alphanumerics(in: text)
+        guard compact.count == 4 else { return false }
+        let chars = Array(compact)
+        return chars[0].isLetter
+            && chars[1].isNumber
+            && chars[2].isLetter
+            && chars[3].isNumber
+    }
+
     static func containsLetter(_ text: String) -> Bool {
         text.unicodeScalars.contains { CharacterSet.letters.contains($0) }
     }
 
-    /// When `best` is digit-only noise, prefer a letter-containing N-best entry, else the last
-    /// chessy partial from this utterance.
+    /// Prefer a chess-usable hypothesis when `best` is digit-only noise or a letter+triple-digit blob.
     static func select(
         best: String,
         alternatives: [String],
         previousChessyPartial: String?
     ) -> Selection {
-        guard isRejectableDigitOnlyHypothesis(best) else {
-            return Selection(text: best, replacedDigitOnlyBest: false)
+        if isRejectableDigitOnlyHypothesis(best) {
+            return selectReplacement(
+                for: best,
+                alternatives: alternatives,
+                previousChessyPartial: previousChessyPartial,
+                isAcceptable: { text in
+                    containsLetter(text) && !isRejectableDigitOnlyHypothesis(text)
+                }
+            )
         }
+
+        if isRejectableLetterTripleDigitHypothesis(best) {
+            return selectReplacement(
+                for: best,
+                alternatives: alternatives,
+                previousChessyPartial: previousChessyPartial,
+                isAcceptable: looksLikeCoordinatePair
+            )
+        }
+
+        return Selection(text: best, replacedDigitOnlyBest: false)
+    }
+
+    // MARK: - Private
+
+    private static func alphanumerics(in text: String) -> String {
+        text
+            .precomposedStringWithCanonicalMapping
+            .filter { $0.isLetter || $0.isNumber }
+    }
+
+    private static func selectReplacement(
+        for best: String,
+        alternatives: [String],
+        previousChessyPartial: String?,
+        isAcceptable: (String) -> Bool
+    ) -> Selection {
+        let trimmedBest = best.trimmingCharacters(in: .whitespacesAndNewlines)
 
         for alternative in alternatives {
             let trimmed = alternative.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty, !isRejectableDigitOnlyHypothesis(trimmed), containsLetter(trimmed) else {
-                continue
-            }
-            // Skip duplicates of best.
-            if trimmed.caseInsensitiveCompare(best.trimmingCharacters(in: .whitespacesAndNewlines)) == .orderedSame {
+            guard !trimmed.isEmpty, isAcceptable(trimmed) else { continue }
+            if trimmed.caseInsensitiveCompare(trimmedBest) == .orderedSame {
                 continue
             }
             return Selection(text: trimmed, replacedDigitOnlyBest: true)
@@ -55,8 +109,8 @@ enum ASRHypothesisSelector {
 
         if let previous = previousChessyPartial?.trimmingCharacters(in: .whitespacesAndNewlines),
            !previous.isEmpty,
-           containsLetter(previous),
-           !isRejectableDigitOnlyHypothesis(previous) {
+           isAcceptable(previous),
+           previous.caseInsensitiveCompare(trimmedBest) != .orderedSame {
             return Selection(text: previous, replacedDigitOnlyBest: true)
         }
 

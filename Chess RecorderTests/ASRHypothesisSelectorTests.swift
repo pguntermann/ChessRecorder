@@ -51,4 +51,50 @@ final class ASRHypothesisSelectorTests: XCTestCase {
         XCTAssertEqual(selection.text, "986")
         XCTAssertFalse(selection.replacedDigitOnlyBest)
     }
+
+    func testRejectsLetterTripleDigitHypotheses() {
+        XCTAssertTrue(ASRHypothesisSelector.isRejectableLetterTripleDigitHypothesis("C554"))
+        XCTAssertTrue(ASRHypothesisSelector.isRejectableLetterTripleDigitHypothesis("c 5 5 4"))
+        XCTAssertFalse(ASRHypothesisSelector.isRejectableLetterTripleDigitHypothesis("C5D4"))
+        XCTAssertFalse(ASRHypothesisSelector.isRejectableLetterTripleDigitHypothesis("C5"))
+        XCTAssertFalse(ASRHypothesisSelector.isRejectableLetterTripleDigitHypothesis("554"))
+        XCTAssertFalse(ASRHypothesisSelector.isRejectableLetterTripleDigitHypothesis("Knight 554"))
+    }
+
+    func testLooksLikeCoordinatePair() {
+        XCTAssertTrue(ASRHypothesisSelector.looksLikeCoordinatePair("C5D4"))
+        XCTAssertTrue(ASRHypothesisSelector.looksLikeCoordinatePair("c 5 d 4"))
+        XCTAssertFalse(ASRHypothesisSelector.looksLikeCoordinatePair("C554"))
+        XCTAssertFalse(ASRHypothesisSelector.looksLikeCoordinatePair("C5"))
+    }
+
+    func testPrefersCoordinatePairNBestOverLetterTripleDigitBest() {
+        let selection = ASRHypothesisSelector.select(
+            best: "C554",
+            alternatives: ["C554", "C5D4"],
+            previousChessyPartial: "C5"
+        )
+        XCTAssertEqual(selection.text, "C5D4")
+        XCTAssertTrue(selection.replacedDigitOnlyBest)
+    }
+
+    func testFallsBackToPreviousCoordinatePairForLetterTripleDigitBest() {
+        let selection = ASRHypothesisSelector.select(
+            best: "C554",
+            alternatives: ["C554"],
+            previousChessyPartial: "C5D4"
+        )
+        XCTAssertEqual(selection.text, "C5D4")
+        XCTAssertTrue(selection.replacedDigitOnlyBest)
+    }
+
+    func testKeepsLetterTripleDigitBestWhenNoCoordinatePairFallback() {
+        let selection = ASRHypothesisSelector.select(
+            best: "C554",
+            alternatives: ["C554", "Knight"],
+            previousChessyPartial: "C5"
+        )
+        XCTAssertEqual(selection.text, "C554")
+        XCTAssertFalse(selection.replacedDigitOnlyBest)
+    }
 }

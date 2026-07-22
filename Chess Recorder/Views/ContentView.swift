@@ -1312,11 +1312,20 @@ struct ContentView: View {
     }
 
     private var activeMoveQualities: [MoveQuality?] {
-        guard let recordedGame = pgnArchive.activeGame,
-              recordedGame.moves.count == game.moves.count else {
-            return []
+        guard let recordedGame = pgnArchive.activeGame else { return [] }
+        let liveCount = game.moves.count
+        let archived = recordedGame.moves
+        if archived.count == liveCount {
+            return archived.map(\.quality)
         }
-        return recordedGame.moves.map(\.quality)
+        // Live board is briefly ahead while archive sync waits on the piece animation.
+        // Keep existing assessments and pad the new plies with nil — don't wipe the strip.
+        if archived.count < liveCount {
+            var qualities = archived.map(\.quality)
+            qualities.append(contentsOf: repeatElement(nil, count: liveCount - archived.count))
+            return qualities
+        }
+        return archived.prefix(liveCount).map(\.quality)
     }
 
     private func restorePersistedSessionIfAvailable() {

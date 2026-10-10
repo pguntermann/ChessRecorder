@@ -44,7 +44,10 @@ actor MoveAssessmentEngine {
     ) async throws -> MoveAssessmentResult {
         // Keep live analysis from calling sf_stop_search() during this pair of evals.
         try await StockfishSearchLock.withAssessmentSession {
-            let beforeAssessment = try await engine.evaluate(fen: fenBefore, depth: depth)
+            let beforeAssessment = try await engine.evaluate(
+                fen: StockfishFENSanitizer.sanitizeForStockfish(fenBefore),
+                depth: depth
+            )
             let bestMoveSAN = Self.san(for: beforeAssessment.bestMove, fenBefore: fenBefore)
 
             // If the played move is the engine's #1 choice, it cannot be a blunder — even when a
@@ -65,7 +68,10 @@ actor MoveAssessmentEngine {
 
             let rawScoreAfter: Score
             do {
-                rawScoreAfter = try await engine.evaluate(fen: fenAfter, depth: depth).score
+                rawScoreAfter = try await engine.evaluate(
+                    fen: StockfishFENSanitizer.sanitizeForStockfish(fenAfter),
+                    depth: depth
+                ).score
             } catch EngineError.analysisInterrupted {
                 // Terminal checkmate/stalemate FENs often have no best move; LucidEngine maps that
                 // to analysisInterrupted. Treat delivered mate (or pre-move mate score) as mate-in-0.

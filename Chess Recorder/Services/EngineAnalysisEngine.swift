@@ -36,7 +36,8 @@ actor EngineAnalysisEngine {
     }
 
     func evaluate(fen: String, depth: Int) async throws -> PositionAssessment {
-        try await engine.evaluate(fen: fen, depth: depth)
+        let safeFen = StockfishFENSanitizer.sanitizeForStockfish(fen)
+        return try await engine.evaluate(fen: safeFen, depth: depth)
     }
 }
 

@@ -8,6 +8,7 @@ import SwiftUI
 struct EngineAnalysisSectionView: View {
     let game: ChessGame
     let useAlgebraicNotation: Bool
+    var showPrincipalVariation: Bool = true
     @Bindable var analysisService: EngineAnalysisService
     
     var body: some View {
@@ -57,15 +58,17 @@ struct EngineAnalysisSectionView: View {
                 WinProbabilityBarView(wdl: wdl)
             }
             
-            VStack(alignment: .leading, spacing: 4) {
-                Text("Main line")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                
-                Text(principalLineText)
-                    .font(.system(.caption, design: .monospaced))
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            if showPrincipalVariation {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Main line")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    
+                    Text(principalLineText)
+                        .font(.system(.caption, design: .monospaced))
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
             }
         }
         .padding()

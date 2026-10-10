@@ -28,6 +28,7 @@ struct NotationPanelView: View {
     var boardAppearance: MiniChessBoardAppearance = .default
     var openingService: OpeningService? = nil
     let engineAnalysisVisible: Bool
+    var engineAnalysisShowPrincipalVariation: Bool = true
     let engineAnalysisUseAlgebraicNotation: Bool
     @Bindable var engineAnalysis: EngineAnalysisService
     var onClearPGN: (() -> Void)?
@@ -58,6 +59,7 @@ struct NotationPanelView: View {
                 EngineAnalysisSectionView(
                     game: game,
                     useAlgebraicNotation: engineAnalysisUseAlgebraicNotation,
+                    showPrincipalVariation: engineAnalysisShowPrincipalVariation,
                     analysisService: engineAnalysis
                 )
 

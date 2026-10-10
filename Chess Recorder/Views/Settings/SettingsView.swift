@@ -133,13 +133,24 @@ struct SettingsView: View {
                         }
                     ))
 
+                    Toggle("Show principal variation", isOn: Binding(
+                        get: { settingsStore.settings.engineAnalysisShowPrincipalVariation },
+                        set: { newValue in
+                            settingsStore.update { $0.engineAnalysisShowPrincipalVariation = newValue }
+                        }
+                    ))
+                    .disabled(!settingsStore.settings.engineAnalysisVisible)
+
                     Toggle("Main line in algebraic notation", isOn: Binding(
                         get: { settingsStore.settings.engineAnalysisUseAlgebraicNotation },
                         set: { newValue in
                             settingsStore.update { $0.engineAnalysisUseAlgebraicNotation = newValue }
                         }
                     ))
-                    .disabled(!settingsStore.settings.engineAnalysisVisible)
+                    .disabled(
+                        !settingsStore.settings.engineAnalysisVisible
+                            || !settingsStore.settings.engineAnalysisShowPrincipalVariation
+                    )
 
                     Toggle("Show best-move arrow on board", isOn: Binding(
                         get: { settingsStore.settings.engineAnalysisShowBoardArrow },

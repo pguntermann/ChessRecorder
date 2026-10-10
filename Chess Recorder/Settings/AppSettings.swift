@@ -57,6 +57,7 @@ struct AppSettings: Codable, Equatable {
     var engineAnalysisVisible: Bool
     var engineAnalysisDepth: Double
     var engineAnalysisShowEvaluationBar: Bool
+    var engineAnalysisShowPrincipalVariation: Bool
     var engineAnalysisUseAlgebraicNotation: Bool
     var engineAnalysisShowBoardArrow: Bool
     var engineAnalysisArrowColor: CodableColor
@@ -101,6 +102,7 @@ struct AppSettings: Codable, Equatable {
         case engineAnalysisVisible
         case engineAnalysisDepth
         case engineAnalysisShowEvaluationBar
+        case engineAnalysisShowPrincipalVariation
         case engineAnalysisUseAlgebraicNotation
         case engineAnalysisShowBoardArrow
         case engineAnalysisArrowColor
@@ -144,6 +146,7 @@ struct AppSettings: Codable, Equatable {
         engineAnalysisVisible: Bool = true,
         engineAnalysisDepth: Double = 18,
         engineAnalysisShowEvaluationBar: Bool = true,
+        engineAnalysisShowPrincipalVariation: Bool = true,
         engineAnalysisUseAlgebraicNotation: Bool = false,
         engineAnalysisShowBoardArrow: Bool = false,
         engineAnalysisArrowColor: CodableColor = CodableColor(red: 0, green: 0.478, blue: 1),
@@ -185,6 +188,7 @@ struct AppSettings: Codable, Equatable {
         self.engineAnalysisVisible = engineAnalysisVisible
         self.engineAnalysisDepth = engineAnalysisDepth
         self.engineAnalysisShowEvaluationBar = engineAnalysisShowEvaluationBar
+        self.engineAnalysisShowPrincipalVariation = engineAnalysisShowPrincipalVariation
         self.engineAnalysisUseAlgebraicNotation = engineAnalysisUseAlgebraicNotation
         self.engineAnalysisShowBoardArrow = engineAnalysisShowBoardArrow
         self.engineAnalysisArrowColor = engineAnalysisArrowColor
@@ -237,6 +241,7 @@ struct AppSettings: Codable, Equatable {
         // Clamp legacy uncapped (31+) and out-of-range values to the current max.
         engineAnalysisDepth = min(max(engineAnalysisDepth, 1), Self.maxEngineAnalysisDepth)
         engineAnalysisShowEvaluationBar = try container.decodeIfPresent(Bool.self, forKey: .engineAnalysisShowEvaluationBar) ?? true
+        engineAnalysisShowPrincipalVariation = try container.decodeIfPresent(Bool.self, forKey: .engineAnalysisShowPrincipalVariation) ?? true
         engineAnalysisUseAlgebraicNotation = try container.decodeIfPresent(Bool.self, forKey: .engineAnalysisUseAlgebraicNotation) ?? false
         engineAnalysisShowBoardArrow = try container.decodeIfPresent(Bool.self, forKey: .engineAnalysisShowBoardArrow) ?? false
         engineAnalysisArrowColor = try container.decodeIfPresent(CodableColor.self, forKey: .engineAnalysisArrowColor)
@@ -302,6 +307,7 @@ struct AppSettings: Codable, Equatable {
         engineAnalysisVisible: true,
         engineAnalysisDepth: 18,
         engineAnalysisShowEvaluationBar: true,
+        engineAnalysisShowPrincipalVariation: true,
         engineAnalysisUseAlgebraicNotation: true,
         engineAnalysisShowBoardArrow: true,
         engineAnalysisArrowColor: CodableColor(red: 0, green: 0.478, blue: 1),

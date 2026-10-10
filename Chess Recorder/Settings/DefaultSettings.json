@@ -26,6 +26,7 @@
     "green" : 0.478,
     "red" : 0
   },
+  "engineAnalysisShowPrincipalVariation" : true,
   "engineAnalysisUseAlgebraicNotation" : true,
   "engineAnalysisVisible" : true,
   "openingNameVisible" : true,

@@ -578,6 +578,7 @@ struct ContentView: View {
                 ),
                 openingService: openingService,
                 engineAnalysisVisible: settingsStore.settings.engineAnalysisVisible,
+                engineAnalysisShowPrincipalVariation: settingsStore.settings.engineAnalysisShowPrincipalVariation,
                 engineAnalysisUseAlgebraicNotation: settingsStore.settings.engineAnalysisUseAlgebraicNotation,
                 engineAnalysis: engineAnalysis,
                 onClearPGN: clearPGN,

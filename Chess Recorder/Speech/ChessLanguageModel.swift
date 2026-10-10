@@ -12,7 +12,7 @@ import Speech
 
 enum ChessLanguageModel {
     
-    private static let baseModelVersion = "4.0"
+    private static let baseModelVersion = "4.4"
     private static let modelIdentifier = "ChessRecorder.chess-moves"
     
     private static var preparedConfigurations: [RecognitionLanguage: SFSpeechLanguageModel.Configuration] = [:]
@@ -325,7 +325,10 @@ enum ChessLanguageModel {
 
             for phrase in ["zurück", "rückgängig", "kurz rochiert", "lang rochiert",
                            "kleine rochade", "große rochade", "grosse rochade", "lange rochade",
-                           "lang rochade", "rochade auf damenseite", "rochade auf königsseite"] {
+                           "lang rochade", "rochade auf damenseite", "rochade auf königsseite",
+                           "weiß gibt auf", "weiss gibt auf", "schwarz gibt auf",
+                           "remis", "remi", "remise", "neues Spiel", "Brett drehen",
+                           "Aufnahme stoppen"] {
                 SFCustomLanguageModelData.PhraseCount(phrase: phrase, count: 220)
             }
             
@@ -425,7 +428,10 @@ enum ChessLanguageModel {
             for phrase in [
                 "castle", "castle kingside", "castle queenside",
                 "castle on kingside", "castle on queenside",
-                "castling kingside", "castling queenside"
+                "castling kingside", "castling queenside",
+                "white resigns", "black resigns", "draw",
+                "new game", "rotate board", "flip board",
+                "stop recording"
             ] {
                 SFCustomLanguageModelData.PhraseCount(phrase: phrase, count: 240)
             }

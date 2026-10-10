@@ -29,6 +29,8 @@ struct HelpView: View {
                         cardStyle: true,
                         body: """
                         Tap Record and speak your move. Pause briefly when finished — the app waits a moment, then plays the move on the board. You can also enter moves by tapping pieces when Touch input is enabled in Settings.
+
+                        Besides moves, you can speak control commands such as Undo, resign or draw (for example “White resigns”, “Remis”), New game, Rotate board, and Stop recording. Recording stays available after a game ends so those commands still work. See the example phrases below for English and German wording.
                         """
                     )
 
@@ -45,7 +47,13 @@ struct HelpView: View {
                             "\"e takes d5\" or \"exd5\" — pawn capture",
                             "\"Bishop c4\" — bishop to c4",
                             "\"Castle kingside\" — O-O",
-                            "\"Undo\" — take back the last move"
+                            "\"Undo\" — take back the last move",
+                            "\"White resigns\" — end the game 1-0",
+                            "\"Black resigns\" — end the game 0-1",
+                            "\"Draw\" — end the game 1/2-1/2",
+                            "\"New game\" — start a new game",
+                            "\"Rotate board\" or \"Flip board\" — flip the board orientation",
+                            "\"Stop recording\" — stop the microphone"
                         ]
                     )
 
@@ -62,7 +70,13 @@ struct HelpView: View {
                             "\"e schlägt d5\" — Bauer schlägt auf d5",
                             "\"Läufer c4\" — Läufer nach c4",
                             "\"Kurz rochiert\" — O-O",
-                            "\"Zurück\" — letzten Zug zurücknehmen"
+                            "\"Zurück\" — letzten Zug zurücknehmen",
+                            "\"Weiß gibt auf\" — Partie beenden mit 1-0",
+                            "\"Schwarz gibt auf\" — Partie beenden mit 0-1",
+                            "\"Remis\" — Partie beenden mit 1/2-1/2",
+                            "\"Neues Spiel\" — neues Spiel beginnen",
+                            "\"Brett drehen\" — Brettausrichtung umkehren",
+                            "\"Aufnahme stoppen\" — Mikrofon stoppen"
                         ]
                     )
 
@@ -125,13 +139,17 @@ struct HelpView: View {
                         .padding(.top, 4)
 
                         (
-                            Text("If ")
+                            Text("After a game ends, ")
                             + Text("Record").bold()
-                            + Text(" cannot be started, check that the active game is not already finished. Start a new game from the ")
+                            + Text(" can stay on (or be started again) so you can still say ")
+                            + Text("New game").bold()
+                            + Text(", ")
+                            + Text("Rotate board").bold()
+                            + Text(", or ")
+                            + Text("Stop recording").bold()
+                            + Text(". You can also start a new game from the ")
                             + Text(Image(systemName: "ellipsis.circle"))
-                            + Text(" menu with ")
-                            + Text("New Game").bold()
-                            + Text(".")
+                            + Text(" menu.")
                         )
                         .font(.subheadline)
                         .foregroundStyle(.secondary)

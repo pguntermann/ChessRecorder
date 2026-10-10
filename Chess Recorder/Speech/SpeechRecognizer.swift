@@ -73,6 +73,18 @@ class SpeechRecognizer {
     private var lastAcceptedAtGeneration = -1
     private var lastHandledUndo: String?
     private var lastUndoTime: Date?
+    private var lastHandledResultCommand: String?
+    private var lastResultCommandTime: Date?
+    private let resultCommandCooldown: TimeInterval = 1.0
+    private var lastHandledNewGameCommand: String?
+    private var lastNewGameCommandTime: Date?
+    private let newGameCommandCooldown: TimeInterval = 1.0
+    private var lastHandledRotateBoardCommand: String?
+    private var lastRotateBoardCommandTime: Date?
+    private let rotateBoardCommandCooldown: TimeInterval = 1.0
+    private var lastHandledStopRecordingCommand: String?
+    private var lastStopRecordingCommandTime: Date?
+    private let stopRecordingCommandCooldown: TimeInterval = 1.0
     private var recognitionGeneration = 0
     private var stableTranscriptTask: Task<Void, Never>?
     private var lastScheduledTranscript: String?
@@ -105,6 +117,14 @@ class SpeechRecognizer {
     var onMoveDetected: ((String) -> Bool)?
     var onMoveCandidatesDetected: (([String], Bool) -> String?)?
     var onUndoDetected: (() -> Void)?
+    /// Spoken result commands (resign / draw). Caller should use the same path as the result toolbar buttons.
+    var onResultDetected: ((PGNResult) -> Void)?
+    /// Spoken "new game" / "neues Spiel". Caller should use the same path as the New Game toolbar button.
+    var onNewGameDetected: (() -> Void)?
+    /// Spoken "rotate board" / "Brett drehen". Caller should use the same path as the board flip control.
+    var onRotateBoardDetected: (() -> Void)?
+    /// Spoken "stop recording" / "Aufnahme stoppen". Caller should use the same path as Stop on the Record button.
+    var onStopRecordingDetected: (() -> Void)?
     /// When false, rejected voice moves are treated as stale audio (e.g. game over) — no failure UI.
     var canAcceptVoiceMoves: (() -> Bool)?
     
@@ -496,6 +516,14 @@ class SpeechRecognizer {
         lastAcceptedAtGeneration = -1
         lastHandledUndo = nil
         lastUndoTime = nil
+        lastHandledResultCommand = nil
+        lastResultCommandTime = nil
+        lastHandledNewGameCommand = nil
+        lastNewGameCommandTime = nil
+        lastHandledRotateBoardCommand = nil
+        lastRotateBoardCommandTime = nil
+        lastHandledStopRecordingCommand = nil
+        lastStopRecordingCommandTime = nil
         pendingFailure = nil
         clearDictationPauseIndicator()
         stableTranscriptTask?.cancel()
@@ -900,6 +928,30 @@ class SpeechRecognizer {
             return
         }
 
+        if handleResultCommandIfNeeded(text) {
+            stableTranscriptTask?.cancel()
+            clearDictationPauseIndicator()
+            return
+        }
+
+        if handleNewGameCommandIfNeeded(text) {
+            stableTranscriptTask?.cancel()
+            clearDictationPauseIndicator()
+            return
+        }
+
+        if handleRotateBoardCommandIfNeeded(text) {
+            stableTranscriptTask?.cancel()
+            clearDictationPauseIndicator()
+            return
+        }
+
+        if handleStopRecordingCommandIfNeeded(text) {
+            stableTranscriptTask?.cancel()
+            clearDictationPauseIndicator()
+            return
+        }
+
         if matchesLastAcceptedSpeech(text) {
             clearDictationPauseIndicator()
             stableTranscriptTask?.cancel()
@@ -967,6 +1019,39 @@ class SpeechRecognizer {
             tracer?.printReport(
                 language: currentLanguage,
                 failureReason: "Duplicate transcript — skipped"
+            )
+            return
+        }
+
+        // Second chance after normalization/corrections (raw ASR may truncate Remis → Remi).
+        if handleResultCommandIfNeeded(correctedText) {
+            tracer?.printReport(
+                language: currentLanguage,
+                failureReason: "Handled as result command"
+            )
+            return
+        }
+
+        if handleNewGameCommandIfNeeded(correctedText) {
+            tracer?.printReport(
+                language: currentLanguage,
+                failureReason: "Handled as new-game command"
+            )
+            return
+        }
+
+        if handleRotateBoardCommandIfNeeded(correctedText) {
+            tracer?.printReport(
+                language: currentLanguage,
+                failureReason: "Handled as rotate-board command"
+            )
+            return
+        }
+
+        if handleStopRecordingCommandIfNeeded(correctedText) {
+            tracer?.printReport(
+                language: currentLanguage,
+                failureReason: "Handled as stop-recording command"
             )
             return
         }
@@ -1215,6 +1300,9 @@ class SpeechRecognizer {
                 "takes", "take", "captures", "capture", "castle", "castling",
                 "castle kingside", "castle queenside", "castle on kingside", "castle on queenside",
                 "d takes", "d takes c4", "e takes", "e takes d5",
+                "white resigns", "black resigns", "draw", "drawn",
+                "new game", "rotate board", "flip board",
+                "stop recording",
                 "e4", "d4", "nf3", "O-O"
             ])
         case .german:
@@ -1227,6 +1315,9 @@ class SpeechRecognizer {
                 "schlagt", "schlägt", "nimmt", "rochade", "kleine rochade", "große rochade",
                 "lange rochade", "lang rochade", "rochade auf damenseite", "rochade auf königsseite",
                 "zuruck", "zurück", "rückgängig",
+                "weiss gibt auf", "weiß gibt auf", "schwarz gibt auf",
+                "remis", "remi", "remise",
+                "neues spiel", "brett drehen", "aufnahme stoppen",
                 "e4", "d4", "nf3", "O-O", "O-O-O"
             ])
         }
@@ -1262,6 +1353,104 @@ class SpeechRecognizer {
         prepareForNextMove()
         return true
     }
+
+    @MainActor
+    private func handleResultCommandIfNeeded(_ text: String) -> Bool {
+        let normalized = normalizeCommandText(text)
+        guard let match = trailingResultCommand(in: normalized) else { return false }
+
+        let now = Date()
+        if normalized == lastHandledResultCommand,
+           let lastResultCommandTime,
+           now.timeIntervalSince(lastResultCommandTime) < resultCommandCooldown {
+            return true
+        }
+
+        lastHandledResultCommand = normalized
+        lastResultCommandTime = now
+        lastProcessedMove = nil
+        lastAcceptedTranscript = nil
+        lastAcceptedSpeechKey = nil
+        lastAcceptedAtGeneration = -1
+
+        print("Result command detected: \(match.phrase) → \(match.result.rawValue)")
+        onResultDetected?(match.result)
+        return true
+    }
+
+    @MainActor
+    private func handleNewGameCommandIfNeeded(_ text: String) -> Bool {
+        let normalized = normalizeCommandText(text)
+        guard let phrase = trailingNewGameCommand(in: normalized) else { return false }
+
+        let now = Date()
+        if normalized == lastHandledNewGameCommand,
+           let lastNewGameCommandTime,
+           now.timeIntervalSince(lastNewGameCommandTime) < newGameCommandCooldown {
+            return true
+        }
+
+        lastHandledNewGameCommand = normalized
+        lastNewGameCommandTime = now
+        lastProcessedMove = nil
+        lastAcceptedTranscript = nil
+        lastAcceptedSpeechKey = nil
+        lastAcceptedAtGeneration = -1
+
+        print("New game command detected: \(phrase)")
+        onNewGameDetected?()
+        prepareForNextMove()
+        return true
+    }
+
+    @MainActor
+    private func handleRotateBoardCommandIfNeeded(_ text: String) -> Bool {
+        let normalized = normalizeCommandText(text)
+        guard let phrase = trailingRotateBoardCommand(in: normalized) else { return false }
+
+        let now = Date()
+        if normalized == lastHandledRotateBoardCommand,
+           let lastRotateBoardCommandTime,
+           now.timeIntervalSince(lastRotateBoardCommandTime) < rotateBoardCommandCooldown {
+            return true
+        }
+
+        lastHandledRotateBoardCommand = normalized
+        lastRotateBoardCommandTime = now
+        lastProcessedMove = nil
+        lastAcceptedTranscript = nil
+        lastAcceptedSpeechKey = nil
+        lastAcceptedAtGeneration = -1
+
+        print("Rotate board command detected: \(phrase)")
+        onRotateBoardDetected?()
+        prepareForNextMove()
+        return true
+    }
+
+    @MainActor
+    private func handleStopRecordingCommandIfNeeded(_ text: String) -> Bool {
+        let normalized = normalizeCommandText(text)
+        guard let phrase = trailingStopRecordingCommand(in: normalized) else { return false }
+
+        let now = Date()
+        if normalized == lastHandledStopRecordingCommand,
+           let lastStopRecordingCommandTime,
+           now.timeIntervalSince(lastStopRecordingCommandTime) < stopRecordingCommandCooldown {
+            return true
+        }
+
+        lastHandledStopRecordingCommand = normalized
+        lastStopRecordingCommandTime = now
+        lastProcessedMove = nil
+        lastAcceptedTranscript = nil
+        lastAcceptedSpeechKey = nil
+        lastAcceptedAtGeneration = -1
+
+        print("Stop recording command detected: \(phrase)")
+        onStopRecordingDetected?()
+        return true
+    }
     
     private func trailingUndoCommand(in normalized: String) -> String? {
         let words = tokenizeCommandWords(normalized)
@@ -1283,6 +1472,64 @@ class SpeechRecognizer {
             }
         }
         
+        return nil
+    }
+
+    /// Color-specified resign and draw phrases only — avoids bare `auf` colliding with move dictation.
+    /// Includes common ASR truncations (e.g. Remis → "Remi").
+    private func trailingResultCommand(in normalized: String) -> (phrase: String, result: PGNResult)? {
+        let phrases: [(String, PGNResult)] = [
+            ("schwarz gibt auf", .blackWins),
+            ("weiss gibt auf", .whiteWins),
+            ("black resigns", .blackWins),
+            ("white resigns", .whiteWins),
+            ("remis", .draw),
+            ("remise", .draw),
+            ("remi", .draw),
+            ("drawn", .draw),
+            ("draw", .draw)
+        ]
+
+        let words = tokenizeCommandWords(normalized)
+        guard !words.isEmpty else { return nil }
+        let joined = words.joined(separator: " ")
+
+        for (phrase, result) in phrases.sorted(by: { $0.0.count > $1.0.count }) {
+            if joined == phrase || joined.hasSuffix(" " + phrase) {
+                return (phrase, result)
+            }
+        }
+        return nil
+    }
+
+    private func trailingNewGameCommand(in normalized: String) -> String? {
+        trailingPhraseCommand(in: normalized, phrases: ["new game", "neues spiel"])
+    }
+
+    private func trailingRotateBoardCommand(in normalized: String) -> String? {
+        trailingPhraseCommand(
+            in: normalized,
+            phrases: ["rotate board", "flip board", "brett drehen"]
+        )
+    }
+
+    private func trailingStopRecordingCommand(in normalized: String) -> String? {
+        trailingPhraseCommand(
+            in: normalized,
+            phrases: ["stop recording", "aufnahme stoppen"]
+        )
+    }
+
+    private func trailingPhraseCommand(in normalized: String, phrases: [String]) -> String? {
+        let words = tokenizeCommandWords(normalized)
+        guard !words.isEmpty else { return nil }
+        let joined = words.joined(separator: " ")
+
+        for phrase in phrases.sorted(by: { $0.count > $1.count }) {
+            if joined == phrase || joined.hasSuffix(" " + phrase) {
+                return phrase
+            }
+        }
         return nil
     }
     

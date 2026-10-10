@@ -67,7 +67,9 @@ struct ContentView: View {
     }
 
     private var recordButtonEnabled: Bool {
-        speechRecognizer.isReadyForUse && (speechRecognizer.isRecording || canAcceptNewMoves)
+        // Keep Record available after game over so control phrases (new game, rotate board, …)
+        // can still be spoken. Move entry remains gated by `canAcceptNewMoves`.
+        speechRecognizer.isReadyForUse && (speechRecognizer.isRecording || game.isAtLatestMove)
     }
 
     private var recordButtonLooksActive: Bool {
@@ -255,7 +257,7 @@ struct ContentView: View {
                 scheduleSessionPersist()
                 engineAnalysis.stop()
                 syncMoveAssessmentLiveAnalysisGate()
-                stopRecordingIfNeeded()
+                // Keep recording on so spoken controls (new game, rotate board, …) still work.
                 // Game-over cancels the animation-deferred enqueue above — still assess the final move(s).
                 enqueueUnassessedMovesForActiveGameIfNeeded()
             } else {
@@ -275,7 +277,7 @@ struct ContentView: View {
             if game.isGameOver {
                 engineAnalysis.stop()
                 syncMoveAssessmentLiveAnalysisGate()
-                stopRecordingIfNeeded()
+                // Keep recording on so spoken controls (new game, rotate board, …) still work.
                 enqueueUnassessedMovesForActiveGameIfNeeded()
             }
         }
@@ -515,9 +517,7 @@ struct ContentView: View {
                     onGoToLatest: navigateToLatest,
                     onGoToPly: navigateToPly,
                     onFlipBoard: {
-                        withAnimation(.easeInOut(duration: 0.25)) {
-                            boardOrientation.toggle()
-                        }
+                        flipBoard()
                     }
                 )
             }
@@ -874,6 +874,33 @@ struct ContentView: View {
         speechRecognizer.onUndoDetected = {
             guard self.game.canUndo, !self.pgnArchive.activeGameIsReviewOnly else { return }
             self.undoLastMove()
+        }
+
+        speechRecognizer.onResultDetected = { result in
+            guard !self.pgnArchive.activeGameIsReviewOnly else { return }
+            // Same entry point as the 1-0 / 0-1 / 1/2-1/2 toolbar buttons.
+            self.endGame(with: result)
+        }
+
+        speechRecognizer.onNewGameDetected = {
+            // Same entry point as the New Game toolbar button.
+            self.startNewGame(result: .ongoing)
+        }
+
+        speechRecognizer.onRotateBoardDetected = {
+            // Same entry point as the board flip control.
+            self.flipBoard()
+        }
+
+        speechRecognizer.onStopRecordingDetected = {
+            // Same stop path as tapping Stop on the Record button.
+            self.stopRecordingIfNeeded()
+        }
+    }
+
+    private func flipBoard() {
+        withAnimation(.easeInOut(duration: 0.25)) {
+            boardOrientation.toggle()
         }
     }
     

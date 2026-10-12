@@ -8,6 +8,7 @@
 import Foundation
 import Speech
 import AVFoundation
+import UIKit
 
 enum RecognitionLanguage: String, CaseIterable {
     case english = "en-US"
@@ -465,6 +466,7 @@ class SpeechRecognizer {
         
         installAudioSessionObservers()
         isRecording = true
+        setIdleTimerDisabledForRecording(true)
         recordingSessionStartedAt = Date()
         logSpeechDiagnostic("recording session ready")
     }
@@ -482,6 +484,7 @@ class SpeechRecognizer {
         guard isRecording else { return }
         logSpeechDiagnostic("stopRecording() called")
         isRecording = false
+        setIdleTimerDisabledForRecording(false)
         recordingSessionStartedAt = nil
         recognitionSessionError = nil
         
@@ -502,6 +505,11 @@ class SpeechRecognizer {
         audioEngine = nil
         
         clearSessionState()
+    }
+
+    @MainActor
+    private func setIdleTimerDisabledForRecording(_ disabled: Bool) {
+        UIApplication.shared.isIdleTimerDisabled = disabled
     }
     
     @MainActor

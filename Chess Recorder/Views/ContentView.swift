@@ -5,6 +5,7 @@
 //  Created by Philipp on 08.07.26.
 //
 
+import AVFoundation
 import SwiftUI
 import UIKit
 
@@ -44,6 +45,8 @@ struct ContentView: View {
     /// Cached phase ranges for the active game (recomputed when the move list changes).
     @State private var phaseBoundaries = GamePhaseBoundaries.empty
     @State private var phaseBubbleText: String?
+    /// Active capture-input SF Symbol next to the language flag (AirPods, iPad, …).
+    @State private var activeCaptureInputGlyph: ActiveCaptureInputGlyph.Snapshot?
 
     init(
         settingsStore: SettingsStore,
@@ -123,6 +126,7 @@ struct ContentView: View {
             try? await Task.sleep(for: .milliseconds(50))
 
             setupSpeechRecognizer()
+            syncAudioInputPreferenceFromSettings()
             speechRecognizer.dictationPauseSeconds = settingsStore.settings.dictationPauseSeconds
             engineAnalysis.configure(
                 depth: settingsStore.settings.cappedEngineAnalysisDepth,
@@ -163,6 +167,12 @@ struct ContentView: View {
                 repairArchivedCaptureDisambiguationInBackground()
             }
             prefetchPreparedGamesInBackground()
+            Task {
+                _ = try? await RecordingAudioSession.discoverCaptureInputsAsync()
+                await MainActor.run {
+                    refreshActiveCaptureInputGlyph()
+                }
+            }
         }
         .onDisappear {
             Task {
@@ -172,6 +182,25 @@ struct ContentView: View {
         }
         .onChange(of: settingsStore.settings.dictationPauseSeconds) { _, newValue in
             speechRecognizer.dictationPauseSeconds = newValue
+        }
+        .onChange(of: settingsStore.settings.preferredAudioInputUID) { _, _ in
+            syncAudioInputPreferenceFromSettings()
+            // Rebuild off the main thread so the Settings picker does not hitch.
+            Task(priority: .userInitiated) {
+                await RecordingAudioSession.applyPreferredInputChangeAsync()
+                await MainActor.run {
+                    refreshActiveCaptureInputGlyph()
+                }
+            }
+        }
+        .onChange(of: speechRecognizer.isRecording) { _, _ in
+            refreshActiveCaptureInputGlyph()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: AVAudioSession.routeChangeNotification)) { _ in
+            refreshActiveCaptureInputGlyph()
+        }
+        .onAppear {
+            refreshActiveCaptureInputGlyph()
         }
         .modifier(DeveloperModeFlagSyncModifier(
             developerModeStore: developerModeStore,
@@ -727,10 +756,21 @@ struct ContentView: View {
             
             Spacer(minLength: compact ? (isNarrowPortrait ? 0 : 4) : 0)
             
-            Text(speechRecognizer.currentLanguage.flag)
-                .font(.title3)
-                .frame(width: iconHitSize, height: iconHitSize)
-                .accessibilityLabel(speechRecognizer.currentLanguage.displayName)
+            HStack(spacing: 4) {
+                Text(speechRecognizer.currentLanguage.flag)
+                    .font(.title3)
+
+                if let glyph = activeCaptureInputGlyph {
+                    Image(systemName: glyph.systemImage)
+                        .font(.body)
+                        .foregroundStyle(.secondary)
+                        .symbolRenderingMode(.hierarchical)
+                        .accessibilityHidden(true)
+                }
+            }
+            .frame(minWidth: iconHitSize, minHeight: iconHitSize)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(languageAndAudioAccessibilityLabel)
             
             if useIconOnlyRecord {
                 Button {
@@ -898,6 +938,23 @@ struct ContentView: View {
         }
     }
 
+    private func syncAudioInputPreferenceFromSettings() {
+        let uid = settingsStore.settings.preferredAudioInputUID
+        RecordingAudioSession.preferredInputUID = uid.isEmpty ? nil : uid
+    }
+
+    private var languageAndAudioAccessibilityLabel: String {
+        let language = speechRecognizer.currentLanguage.displayName
+        if let glyph = activeCaptureInputGlyph {
+            return "\(language), microphone \(glyph.accessibilityName)"
+        }
+        return language
+    }
+
+    private func refreshActiveCaptureInputGlyph() {
+        activeCaptureInputGlyph = ActiveCaptureInputGlyph.snapshot()
+    }
+
     private func flipBoard() {
         withAnimation(.easeInOut(duration: 0.25)) {
             boardOrientation.toggle()
@@ -918,7 +975,7 @@ struct ContentView: View {
             }
 
             do {
-                try speechRecognizer.startRecording()
+                try await speechRecognizer.startRecording()
             } catch {
                 print("SpeechRecognizer: failed to start recording from UI — \(error.localizedDescription)")
             }

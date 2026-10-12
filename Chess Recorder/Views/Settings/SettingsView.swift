@@ -64,6 +64,11 @@ struct SettingsView: View {
     
     var body: some View {
         navigationContent
+            .task {
+                // Warm the mic list as soon as Settings opens so the picker
+                // is not empty for the first tap.
+                _ = try? await RecordingAudioSession.discoverCaptureInputsAsync()
+            }
             .sheet(isPresented: $showingAddPhrase) {
                 TeachPhraseView(
                     language: selectedLanguage,
@@ -115,6 +120,11 @@ struct SettingsView: View {
                         languageModelCompilationFailed:
                             speechRecognizer.currentLanguage == selectedLanguage
                             && speechRecognizer.languageModelCompilationFailed
+                    )
+
+                    AudioInputPickerRow(
+                        settingsStore: settingsStore,
+                        onStopRecording: onStopRecording
                     )
 
                     MicrophoneTestSettingsSection(onStopRecording: onStopRecording)

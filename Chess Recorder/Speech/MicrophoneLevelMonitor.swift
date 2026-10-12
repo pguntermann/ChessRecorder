@@ -57,11 +57,11 @@ final class MicrophoneLevelMonitor {
         assessedQuality?.hint
     }
 
-    func start() throws {
+    func start() async throws {
         guard !isMonitoring else { return }
 
         resetLevels()
-        try startAudioCapture()
+        try await startAudioCapture()
         isMonitoring = true
         installRouteObserver()
 
@@ -85,11 +85,11 @@ final class MicrophoneLevelMonitor {
         resetLevels()
     }
 
-    private func startAudioCapture(reactivating: Bool = false) throws {
+    private func startAudioCapture(reactivating: Bool = false) async throws {
         if reactivating {
-            try RecordingAudioSession.reactivateForCapture()
+            try await RecordingAudioSession.reactivateForCaptureAsync()
         } else {
-            try RecordingAudioSession.activateForCapture()
+            try await RecordingAudioSession.activateForCaptureAsync()
         }
 
         let engine = AVAudioEngine()
@@ -139,7 +139,7 @@ final class MicrophoneLevelMonitor {
         stopAudioCapture()
 
         do {
-            try startAudioCapture(reactivating: true)
+            try await startAudioCapture(reactivating: true)
             Task { @MainActor in
                 try? await Task.sleep(for: .milliseconds(150))
                 guard isMonitoring else { return }

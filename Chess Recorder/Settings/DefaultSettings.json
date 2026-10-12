@@ -17,6 +17,7 @@
   },
   "defaultLanguage" : "en-US",
   "dictationPauseSeconds" : 0.9,
+  "preferredAudioInputUID" : "",
   "engineAnalysisDepth" : 18,
   "engineAnalysisShowEvaluationBar" : true,
   "engineAnalysisShowBoardArrow" : true,

@@ -426,7 +426,7 @@ class SpeechRecognizer {
     }
     
     @MainActor
-    func startRecording() throws {
+    func startRecording() async throws {
         logSpeechDiagnostic("startRecording() called")
         recognitionRecoveryTask?.cancel()
         recognitionRecoveryTask = nil
@@ -443,7 +443,7 @@ class SpeechRecognizer {
         lastSeenCaptureFile = nil
         lastPartialCaptureDestinationFile = nil
         
-        try RecordingAudioSession.activateForCapture(log: logSpeechDiagnostic)
+        try await RecordingAudioSession.activateForCaptureAsync(log: audioSessionLog)
         logSpeechDiagnostic("audio route: \(Self.audioRouteDescription())")
         
         let audioEngine = AVAudioEngine()
@@ -467,6 +467,14 @@ class SpeechRecognizer {
         isRecording = true
         recordingSessionStartedAt = Date()
         logSpeechDiagnostic("recording session ready")
+    }
+
+    private var audioSessionLog: (@Sendable (String) -> Void) {
+        { [weak self] message in
+            Task { @MainActor in
+                self?.logSpeechDiagnostic(message)
+            }
+        }
     }
     
     @MainActor
@@ -546,7 +554,9 @@ class SpeechRecognizer {
         }
         guard audioEngine != nil else {
             logSpeechDiagnostic("restartRecognitionSession falling back to full startRecording (reason=\(reason))")
-            try? startRecording()
+            Task { @MainActor in
+                try? await self.startRecording()
+            }
             return
         }
         
@@ -560,7 +570,7 @@ class SpeechRecognizer {
     }
 
     @MainActor
-    private func restartAudioCapturePipeline(reason: String) {
+    private func restartAudioCapturePipeline(reason: String) async {
         guard isRecording else {
             logSpeechDiagnostic("restartAudioCapturePipeline skipped — not recording (reason=\(reason))")
             return
@@ -574,7 +584,7 @@ class SpeechRecognizer {
         audioEngine = nil
 
         do {
-            try RecordingAudioSession.activateForCapture(log: logSpeechDiagnostic)
+            try await RecordingAudioSession.activateForCaptureAsync(log: audioSessionLog)
             logSpeechDiagnostic("audio route: \(Self.audioRouteDescription())")
 
             let audioEngine = AVAudioEngine()
@@ -616,7 +626,7 @@ class SpeechRecognizer {
                 return
             }
             if restartsAudioCapture {
-                self.restartAudioCapturePipeline(reason: reason)
+                await self.restartAudioCapturePipeline(reason: reason)
             } else {
                 self.restartRecognitionSession(reason: reason)
             }

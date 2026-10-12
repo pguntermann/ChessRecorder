@@ -210,7 +210,7 @@ private final class PhraseRecorder {
 
         stop()
 
-        try RecordingAudioSession.activateForCapture()
+        try await RecordingAudioSession.activateForCaptureAsync()
 
         let engine = AVAudioEngine()
         let request = SFSpeechAudioBufferRecognitionRequest()

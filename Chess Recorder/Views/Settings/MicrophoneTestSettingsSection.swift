@@ -135,7 +135,7 @@ struct MicrophoneTestSettingsSection: View {
         await Task.yield()
 
         do {
-            try monitor.start()
+            try await monitor.start()
         } catch {
             monitor.stop()
         }

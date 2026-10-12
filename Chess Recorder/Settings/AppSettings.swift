@@ -50,6 +50,8 @@ struct AppSettings: Codable, Equatable {
     var moveAnimationDuration: Double
     var gameSwitchAnimationEnabled: Bool
     var dictationPauseSeconds: Double
+    /// Empty = Automatic (prefer Bluetooth / external mic). Otherwise an `AVAudioSession` port UID.
+    var preferredAudioInputUID: String
     var touchInputEnabled: Bool
     var touchInputHighlightColor: CodableColor
     var showLastMoveArrow: Bool
@@ -95,6 +97,7 @@ struct AppSettings: Codable, Equatable {
         case moveAnimationDuration
         case gameSwitchAnimationEnabled
         case dictationPauseSeconds
+        case preferredAudioInputUID
         case touchInputEnabled
         case touchInputHighlightColor
         case showLastMoveArrow
@@ -139,6 +142,7 @@ struct AppSettings: Codable, Equatable {
         moveAnimationDuration: Double,
         gameSwitchAnimationEnabled: Bool = true,
         dictationPauseSeconds: Double = 0.9,
+        preferredAudioInputUID: String = "",
         touchInputEnabled: Bool = true,
         touchInputHighlightColor: CodableColor = CodableColor(red: 0, green: 0.478, blue: 1),
         showLastMoveArrow: Bool = true,
@@ -181,6 +185,7 @@ struct AppSettings: Codable, Equatable {
         self.moveAnimationDuration = moveAnimationDuration
         self.gameSwitchAnimationEnabled = gameSwitchAnimationEnabled
         self.dictationPauseSeconds = dictationPauseSeconds
+        self.preferredAudioInputUID = preferredAudioInputUID
         self.touchInputEnabled = touchInputEnabled
         self.touchInputHighlightColor = touchInputHighlightColor
         self.showLastMoveArrow = showLastMoveArrow
@@ -226,6 +231,7 @@ struct AppSettings: Codable, Equatable {
         moveAnimationDuration = try container.decodeIfPresent(Double.self, forKey: .moveAnimationDuration) ?? 0.35
         gameSwitchAnimationEnabled = try container.decodeIfPresent(Bool.self, forKey: .gameSwitchAnimationEnabled) ?? true
         dictationPauseSeconds = try container.decodeIfPresent(Double.self, forKey: .dictationPauseSeconds) ?? 0.9
+        preferredAudioInputUID = try container.decodeIfPresent(String.self, forKey: .preferredAudioInputUID) ?? ""
         touchInputEnabled = try container.decodeIfPresent(Bool.self, forKey: .touchInputEnabled) ?? true
         touchInputHighlightColor = try container.decodeIfPresent(CodableColor.self, forKey: .touchInputHighlightColor)
             ?? CodableColor(red: 0, green: 0.478, blue: 1)
@@ -300,6 +306,7 @@ struct AppSettings: Codable, Equatable {
         moveAnimationDuration: 0.35,
         gameSwitchAnimationEnabled: true,
         dictationPauseSeconds: 0.9,
+        preferredAudioInputUID: "",
         touchInputEnabled: true,
         touchInputHighlightColor: CodableColor(red: 0, green: 0.478, blue: 1),
         showLastMoveArrow: true,

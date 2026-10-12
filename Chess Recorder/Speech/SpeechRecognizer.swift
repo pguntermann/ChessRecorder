@@ -1478,11 +1478,12 @@ class SpeechRecognizer {
     /// Color-specified resign and draw phrases only — avoids bare `auf` colliding with move dictation.
     /// Includes common ASR truncations (e.g. Remis → "Remi").
     private func trailingResultCommand(in normalized: String) -> (phrase: String, result: PGNResult)? {
+        // Result is who wins: "Schwarz/Black gibt auf/resigns" → White wins (1-0).
         let phrases: [(String, PGNResult)] = [
-            ("schwarz gibt auf", .blackWins),
-            ("weiss gibt auf", .whiteWins),
-            ("black resigns", .blackWins),
-            ("white resigns", .whiteWins),
+            ("schwarz gibt auf", .whiteWins),
+            ("weiss gibt auf", .blackWins),
+            ("black resigns", .whiteWins),
+            ("white resigns", .blackWins),
             ("remis", .draw),
             ("remise", .draw),
             ("remi", .draw),

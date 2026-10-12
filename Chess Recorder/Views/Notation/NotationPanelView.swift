@@ -62,8 +62,6 @@ struct NotationPanelView: View {
                     showPrincipalVariation: engineAnalysisShowPrincipalVariation,
                     analysisService: engineAnalysis
                 )
-
-                Divider()
             }
 
             VStack(alignment: .leading, spacing: 8) {

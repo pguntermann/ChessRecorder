@@ -13,6 +13,8 @@ enum ActiveCaptureInputGlyph {
         let accessibilityName: String
     }
 
+    /// Uses the live capture route (true active input). Callers should debounce
+    /// brief transitional route changes during session activation.
     static func snapshot(session: AVAudioSession = .sharedInstance()) -> Snapshot? {
         guard let port = session.currentRoute.inputs.first ?? session.preferredInput else {
             return nil
@@ -24,9 +26,14 @@ enum ActiveCaptureInputGlyph {
     }
 
     static func systemImage(for port: AVAudioSessionPortDescription) -> String {
-        let name = port.portName.lowercased()
+        systemImage(portName: port.portName, portType: port.portType.rawValue)
+    }
 
-        switch port.portType {
+    private static func systemImage(portName: String, portType: String) -> String {
+        let name = portName.lowercased()
+        let port = AVAudioSession.Port(rawValue: portType)
+
+        switch port {
         case .builtInMic:
             return UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone"
         case .headsetMic:

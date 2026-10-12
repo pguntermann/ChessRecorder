@@ -47,6 +47,7 @@ struct ContentView: View {
     @State private var phaseBubbleText: String?
     /// Active capture-input SF Symbol next to the language flag (AirPods, iPad, …).
     @State private var activeCaptureInputGlyph: ActiveCaptureInputGlyph.Snapshot?
+    @State private var activeCaptureInputGlyphRefreshTask: Task<Void, Never>?
 
     init(
         settingsStore: SettingsStore,
@@ -175,6 +176,8 @@ struct ContentView: View {
             }
         }
         .onDisappear {
+            activeCaptureInputGlyphRefreshTask?.cancel()
+            activeCaptureInputGlyphRefreshTask = nil
             Task {
                 await engineAnalysis.shutdown()
                 await moveAssessment.shutdown()
@@ -194,10 +197,11 @@ struct ContentView: View {
             }
         }
         .onChange(of: speechRecognizer.isRecording) { _, _ in
-            refreshActiveCaptureInputGlyph()
+            // Session activation can briefly report the built-in mic; debounce past that.
+            scheduleActiveCaptureInputGlyphRefresh()
         }
         .onReceive(NotificationCenter.default.publisher(for: AVAudioSession.routeChangeNotification)) { _ in
-            refreshActiveCaptureInputGlyph()
+            scheduleActiveCaptureInputGlyphRefresh()
         }
         .onAppear {
             refreshActiveCaptureInputGlyph()
@@ -953,6 +957,15 @@ struct ContentView: View {
 
     private func refreshActiveCaptureInputGlyph() {
         activeCaptureInputGlyph = ActiveCaptureInputGlyph.snapshot()
+    }
+
+    private func scheduleActiveCaptureInputGlyphRefresh() {
+        activeCaptureInputGlyphRefreshTask?.cancel()
+        activeCaptureInputGlyphRefreshTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(250))
+            guard !Task.isCancelled else { return }
+            refreshActiveCaptureInputGlyph()
+        }
     }
 
     private func flipBoard() {
